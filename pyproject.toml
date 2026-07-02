@@ -10,6 +10,7 @@ dependencies = [
     "numpy>=1.21",
     "onnx>=1.14",
     "onnxruntime>=1.16",
+    "scikit-image>=0.19",
 ]
 
 [project.optional-dependencies]
