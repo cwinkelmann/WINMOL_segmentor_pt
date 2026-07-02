@@ -26,4 +26,4 @@ def test_export_parity_torch_vs_onnx(tmp_path):
     onnx_out = sess.run([contract.OUTPUT_NAME], {contract.INPUT_NAME: x})[0]
 
     assert onnx_out.shape == (2, 1, 512, 512)
-    assert np.allclose(torch_out, onnx_out, atol=1e-4)
+    assert np.allclose(torch_out, onnx_out, rtol=0.0, atol=1e-4)

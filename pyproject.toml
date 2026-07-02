@@ -20,3 +20,9 @@ dev = ["pytest>=7"]
 
 [tool.setuptools]
 packages = ["winmol_unet"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:torch.onnx",
+    "ignore:.*legacy TorchScript.*:DeprecationWarning",
+]
