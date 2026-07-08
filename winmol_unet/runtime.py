@@ -30,7 +30,7 @@ class OnnxSegmenter:
 
     def predict_on_batch(self, x):
         x = self._as_numpy(x)          # NHWC [N,512,512,3]
-        nchw = np.transpose(x, (0, 3, 1, 2))
+        nchw = np.ascontiguousarray(np.transpose(x, (0, 3, 1, 2)))
         try:
             out = self.session.run([OUTPUT_NAME], {INPUT_NAME: nchw})[0]
         except Exception as exc:       # normalize OOM for the retry loop
@@ -43,6 +43,5 @@ class OnnxSegmenter:
     def summary(self):
         print(
             f"OnnxSegmenter(providers={self.providers}) "
-            f"input=[N,3,{IMG_SIZE},{IMG_SIZE}] -> output=[N,1,{IMG_SIZE},{IMG_SIZE}] "
-            f"(NHWC at the predict_on_batch boundary)"
+            f"input=[N,{IMG_SIZE},{IMG_SIZE},3] -> output=[N,{IMG_SIZE},{IMG_SIZE},1] (NHWC)"
         )
