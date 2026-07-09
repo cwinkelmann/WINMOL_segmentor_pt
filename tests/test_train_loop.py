@@ -32,7 +32,7 @@ def _tiny_dataset(tmp_path, n_items=2):
         Image.fromarray(rgb, "RGB").save(img_dir / f"train{n}.jpeg")
         m = np.zeros((32, 32), np.uint8); m[:, :16] = 255
         Image.fromarray(m, "L").save(mask_dir / f"mask{n}.gif")
-    return StemDataset(str(img_dir), str(mask_dir), augment=False)
+    return StemDataset(str(img_dir), str(mask_dir))
 
 
 def test_overfit_loss_decreases(tmp_path):
