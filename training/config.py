@@ -18,6 +18,7 @@ class TrainConfig:
     val_fraction: float = 0.2
     patience: int = 5
     seed: int = 1
+    device: str = "auto"   # auto -> mps, then cuda, then cpu
 
     @property
     def image_dir(self) -> str:

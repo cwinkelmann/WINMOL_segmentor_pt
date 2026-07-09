@@ -25,11 +25,14 @@ def run_training(cfg):
     model = UNet(dropout=cfg.dropout)
     train_one_run(model, train_loader, val_loader, cfg)
 
+    val_metrics = evaluate(model, val_loader)   # on training device
+
+    model.cpu()                                 # exporters read weights via CPU numpy
     os.makedirs(os.path.dirname(cfg.hdf5_out) or ".", exist_ok=True)
     export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
     export_to_onnx(model, cfg.onnx_out)
 
-    return evaluate(model, val_loader)
+    return val_metrics
 
 
 def main():
@@ -38,6 +41,7 @@ def main():
     p.add_argument("--out-dir", default="output")
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--batch-size", type=int, default=4)
+    p.add_argument("--device", default="auto", help="auto|mps|cuda|cpu")
     a = p.parse_args()
     cfg = TrainConfig(
         data_dir=a.data_dir,
@@ -45,7 +49,7 @@ def main():
         log_dir=os.path.join(a.out_dir, "logs"),
         hdf5_out=os.path.join(a.out_dir, "model.hdf5"),
         onnx_out=os.path.join(a.out_dir, "model.onnx"),
-        epochs=a.epochs, batch_size=a.batch_size,
+        epochs=a.epochs, batch_size=a.batch_size, device=a.device,
     )
     print(run_training(cfg))
 

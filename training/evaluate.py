@@ -8,9 +8,11 @@ from .metrics import precision, recall, f1
 @torch.no_grad()
 def evaluate(model, loader):
     model.eval()
+    device = next(model.parameters()).device
     tot = {"loss": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
     n = 0
     for img, mask in loader:
+        img, mask = img.to(device), mask.to(device)
         logits = model(img)
         tot["loss"] += bce_soft_f1_loss(logits, mask).item()
         tot["precision"] += precision(logits, mask)

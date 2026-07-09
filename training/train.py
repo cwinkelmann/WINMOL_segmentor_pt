@@ -5,6 +5,7 @@ import os
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
+from .device import resolve_device
 from .evaluate import evaluate
 from .losses import bce_soft_f1_loss
 
@@ -13,6 +14,8 @@ def train_one_run(model, train_loader, val_loader, cfg):
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
     ckpt = os.path.join(cfg.checkpoint_dir, "best.pt")
     writer = SummaryWriter(cfg.log_dir)
+    device = resolve_device(cfg.device)
+    model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
 
     best_val = float("inf")
@@ -20,6 +23,7 @@ def train_one_run(model, train_loader, val_loader, cfg):
     for epoch in range(cfg.epochs):
         model.train()
         for img, mask in train_loader:
+            img, mask = img.to(device), mask.to(device)
             opt.zero_grad()
             logits = model(img)
             loss = bce_soft_f1_loss(logits, mask)
@@ -41,5 +45,5 @@ def train_one_run(model, train_loader, val_loader, cfg):
 
     writer.close()
     if os.path.exists(ckpt):
-        model.load_state_dict(torch.load(ckpt))
+        model.load_state_dict(torch.load(ckpt, map_location=device))
     return model
