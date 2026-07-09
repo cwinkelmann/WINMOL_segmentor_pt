@@ -2,7 +2,9 @@
 
 Metrics are micro-averaged: tp/fp/fn are accumulated globally across the whole
 loader and P/R/F1 computed once, so a partial final batch is not over-weighted.
-Loss is sample-weighted by batch size for the same reason.
+Loss is weighted by batch size (an approximation for the batch-level soft-F1
+term, exact for the per-element BCE term) to avoid over-weighting a small last
+batch — not a true global recomputation like the metrics get.
 """
 import torch
 

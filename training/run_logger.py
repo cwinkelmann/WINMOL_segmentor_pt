@@ -11,15 +11,19 @@ class RunLogger:
         self._wandb = None
         if use_wandb:
             try:
-                import wandb
-                from dotenv import load_dotenv
-            except ImportError as e:
-                raise RuntimeError(
-                    "wandb logging requires the optional extra: "
-                    "pip install '.[wandb]'") from e
-            load_dotenv()                      # picks up WANDB_API_KEY from .env
-            wandb.init(project=project, name=run_name)
-            self._wandb = wandb
+                try:
+                    import wandb
+                    from dotenv import load_dotenv
+                except ImportError as e:
+                    raise RuntimeError(
+                        "wandb logging requires the optional extra: "
+                        "pip install '.[wandb]'") from e
+                load_dotenv()                  # picks up WANDB_API_KEY from .env
+                wandb.init(project=project, name=run_name)
+                self._wandb = wandb
+            except Exception:
+                self.writer.close()            # don't leak the TB writer if wandb setup fails
+                raise
 
     def log_scalars(self, scalars, step):
         for name, value in scalars.items():

@@ -20,38 +20,40 @@ def train_one_run(model, train_loader, val_loader, cfg):
 
     best_val = float("inf")
     since_improve = 0
-    for epoch in range(cfg.epochs):
-        model.train()
-        running, nb = 0.0, 0
-        for img, mask in train_loader:
-            img, mask = img.to(device), mask.to(device)
-            opt.zero_grad()
-            loss = bce_soft_f1_loss(model(img), mask)
-            loss.backward()
-            opt.step()
-            running += loss.item()
-            nb += 1
-        train_loss = running / nb if nb else 0.0
+    try:
+        for epoch in range(cfg.epochs):
+            model.train()
+            running, nb = 0.0, 0
+            for img, mask in train_loader:
+                img, mask = img.to(device), mask.to(device)
+                opt.zero_grad()
+                loss = bce_soft_f1_loss(model(img), mask)
+                loss.backward()
+                opt.step()
+                running += loss.item()
+                nb += 1
+            train_loss = running / nb if nb else 0.0
 
-        val = evaluate(model, val_loader)
-        logger.log_scalars({
-            "train/loss": train_loss,
-            "val/loss": val["loss"],
-            "val/precision": val["precision"],
-            "val/recall": val["recall"],
-            "val/f1": val["f1"],
-        }, epoch)
+            val = evaluate(model, val_loader)
+            logger.log_scalars({
+                "train/loss": train_loss,
+                "val/loss": val["loss"],
+                "val/precision": val["precision"],
+                "val/recall": val["recall"],
+                "val/f1": val["f1"],
+            }, epoch)
 
-        if val["loss"] < best_val:
-            best_val = val["loss"]
-            since_improve = 0
-            torch.save(model.state_dict(), ckpt)
-        else:
-            since_improve += 1
-            if since_improve >= cfg.patience:
-                break
+            if val["loss"] < best_val:
+                best_val = val["loss"]
+                since_improve = 0
+                torch.save(model.state_dict(), ckpt)
+            else:
+                since_improve += 1
+                if since_improve >= cfg.patience:
+                    break
+    finally:
+        logger.close()   # always flush TB + wandb.finish, even on error/early exit
 
-    logger.close()
     if os.path.exists(ckpt):
         model.load_state_dict(torch.load(ckpt, map_location=device))
     return model
