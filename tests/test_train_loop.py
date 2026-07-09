@@ -7,7 +7,19 @@ from training.config import TrainConfig
 from training.dataset import StemDataset
 from training.train import train_one_run
 from training.evaluate import evaluate
+from training.losses import bce_soft_f1_loss
 from winmol_unet.model import UNet
+
+
+def _train_mode_loss(model, loader):
+    # The overfit smoke test asks "does optimization reduce the loss?" — a
+    # train-mode question. Eval-mode BatchNorm uses running stats that are
+    # meaningless on a 2-sample toy set, so we measure the loss the training
+    # loop actually optimizes (train mode, batch stats).
+    model.train()
+    with torch.no_grad():
+        img, mask = next(iter(loader))
+        return bce_soft_f1_loss(model(img), mask).item()
 
 
 def _tiny_dataset(tmp_path, n_items=2):
@@ -29,9 +41,9 @@ def test_overfit_loss_decreases(tmp_path):
                       log_dir=str(tmp_path / "log"), hdf5_out="x.hdf5", onnx_out="x.onnx",
                       epochs=8, lr=1e-2, patience=999)
     model = UNet(dropout=0.0)
-    before = evaluate(model, loader)["loss"]
+    before = _train_mode_loss(model, loader)
     train_one_run(model, loader, loader, cfg)
-    after = evaluate(model, loader)["loss"]
+    after = _train_mode_loss(model, loader)
     assert after < before
 
 
