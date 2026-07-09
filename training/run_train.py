@@ -24,10 +24,12 @@ def run_training(cfg):
         transform=transform)
     # num_workers=0 is required for StemDataset's resize cache to persist across
     # epochs (see StemDataset docstring); do not raise it without persistent_workers.
-    # drop_last on train avoids a batch of 1, which breaks BatchNorm in architectures
-    # whose forward reduces to [N,C,1,1] (e.g. DeepLabV3+ ASPP global pooling).
+    # drop_last avoids a trailing batch of 1, which breaks BatchNorm in architectures
+    # whose forward reduces to [N,C,1,1] (e.g. DeepLabV3+ ASPP global pooling) — but only
+    # when there is more than one batch's worth, so a tiny train set isn't zeroed out.
+    drop_last = len(train_ds) > cfg.batch_size
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
-                              num_workers=0, drop_last=True)
+                              num_workers=0, drop_last=drop_last)
     val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, num_workers=0)
 
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
