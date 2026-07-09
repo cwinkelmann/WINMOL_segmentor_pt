@@ -1,6 +1,7 @@
 """Hyperparameters + paths for single-stage training (mirrors R controlling.R)."""
 import os
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -19,6 +20,9 @@ class TrainConfig:
     patience: int = 5
     seed: int = 1
     device: str = "auto"   # auto -> mps, then cuda, then cpu
+    wandb: bool = False
+    wandb_project: Optional[str] = None
+    wandb_run_name: Optional[str] = None
 
     @property
     def image_dir(self) -> str:
