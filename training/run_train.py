@@ -2,6 +2,7 @@
 import argparse
 import os
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -9,6 +10,7 @@ from winmol_unet.export import export_to_onnx, export_to_pt
 from winmol_unet.export_keras import export_to_keras, export_to_keras_hdf5
 from winmol_unet.model import UNet
 
+from .augment import build_augmentation
 from .config import TrainConfig
 from .dataset import train_val_split
 from .evaluate import evaluate
@@ -17,8 +19,11 @@ from .train import train_one_run
 
 def run_training(cfg):
     torch.manual_seed(cfg.seed)
+    np.random.seed(cfg.seed)                  # albumentations uses numpy RNG
+    transform = build_augmentation(cfg)
     train_ds, val_ds = train_val_split(
-        cfg.image_dir, cfg.mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size)
+        cfg.image_dir, cfg.mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
+        transform=transform)
     # num_workers=0 is required for StemDataset's resize cache to persist across
     # epochs (see StemDataset docstring); do not raise it without persistent_workers.
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, num_workers=0)
@@ -55,6 +60,14 @@ def config_from_args(argv=None):
     p.add_argument("--wandb", action="store_true", help="enable Weights & Biases logging")
     p.add_argument("--wandb-project", default=None)
     p.add_argument("--wandb-run-name", default=None)
+    p.add_argument("--aug-hflip-p", type=float, default=0.5)
+    p.add_argument("--aug-vflip-p", type=float, default=0.5)
+    p.add_argument("--aug-rotate-p", type=float, default=0.0)
+    p.add_argument("--aug-rotate-limit", type=float, default=15.0)
+    p.add_argument("--aug-bc-p", type=float, default=0.5)
+    p.add_argument("--aug-brightness-limit", type=float, default=0.2)
+    p.add_argument("--aug-contrast-limit", type=float, default=0.2)
+    p.add_argument("--aug-hsv-p", type=float, default=0.5)
     a = p.parse_args(argv)
     return TrainConfig(
         data_dir=a.data_dir,
@@ -66,6 +79,10 @@ def config_from_args(argv=None):
         onnx_out=os.path.join(a.out_dir, "model.onnx"),
         epochs=a.epochs, batch_size=a.batch_size, device=a.device,
         wandb=a.wandb, wandb_project=a.wandb_project, wandb_run_name=a.wandb_run_name,
+        aug_hflip_p=a.aug_hflip_p, aug_vflip_p=a.aug_vflip_p,
+        aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
+        aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
+        aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
     )
 
 
