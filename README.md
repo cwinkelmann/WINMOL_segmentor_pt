@@ -28,6 +28,22 @@ This trains the U-Net (single stage, deterministic 80/20 train/val split) with o
 [albumentations](https://albumentations.ai/) augmentation, and writes `model.pt`,
 `model.hdf5`, `model.keras`, and `model.onnx` to `--out-dir`.
 
+**Architecture** — `--arch {unet,deeplabv3plus,hrnet}` (default `unet`). `deeplabv3plus`
+and `hrnet` use [segmentation-models-pytorch](https://github.com/qubvel-org/segmentation_models.pytorch);
+tune `--encoder` (default `resnet34`, for `deeplabv3plus`) and `--encoder-weights`
+(`None`, or `imagenet` for a pretrained encoder — needs network). Any architecture exports
+a contract-conformant `.onnx` (+ `.pt`); the Keras `.hdf5`/`.keras` mirror is UNet-specific,
+so **non-UNet models export ONNX + `.pt` only**. Example:
+
+```bash
+python -m training.run_train --data-dir /path/to/TestDS --out-dir output/deeplab \
+  --arch deeplabv3plus --encoder resnet34 --encoder-weights imagenet \
+  --epochs 20 --device mps
+```
+
+The analyzer consumes any of these transparently through `OnnxSegmenter` once its ONNX
+loading branch is in place — it never inspects the architecture.
+
 **Device** — `--device auto` (default) prefers Apple MPS, then CUDA, then CPU; or pass
 `mps` / `cuda` / `cpu` explicitly.
 
