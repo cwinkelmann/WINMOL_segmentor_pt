@@ -17,7 +17,6 @@ import torch.nn as nn
 from tensorflow.keras import layers as klayers
 
 from .keras_model import build_keras_unet
-from .model import UNet
 
 
 def _torch_weighted(model):
@@ -73,9 +72,20 @@ def _transfer(torch_model, keras_model):
         k.set_weights(weights)
 
 
-def export_to_keras_hdf5(torch_model, path, dropout=0.1):
+def _build_and_transfer(torch_model, dropout=0.1):
     torch_model = torch_model.eval()
     keras_model = build_keras_unet(dropout=dropout)
     _transfer(torch_model, keras_model)
-    keras_model.save(path, save_format="h5")
+    return keras_model
+
+
+def export_to_keras_hdf5(torch_model, path, dropout=0.1):
+    """Legacy HDF5 (analyzer's current load path)."""
+    _build_and_transfer(torch_model, dropout).save(path, save_format="h5")
+    return path
+
+
+def export_to_keras(torch_model, path, dropout=0.1):
+    """Native Keras 3 format (path should end in .keras)."""
+    _build_and_transfer(torch_model, dropout).save(path)
     return path
