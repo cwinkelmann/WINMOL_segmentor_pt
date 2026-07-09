@@ -1,8 +1,23 @@
-"""PyTorch U-Net. Mirrors the R model_UNet.R (512x512, BN+dropout, skip concats).
+"""PyTorch U-Net adapted from the R model_UNet.R (512x512, BN+dropout, skip concats).
 
-forward() returns LOGITS. Sigmoid is appended only at ONNX export time
-(see winmol_unet.export), satisfying the "sigmoid in graph" contract while
-keeping training numerically stable with BCEWithLogitsLoss.
+forward() returns LOGITS. Sigmoid is appended only at export time
+(see winmol_unet.export / export_keras), satisfying the "sigmoid in graph"
+contract while keeping training numerically stable with BCEWithLogitsLoss.
+
+Deviations from the original R model_UNet.R (same skeleton: 19 Conv, 4 ConvTranspose,
+64->128->256->512->1024 ladder, dropout 0.1, ~31M params). This is a modernized
+adaptation, NOT a layer-exact port:
+
+  1. Normalization order: this port uses Conv -> BN -> ReLU (per conv). The R model
+     uses Conv -> ReLU -> BN (ReLU fused into layer_conv_2d, then batch_normalization).
+     Both are common; Conv->BN->ReLU is the modern default.
+  2. No BatchNorm after ConvTranspose. The R model inserts a BN after each of the 4
+     up-convolutions (before the skip concat); this port omits them (18 BN vs R's 22).
+  3. Decoder block E7 uses 256 filters; the R code has filters=265, a probable typo.
+  4. Input is 512x512 (R script used 256) to match the deployed models + analyzer config.
+
+The Keras mirror in winmol_unet.keras_model reproduces THIS architecture (not the R
+one) exactly, so the PyTorch<->HDF5/ONNX exports are numerically equivalent.
 """
 import torch
 import torch.nn as nn

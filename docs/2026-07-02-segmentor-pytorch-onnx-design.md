@@ -128,6 +128,20 @@ use **512**. The PyTorch U-Net targets **512×512×3** input / **512×512×1** s
 match deployed models and the analyzer. (Also note the R model contains a probable typo:
 block E7 uses `filters = 265` where `256` was intended — the PyTorch port uses 256.)
 
+The port is a **modernized adaptation, not a layer-exact reproduction** of `model_UNet.R`.
+Same skeleton (19 Conv, 4 ConvTranspose, 64→128→256→512→1024 ladder, dropout 0.1, ~31M
+params, skip concats, sigmoid head), with four deviations — two intentional/geometric (input
+512, E7 256-not-265 above) and two structural:
+
+1. **Normalization order.** Port uses **Conv→BN→ReLU**; R uses **Conv→ReLU→BN** (ReLU fused
+   into `layer_conv_2d`, then `layer_batch_normalization`). Both are common.
+2. **No BN after ConvTranspose.** R inserts a BatchNorm after each of the 4 up-convolutions
+   (before the skip concat); the port omits them (**18 BN vs R's 22**).
+
+These do not change the model family or capacity; on real data (beech `TestDS`, 117 pairs,
+20 epochs) the port reaches **val F1 ≈ 0.72**. `winmol_unet.keras_model` mirrors *this*
+architecture (not R's), keeping the PyTorch↔HDF5/ONNX exports numerically equivalent.
+
 ## 8. Verification & Tests (TDD — tests written first)
 
 1. **Contract test** — exported ONNX has input `[N,3,512,512]`, output `[N,1,512,512]`,
