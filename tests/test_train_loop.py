@@ -17,8 +17,10 @@ def _train_mode_loss(model, loader):
     # meaningless on a 2-sample toy set, so we measure the loss the training
     # loop actually optimizes (train mode, batch stats).
     model.train()
+    device = next(model.parameters()).device   # model may be on MPS/CUDA after train_one_run
     with torch.no_grad():
         img, mask = next(iter(loader))
+        img, mask = img.to(device), mask.to(device)
         return bce_soft_f1_loss(model(img), mask).item()
 
 
