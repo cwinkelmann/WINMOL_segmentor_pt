@@ -7,12 +7,12 @@ from torch.utils.data import DataLoader
 
 from winmol_unet.export import export_to_onnx, export_to_pt
 from winmol_unet.export_keras import export_to_keras, export_to_keras_hdf5
-from winmol_unet.model import UNet
 
 from .augment import build_augmentation
 from .config import TrainConfig
 from .dataset import train_val_split
 from .evaluate import evaluate
+from .model_factory import build_model
 from .train import train_one_run
 
 
@@ -24,10 +24,14 @@ def run_training(cfg):
         transform=transform)
     # num_workers=0 is required for StemDataset's resize cache to persist across
     # epochs (see StemDataset docstring); do not raise it without persistent_workers.
-    train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, num_workers=0)
+    # drop_last on train avoids a batch of 1, which breaks BatchNorm in architectures
+    # whose forward reduces to [N,C,1,1] (e.g. DeepLabV3+ ASPP global pooling).
+    train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
+                              num_workers=0, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, num_workers=0)
 
-    model = UNet(dropout=cfg.dropout)
+    model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
+                        encoder_weights=cfg.encoder_weights)
     train_one_run(model, train_loader, val_loader, cfg)
 
     val_metrics = evaluate(model, val_loader)   # on training device
@@ -40,9 +44,11 @@ def run_training(cfg):
             os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
     if cfg.pt_out:
         export_to_pt(model, cfg.pt_out)
-    export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
-    if cfg.keras_out:
-        export_to_keras(model, cfg.keras_out, dropout=cfg.dropout)
+    # The Keras HDF5/.keras mirror is UNet-specific; non-UNet models are ONNX-only.
+    if cfg.arch == "unet":
+        export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
+        if cfg.keras_out:
+            export_to_keras(model, cfg.keras_out, dropout=cfg.dropout)
     export_to_onnx(model, cfg.onnx_out)
 
     return val_metrics
@@ -66,6 +72,9 @@ def config_from_args(argv=None):
     p.add_argument("--aug-brightness-limit", type=float, default=0.2)
     p.add_argument("--aug-contrast-limit", type=float, default=0.2)
     p.add_argument("--aug-hsv-p", type=float, default=0.5)
+    p.add_argument("--arch", default="unet", help="unet|deeplabv3plus|hrnet")
+    p.add_argument("--encoder", default="resnet34", help="smp encoder (deeplabv3plus)")
+    p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     a = p.parse_args(argv)
     return TrainConfig(
         data_dir=a.data_dir,
@@ -81,6 +90,7 @@ def config_from_args(argv=None):
         aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
+        arch=a.arch, encoder=a.encoder, encoder_weights=a.encoder_weights,
     )
 
 
