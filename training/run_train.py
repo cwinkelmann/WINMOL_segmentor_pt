@@ -37,23 +37,30 @@ def run_training(cfg):
     return val_metrics
 
 
-def main():
+def config_from_args(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--data-dir", required=True)
     p.add_argument("--out-dir", default="output")
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--device", default="auto", help="auto|mps|cuda|cpu")
-    a = p.parse_args()
-    cfg = TrainConfig(
+    p.add_argument("--wandb", action="store_true", help="enable Weights & Biases logging")
+    p.add_argument("--wandb-project", default=None)
+    p.add_argument("--wandb-run-name", default=None)
+    a = p.parse_args(argv)
+    return TrainConfig(
         data_dir=a.data_dir,
         checkpoint_dir=os.path.join(a.out_dir, "checkpoints"),
         log_dir=os.path.join(a.out_dir, "logs"),
         hdf5_out=os.path.join(a.out_dir, "model.hdf5"),
         onnx_out=os.path.join(a.out_dir, "model.onnx"),
         epochs=a.epochs, batch_size=a.batch_size, device=a.device,
+        wandb=a.wandb, wandb_project=a.wandb_project, wandb_run_name=a.wandb_run_name,
     )
-    print(run_training(cfg))
+
+
+def main():
+    print(run_training(config_from_args()))
 
 
 if __name__ == "__main__":
