@@ -2,7 +2,6 @@
 import argparse
 import os
 
-import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -19,8 +18,7 @@ from .train import train_one_run
 
 def run_training(cfg):
     torch.manual_seed(cfg.seed)
-    np.random.seed(cfg.seed)                  # albumentations uses numpy RNG
-    transform = build_augmentation(cfg)
+    transform = build_augmentation(cfg)       # seeded internally via cfg.seed (reproducible)
     train_ds, val_ds = train_val_split(
         cfg.image_dir, cfg.mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
         transform=transform)

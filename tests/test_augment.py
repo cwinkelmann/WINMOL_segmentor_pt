@@ -17,6 +17,20 @@ def test_only_enabled_transforms_included():
     assert names == ["HorizontalFlip"]
 
 
+def test_augmentation_reproducible_by_seed():
+    # albumentations 2.x uses its own per-Compose RNG (NOT the global numpy seed),
+    # so build_augmentation must seed the Compose with cfg.seed for reproducibility.
+    img = np.random.RandomState(0).rand(64, 64, 3).astype(np.float32)
+    mask = np.zeros((64, 64), np.float32); mask[:, :32] = 1.0
+    knobs = dict(aug_hflip_p=0.5, aug_vflip_p=0.5, aug_rotate_p=1.0,
+                 aug_rotate_limit=25, aug_bc_p=1.0, aug_hsv_p=1.0)
+    a = build_augmentation(_cfg(seed=1, **knobs))(image=img.copy(), mask=mask.copy())
+    b = build_augmentation(_cfg(seed=1, **knobs))(image=img.copy(), mask=mask.copy())
+    c = build_augmentation(_cfg(seed=2, **knobs))(image=img.copy(), mask=mask.copy())
+    assert np.array_equal(a["image"], b["image"]) and np.array_equal(a["mask"], b["mask"])
+    assert not np.array_equal(a["image"], c["image"])   # different seed -> different aug
+
+
 def test_all_transforms_when_enabled():
     cfg = _cfg(aug_hflip_p=0.5, aug_vflip_p=0.5, aug_rotate_p=0.3,
                aug_bc_p=0.5, aug_hsv_p=0.5)

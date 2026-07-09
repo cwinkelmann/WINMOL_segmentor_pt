@@ -3,7 +3,9 @@
 Geometric transforms carry image+mask; photometric carry the image only. Applied
 after the winmol_unet.preprocess resize, on 512x512 float32 [0,1] arrays.
 border_mode=0 is cv2.BORDER_CONSTANT; fill/fill_mask=0 pad rotated borders with 0
-(no phantom stems). A transform is included only when its probability > 0.
+(no phantom stems). A transform is included only when its probability > 0. The
+Compose is seeded with cfg.seed so runs are reproducible (albumentations 2.x uses
+its own RNG per Compose, NOT the global numpy RNG).
 """
 import albumentations as A
 
@@ -23,4 +25,4 @@ def build_augmentation(cfg):
             contrast_limit=cfg.aug_contrast_limit, p=cfg.aug_bc_p))
     if cfg.aug_hsv_p > 0:
         transforms.append(A.HueSaturationValue(p=cfg.aug_hsv_p))
-    return A.Compose(transforms)
+    return A.Compose(transforms, seed=cfg.seed)   # seed the Compose (global numpy seed is ignored)

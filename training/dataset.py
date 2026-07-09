@@ -33,13 +33,12 @@ class StemDataset(Dataset):
     DataLoader(num_workers=0) for the cache to persist across epochs.
     """
 
-    def __init__(self, image_dir, mask_dir, img_size=512, transform=None, seed=1, ids=None):
+    def __init__(self, image_dir, mask_dir, img_size=512, transform=None, ids=None):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.img_size = img_size
-        self.transform = transform
+        self.transform = transform   # albumentations Compose (seeded via cfg.seed) or None
         self.ids = ids if ids is not None else _paired_ids(image_dir, mask_dir)
-        self._rng = random.Random(seed)
         self._cache = {}   # n -> (image HWC float32 [0,1], mask HW float32 {0,1})
 
     def __len__(self):
@@ -79,6 +78,6 @@ def train_val_split(image_dir, mask_dir, val_fraction, seed, img_size=512, trans
     n_val = max(1, int(round(len(shuffled) * val_fraction)))
     val_ids = sorted(shuffled[:n_val])
     train_ids = sorted(shuffled[n_val:])
-    train_ds = StemDataset(image_dir, mask_dir, img_size, transform=transform, seed=seed, ids=train_ids)
-    val_ds = StemDataset(image_dir, mask_dir, img_size, transform=None, seed=seed, ids=val_ids)
+    train_ds = StemDataset(image_dir, mask_dir, img_size, transform=transform, ids=train_ids)
+    val_ds = StemDataset(image_dir, mask_dir, img_size, transform=None, ids=val_ids)
     return train_ds, val_ds
