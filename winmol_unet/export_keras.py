@@ -86,6 +86,6 @@ def export_to_keras_hdf5(torch_model, path, dropout=0.1):
 
 
 def export_to_keras(torch_model, path, dropout=0.1):
-    """Native Keras 3 format (path should end in .keras)."""
+    """Native Keras single-file format (path should end in .keras)."""
     _build_and_transfer(torch_model, dropout).save(path)
     return path

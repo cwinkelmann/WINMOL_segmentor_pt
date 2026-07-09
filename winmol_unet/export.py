@@ -37,5 +37,5 @@ def export_to_onnx(model, path):
 
 def export_to_pt(model, path):
     """Save the trained PyTorch weights (state_dict); reload into UNet().load_state_dict()."""
-    torch.save(model.state_dict(), path)
+    torch.save(model.eval().state_dict(), path)   # eval() for consistency with other exporters
     return path

@@ -30,7 +30,11 @@ def run_training(cfg):
     val_metrics = evaluate(model, val_loader)   # on training device
 
     model.cpu()                                 # exporters read weights via CPU numpy
-    os.makedirs(os.path.dirname(cfg.hdf5_out) or ".", exist_ok=True)
+    # Create the directory of every configured output (they may differ), so a
+    # split path can't FileNotFoundError mid-export and skip the always-on formats.
+    for p in (cfg.pt_out, cfg.hdf5_out, cfg.keras_out, cfg.onnx_out):
+        if p:
+            os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
     if cfg.pt_out:
         export_to_pt(model, cfg.pt_out)
     export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)

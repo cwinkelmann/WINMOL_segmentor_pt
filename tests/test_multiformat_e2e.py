@@ -26,14 +26,17 @@ def test_cli_derives_all_four_paths():
 
 def test_run_training_writes_all_four(tmp_path):
     _make_ds(tmp_path)
-    out = tmp_path / "out"
+    # Deliberately split output dirs: pt/keras land in nonexistent subdirs that
+    # differ from hdf5/onnx, so run_training must create each independently (a
+    # regression guard — a single hdf5-only makedirs would FileNotFoundError here).
+    pt_dir, hdf5_dir = tmp_path / "pt", tmp_path / "hdf5"
     cfg = TrainConfig(
         data_dir=str(tmp_path), checkpoint_dir=str(tmp_path / "ck"),
         log_dir=str(tmp_path / "log"),
-        pt_out=str(out / "m.pt"), hdf5_out=str(out / "m.hdf5"),
-        keras_out=str(out / "m.keras"), onnx_out=str(out / "m.onnx"),
+        pt_out=str(pt_dir / "m.pt"), keras_out=str(pt_dir / "m.keras"),
+        hdf5_out=str(hdf5_dir / "m.hdf5"), onnx_out=str(hdf5_dir / "m.onnx"),
         epochs=1, batch_size=2, patience=999, device="cpu",
     )
     run_training(cfg)
-    for f in ("m.pt", "m.hdf5", "m.keras", "m.onnx"):
-        assert os.path.exists(out / f), f"missing {f}"
+    for p in (pt_dir / "m.pt", pt_dir / "m.keras", hdf5_dir / "m.hdf5", hdf5_dir / "m.onnx"):
+        assert os.path.exists(p), f"missing {p}"
