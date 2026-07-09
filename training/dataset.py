@@ -37,6 +37,7 @@ class StemDataset(Dataset):
         self.augment = augment
         self.ids = ids if ids is not None else _paired_ids(image_dir, mask_dir)
         self._rng = random.Random(seed)
+        self._cache = {}   # n -> (resized image CHW, resized mask 1HW), pre-augmentation
 
     def __len__(self):
         return len(self.ids)
@@ -57,7 +58,12 @@ class StemDataset(Dataset):
 
     def __getitem__(self, i):
         n = self.ids[i]
-        img, mask = self._load_image(n), self._load_mask(n)
+        # The resize (skimage bicubic 313->512) is the expensive, deterministic part
+        # of loading. Cache it once; per-epoch cost is then just cheap augmentation.
+        if n not in self._cache:
+            self._cache[n] = (self._load_image(n), self._load_mask(n))
+        img, mask = self._cache[n]
+        img, mask = img.clone(), mask.clone()   # never mutate the cached tensors
         if self.augment:
             if self._rng.random() < 0.5:                       # horizontal flip (paired)
                 img, mask = TF.hflip(img), TF.hflip(mask)
