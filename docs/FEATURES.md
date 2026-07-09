@@ -9,7 +9,7 @@ a classic UNET sucks, it is ancient. Try another semantic segmentation. model, e
 
 
 ### use online augmentations instead of pre-computed augmentations
-online augmentations are more flexible and can generate a wider variety of training samples. this can help. Use kornia and the newest albumentations library for online augmentations. The augmentations should be applied on-the-fly during training, and the user should be able to specify the types of augmentations (e.g., rotation, flipping, color jitter) and their probabilities via command line arguments or a config file.
+online augmentations are more flexible and can generate a wider variety of training samples. this can help. Use the newest albumentations library for online augmentations. The augmentations should be applied on-the-fly during training, and the user should be able to specify the types of augmentations (e.g., rotation, flipping, color jitter) and their probabilities via command line arguments or a config file.
 
 
 ### save models as keras format
@@ -38,4 +38,8 @@ Currently the implemetatnion works using a weird Skelektonisation technique. Ins
 
 
 ### Training data simulator
-training data should be generated.
+training data should be generated, create low contrast greenish backgrounds and past blurry cylinders on it. It does not have to be that realistic, but it should be good enough to train a model. The simulator should allow the user to specify parameters such as the number of stems, their size, orientation, and occlusion level. The generated dataset should be saved in a format compatible with the training pipeline. For mask, each mask should have metadata
+
+
+### Github testing and CI/CD
+the project should have a robust testing framework in place to ensure code quality and reliability. This includes unit tests, integration tests, and end-to-end tests. The tests should cover various aspects of the codebase, including data preprocessing, model training, and evaluation. Additionally, a CI/CD pipeline should be set up to automatically run tests on code changes, build the project and run it in github
