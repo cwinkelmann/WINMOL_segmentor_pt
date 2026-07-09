@@ -33,6 +33,9 @@ class TrainConfig:
     aug_hsv_p: float = 0.5
     keras_out: Optional[str] = None
     pt_out: Optional[str] = None
+    arch: str = "unet"                       # unet | deeplabv3plus | hrnet
+    encoder: str = "resnet34"                # smp encoder (deeplabv3plus)
+    encoder_weights: Optional[str] = None    # None (no download) or "imagenet"
 
     @property
     def image_dir(self) -> str:
