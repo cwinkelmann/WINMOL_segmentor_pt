@@ -1,22 +1,36 @@
-"""Mean loss + hard-rounded metrics over a loader (no grad)."""
+"""Mean loss + hard-rounded metrics over a loader (no grad).
+
+Metrics are micro-averaged: tp/fp/fn are accumulated globally across the whole
+loader and P/R/F1 computed once, so a partial final batch is not over-weighted.
+Loss is sample-weighted by batch size for the same reason.
+"""
 import torch
 
 from .losses import bce_soft_f1_loss
-from .metrics import precision, recall, f1
+from .metrics import counts, prf
 
 
 @torch.no_grad()
 def evaluate(model, loader):
     model.eval()
     device = next(model.parameters()).device
-    tot = {"loss": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
-    n = 0
+    tp = fp = fn = 0.0
+    loss_sum = 0.0
+    n_samples = 0
     for img, mask in loader:
         img, mask = img.to(device), mask.to(device)
         logits = model(img)
-        tot["loss"] += bce_soft_f1_loss(logits, mask).item()
-        tot["precision"] += precision(logits, mask)
-        tot["recall"] += recall(logits, mask)
-        tot["f1"] += f1(logits, mask)
-        n += 1
-    return {k: (v / n if n else 0.0) for k, v in tot.items()}
+        bs = img.shape[0]
+        loss_sum += bce_soft_f1_loss(logits, mask).item() * bs
+        b_tp, b_fp, b_fn = counts(logits, mask)
+        tp += b_tp
+        fp += b_fp
+        fn += b_fn
+        n_samples += bs
+    p, r, f = prf(tp, fp, fn)
+    return {
+        "loss": loss_sum / n_samples if n_samples else 0.0,
+        "precision": p,
+        "recall": r,
+        "f1": f,
+    }

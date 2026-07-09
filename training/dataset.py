@@ -30,6 +30,17 @@ def _paired_ids(image_dir, mask_dir):
 
 
 class StemDataset(Dataset):
+    """Paired jpeg-image / gif-mask dataset, resized to img_size and cached.
+
+    The resized (pre-augmentation) tensors are held in an unbounded in-memory
+    cache (~4 MB per pair) so the skimage resize runs once per sample instead of
+    every epoch. This ONLY helps with ``DataLoader(num_workers=0)`` (the default
+    used here): with worker processes the cache lives per-worker and is discarded
+    when workers respawn each epoch, giving no benefit and duplicating RAM. Keep
+    ``num_workers=0`` unless you also set ``persistent_workers=True``, and mind
+    the memory footprint (≈ 4 MB × dataset size) for very large datasets.
+    """
+
     def __init__(self, image_dir, mask_dir, img_size=512, augment=False, seed=1, ids=None):
         self.image_dir = image_dir
         self.mask_dir = mask_dir

@@ -19,8 +19,10 @@ def run_training(cfg):
     torch.manual_seed(cfg.seed)
     train_ds, val_ds = train_val_split(
         cfg.image_dir, cfg.mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size)
-    train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=cfg.batch_size)
+    # num_workers=0 is required for StemDataset's resize cache to persist across
+    # epochs (see StemDataset docstring); do not raise it without persistent_workers.
+    train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, num_workers=0)
 
     model = UNet(dropout=cfg.dropout)
     train_one_run(model, train_loader, val_loader, cfg)
