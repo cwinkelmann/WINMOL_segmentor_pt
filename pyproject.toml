@@ -16,11 +16,11 @@ dependencies = [
 [project.optional-dependencies]
 torch = ["torch>=2.0"]
 keras = ["tensorflow>=2.13"]
-train = ["torch>=2.0", "pillow>=9", "albumentations>=1.3", "tensorboard>=2.10"]
+train = ["torch>=2.0", "torchvision>=0.15", "pillow>=9", "tensorboard>=2.10"]
 dev = ["pytest>=7"]
 
 [tool.setuptools]
-packages = ["winmol_unet"]
+packages = ["winmol_unet", "training"]
 
 [tool.pytest.ini_options]
 filterwarnings = [
