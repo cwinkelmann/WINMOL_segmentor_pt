@@ -23,6 +23,14 @@ class TrainConfig:
     wandb: bool = False
     wandb_project: Optional[str] = None
     wandb_run_name: Optional[str] = None
+    aug_hflip_p: float = 0.5
+    aug_vflip_p: float = 0.5
+    aug_rotate_p: float = 0.0
+    aug_rotate_limit: float = 15.0
+    aug_bc_p: float = 0.5
+    aug_brightness_limit: float = 0.2
+    aug_contrast_limit: float = 0.2
+    aug_hsv_p: float = 0.5
     keras_out: Optional[str] = None
     pt_out: Optional[str] = None
 
