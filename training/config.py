@@ -23,6 +23,8 @@ class TrainConfig:
     wandb: bool = False
     wandb_project: Optional[str] = None
     wandb_run_name: Optional[str] = None
+    keras_out: Optional[str] = None
+    pt_out: Optional[str] = None
 
     @property
     def image_dir(self) -> str:

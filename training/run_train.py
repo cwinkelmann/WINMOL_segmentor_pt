@@ -5,8 +5,8 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
-from winmol_unet.export import export_to_onnx
-from winmol_unet.export_keras import export_to_keras_hdf5
+from winmol_unet.export import export_to_onnx, export_to_pt
+from winmol_unet.export_keras import export_to_keras, export_to_keras_hdf5
 from winmol_unet.model import UNet
 
 from .config import TrainConfig
@@ -31,7 +31,11 @@ def run_training(cfg):
 
     model.cpu()                                 # exporters read weights via CPU numpy
     os.makedirs(os.path.dirname(cfg.hdf5_out) or ".", exist_ok=True)
+    if cfg.pt_out:
+        export_to_pt(model, cfg.pt_out)
     export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
+    if cfg.keras_out:
+        export_to_keras(model, cfg.keras_out, dropout=cfg.dropout)
     export_to_onnx(model, cfg.onnx_out)
 
     return val_metrics
@@ -52,7 +56,9 @@ def config_from_args(argv=None):
         data_dir=a.data_dir,
         checkpoint_dir=os.path.join(a.out_dir, "checkpoints"),
         log_dir=os.path.join(a.out_dir, "logs"),
+        pt_out=os.path.join(a.out_dir, "model.pt"),
         hdf5_out=os.path.join(a.out_dir, "model.hdf5"),
+        keras_out=os.path.join(a.out_dir, "model.keras"),
         onnx_out=os.path.join(a.out_dir, "model.onnx"),
         epochs=a.epochs, batch_size=a.batch_size, device=a.device,
         wandb=a.wandb, wandb_project=a.wandb_project, wandb_run_name=a.wandb_run_name,
