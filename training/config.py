@@ -38,6 +38,10 @@ class TrainConfig:
     encoder_weights: Optional[str] = None    # None (no download) or "imagenet"
     cache_dataset: bool = True               # in-memory resize cache; off for large sets
     num_workers: int = 0                     # DataLoader workers (>0 only with cache off)
+    gen_data_dir: Optional[str] = None       # two-stage: stage-1 general dataset
+    spec_data_dir: Optional[str] = None      # two-stage: stage-2 species fine-tune dataset
+    patience_stage1: int = 3                 # early-stop patience, stage 1 (R value)
+    patience_stage2: int = 5                 # early-stop patience, stage 2 (R value)
 
     @property
     def image_dir(self) -> str:
@@ -46,3 +50,19 @@ class TrainConfig:
     @property
     def mask_dir(self) -> str:
         return os.path.join(self.data_dir, "mask")
+
+    @property
+    def gen_image_dir(self) -> str:
+        return os.path.join(self.gen_data_dir, "train")
+
+    @property
+    def gen_mask_dir(self) -> str:
+        return os.path.join(self.gen_data_dir, "mask")
+
+    @property
+    def spec_image_dir(self) -> str:
+        return os.path.join(self.spec_data_dir, "train")
+
+    @property
+    def spec_mask_dir(self) -> str:
+        return os.path.join(self.spec_data_dir, "mask")

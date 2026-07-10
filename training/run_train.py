@@ -1,4 +1,8 @@
-"""CLI: train on one dataset, export HDF5 (analyzer drop-in) + ONNX."""
+"""CLI: single-stage or two-stage (GenDS -> SpecDS) training + export.
+
+Single-stage: --data-dir. Two-stage fine-tune: --gen-data-dir + --spec-data-dir
+(stage 1 on the general set, stage 2 fine-tunes the SAME model on the species set).
+"""
 import argparse
 import os
 
@@ -16,31 +20,22 @@ from .model_factory import build_model
 from .train import train_one_run
 
 
-def run_training(cfg):
-    torch.manual_seed(cfg.seed)
-    transform = build_augmentation(cfg)       # seeded internally via cfg.seed (reproducible)
+def _build_loaders(image_dir, mask_dir, cfg, transform):
     train_ds, val_ds = train_val_split(
-        cfg.image_dir, cfg.mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
-        transform=transform)
-    # num_workers=0 is required for StemDataset's resize cache to persist across
-    # epochs (see StemDataset docstring); do not raise it without persistent_workers.
-    # drop_last avoids a trailing batch of 1, which breaks BatchNorm in architectures
-    # whose forward reduces to [N,C,1,1] (e.g. DeepLabV3+ ASPP global pooling) — but only
-    # when there is more than one batch's worth, so a tiny train set isn't zeroed out.
+        image_dir, mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
+        transform=transform, cache=cfg.cache_dataset)
+    # drop_last avoids a trailing batch of 1 (breaks BatchNorm in DeepLabV3+ ASPP
+    # [N,C,1,1]) — only when there is more than one batch's worth, so a tiny set
+    # isn't zeroed out. num_workers>0 is only safe with cache_dataset=False.
     drop_last = len(train_ds) > cfg.batch_size
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
-                              num_workers=0, drop_last=drop_last)
-    val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, num_workers=0)
+                              num_workers=cfg.num_workers, drop_last=drop_last)
+    val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
+    return train_loader, val_loader
 
-    model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
-                        encoder_weights=cfg.encoder_weights)
-    train_one_run(model, train_loader, val_loader, cfg)
 
-    val_metrics = evaluate(model, val_loader)   # on training device
-
+def _export(model, cfg):
     model.cpu()                                 # exporters read weights via CPU numpy
-    # Create the directory of every configured output (they may differ), so a
-    # split path can't FileNotFoundError mid-export and skip the always-on formats.
     for p in (cfg.pt_out, cfg.hdf5_out, cfg.keras_out, cfg.onnx_out):
         if p:
             os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
@@ -53,16 +48,54 @@ def run_training(cfg):
             export_to_keras(model, cfg.keras_out, dropout=cfg.dropout)
     export_to_onnx(model, cfg.onnx_out)
 
+
+def run_training(cfg):
+    torch.manual_seed(cfg.seed)
+    transform = build_augmentation(cfg)         # seeded internally via cfg.seed
+    train_loader, val_loader = _build_loaders(cfg.image_dir, cfg.mask_dir, cfg, transform)
+    model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
+                        encoder_weights=cfg.encoder_weights)
+    train_one_run(model, train_loader, val_loader, cfg)
+    val_metrics = evaluate(model, val_loader)   # on training device
+    _export(model, cfg)
+    return val_metrics
+
+
+def run_two_stage(cfg):
+    """Two-stage fine-tune: train on GenDS (stage 1), then fine-tune the same model
+    on SpecDS (stage 2). Final metrics + export come from the stage-2 (species) model."""
+    torch.manual_seed(cfg.seed)
+    transform = build_augmentation(cfg)
+    model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
+                        encoder_weights=cfg.encoder_weights)
+
+    gen_train, gen_val = _build_loaders(cfg.gen_image_dir, cfg.gen_mask_dir, cfg, transform)
+    train_one_run(model, gen_train, gen_val, cfg, patience=cfg.patience_stage1,
+                  ckpt_name="best_stage1.pt", log_dir=os.path.join(cfg.log_dir, "stage1"))
+
+    spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform)
+    train_one_run(model, spec_train, spec_val, cfg, patience=cfg.patience_stage2,
+                  ckpt_name="best_stage2.pt", log_dir=os.path.join(cfg.log_dir, "stage2"))
+
+    val_metrics = evaluate(model, spec_val)     # final = species val split
+    _export(model, cfg)
     return val_metrics
 
 
 def config_from_args(argv=None):
     p = argparse.ArgumentParser()
-    p.add_argument("--data-dir", required=True)
+    p.add_argument("--data-dir", default=None, help="single-stage dataset dir")
+    p.add_argument("--gen-data-dir", default=None, help="two-stage: general (stage 1) dir")
+    p.add_argument("--spec-data-dir", default=None, help="two-stage: species (stage 2) dir")
     p.add_argument("--out-dir", default="output")
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--device", default="auto", help="auto|mps|cuda|cpu")
+    p.add_argument("--patience-stage1", type=int, default=3)
+    p.add_argument("--patience-stage2", type=int, default=5)
+    p.add_argument("--cache-dataset", dest="cache_dataset", action="store_true", default=True)
+    p.add_argument("--no-cache-dataset", dest="cache_dataset", action="store_false")
+    p.add_argument("--num-workers", type=int, default=0)
     p.add_argument("--wandb", action="store_true", help="enable Weights & Biases logging")
     p.add_argument("--wandb-project", default=None)
     p.add_argument("--wandb-run-name", default=None)
@@ -78,8 +111,12 @@ def config_from_args(argv=None):
     p.add_argument("--encoder", default="resnet34", help="smp encoder (deeplabv3plus)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     a = p.parse_args(argv)
+    two_stage = a.gen_data_dir and a.spec_data_dir
+    if not a.data_dir and not two_stage:
+        p.error("provide --data-dir (single-stage) or both --gen-data-dir and --spec-data-dir")
     return TrainConfig(
-        data_dir=a.data_dir,
+        data_dir=a.data_dir or "",
+        gen_data_dir=a.gen_data_dir, spec_data_dir=a.spec_data_dir,
         checkpoint_dir=os.path.join(a.out_dir, "checkpoints"),
         log_dir=os.path.join(a.out_dir, "logs"),
         pt_out=os.path.join(a.out_dir, "model.pt"),
@@ -87,6 +124,8 @@ def config_from_args(argv=None):
         keras_out=os.path.join(a.out_dir, "model.keras"),
         onnx_out=os.path.join(a.out_dir, "model.onnx"),
         epochs=a.epochs, batch_size=a.batch_size, device=a.device,
+        patience_stage1=a.patience_stage1, patience_stage2=a.patience_stage2,
+        cache_dataset=a.cache_dataset, num_workers=a.num_workers,
         wandb=a.wandb, wandb_project=a.wandb_project, wandb_run_name=a.wandb_run_name,
         aug_hflip_p=a.aug_hflip_p, aug_vflip_p=a.aug_vflip_p,
         aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
@@ -97,7 +136,9 @@ def config_from_args(argv=None):
 
 
 def main():
-    print(run_training(config_from_args()))
+    cfg = config_from_args()
+    result = run_two_stage(cfg) if (cfg.gen_data_dir and cfg.spec_data_dir) else run_training(cfg)
+    print(result)
 
 
 if __name__ == "__main__":
