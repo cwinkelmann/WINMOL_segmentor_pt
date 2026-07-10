@@ -36,6 +36,8 @@ class TrainConfig:
     arch: str = "unet"                       # unet | deeplabv3plus | hrnet
     encoder: str = "resnet34"                # smp encoder (deeplabv3plus)
     encoder_weights: Optional[str] = None    # None (no download) or "imagenet"
+    cache_dataset: bool = True               # in-memory resize cache; off for large sets
+    num_workers: int = 0                     # DataLoader workers (>0 only with cache off)
 
     @property
     def image_dir(self) -> str:
