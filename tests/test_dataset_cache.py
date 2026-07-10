@@ -29,3 +29,20 @@ def test_cache_off_matches_cache_on_and_stores_nothing(tmp_path):
     _ = uncached[0]; _ = uncached[1]
     assert uncached._cache == {}                          # nothing cached when off
     assert cached._cache != {}                            # cached when on
+
+
+def test_loader_with_workers_and_transform(tmp_path):
+    # num_workers>0 + an albumentations transform must work (Compose picklable under
+    # spawn; per-worker reseed via run_train._worker_init). Locks the large-dataset path.
+    import albumentations as A
+    from torch.utils.data import DataLoader
+    from training.run_train import _worker_init
+    img_dir, mask_dir = tmp_path / "train", tmp_path / "mask"
+    for n in range(1, 5):
+        _pair(img_dir, mask_dir, n)
+    ds = StemDataset(str(img_dir), str(mask_dir), transform=A.Compose([A.HorizontalFlip(p=0.5)], seed=1),
+                     cache=False)
+    loader = DataLoader(ds, batch_size=2, num_workers=2, worker_init_fn=_worker_init)
+    batches = [b for b in loader]
+    assert len(batches) == 2
+    assert batches[0][0].shape == (2, 3, 512, 512)

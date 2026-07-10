@@ -47,3 +47,14 @@ def test_build_dataset_renames_pairs_and_binarizes(tmp_path):
     # source untouched
     assert any("SKY" in n for n in os.listdir(src / "train"))
     assert Image.open(src / "mask" / "mask_42_7_SKY99.7.gif").mode == "P"
+
+
+def test_build_dataset_raises_when_no_pairs(tmp_path):
+    import pytest
+    (tmp_path / "src" / "train").mkdir(parents=True)
+    (tmp_path / "src" / "mask").mkdir(parents=True)
+    # image with an unrecognized extension -> nothing paired
+    Image.fromarray(np.zeros((8, 8, 3), np.uint8), "RGB").save(
+        tmp_path / "src" / "train" / "train_1.png")
+    with pytest.raises(ValueError, match="no paired"):
+        build_dataset(str(tmp_path / "src"), str(tmp_path / "dst"))

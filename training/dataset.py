@@ -27,10 +27,11 @@ def _paired_ids(image_dir, mask_dir):
 
 class StemDataset(Dataset):
     """Paired jpeg-image / gif-mask dataset. Resizes to img_size (bicubic image,
-    nearest mask) via winmol_unet.preprocess and caches the resized numpy arrays
-    (~4 MB/pair) so the skimage resize runs once; the optional albumentations
-    `transform` runs per __getitem__ on the cached arrays. Requires
-    DataLoader(num_workers=0) for the cache to persist across epochs.
+    nearest mask) via winmol_unet.preprocess; the optional albumentations `transform`
+    runs per __getitem__. When cache=True (default) the resized numpy arrays are kept
+    in memory (~4 MB/pair) so the skimage resize runs once — this requires
+    DataLoader(num_workers=0) to persist across epochs. For large datasets use
+    cache=False (loads per __getitem__, bounded memory) with num_workers>0.
     """
 
     def __init__(self, image_dir, mask_dir, img_size=512, transform=None, ids=None, cache=True):

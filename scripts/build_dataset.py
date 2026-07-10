@@ -6,8 +6,9 @@ key (filename minus the ``train``/``mask`` prefix and extension), and writes
 
 Masks are **binarized** (any pixel > 0 -> 255, saved as mode ``L``), so palette /
 instance masks (e.g. spruce's mode-P indices 0-157) become the binary {0,255} the
-loader (`training.dataset.StemDataset`) expects. The source is never mutated;
-already-conformant datasets convert idempotently.
+loader (`training.dataset.StemDataset`) expects. The source is never mutated. Pairs
+are numbered by sorted key, so an already-conformant set may be renumbered (pairing
+is preserved). Raises if no pairs are found.
 """
 import argparse
 import os
@@ -39,6 +40,10 @@ def build_dataset(src_dir, dst_dir):
     imgs = _index(img_src, "train", (".jpeg", ".jpg"))
     masks = _index(mask_src, "mask", (".gif",))
     keys = sorted(set(imgs) & set(masks))
+    if not keys:
+        raise ValueError(
+            f"no paired 'train*'/'mask*' files found under {src_dir} "
+            f"({len(imgs)} images, {len(masks)} masks indexed) — check names/extensions")
 
     img_dst = os.path.join(dst_dir, "train")
     mask_dst = os.path.join(dst_dir, "mask")
@@ -50,7 +55,10 @@ def build_dataset(src_dir, dst_dir):
                         os.path.join(img_dst, f"train{i}.jpeg"))
         mk = Image.open(os.path.join(mask_src, masks[key]))
         mk.seek(0)                                   # first frame
-        binary = (np.asarray(mk) > 0).astype(np.uint8) * 255
+        fg = np.asarray(mk) > 0
+        if fg.ndim == 3:                             # RGB/RGBA mask -> any channel set
+            fg = fg.any(axis=-1)
+        binary = fg.astype(np.uint8) * 255
         Image.fromarray(binary, mode="L").save(os.path.join(mask_dst, f"mask{i}.gif"))
     return len(keys)
 

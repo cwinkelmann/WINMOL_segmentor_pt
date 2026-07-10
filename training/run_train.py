@@ -5,6 +5,7 @@ Single-stage: --data-dir. Two-stage fine-tune: --gen-data-dir + --spec-data-dir
 """
 import argparse
 import os
+import warnings
 
 import torch
 from torch.utils.data import DataLoader
@@ -20,7 +21,19 @@ from .model_factory import build_model
 from .train import train_one_run
 
 
+def _worker_init(_):
+    # Reseed the albumentations transform per worker so augmentation streams are
+    # distinct across workers (its per-Compose RNG is not reached by torch's base seed).
+    info = torch.utils.data.get_worker_info()
+    tf = getattr(info.dataset, "transform", None)
+    if tf is not None:
+        tf.set_random_seed(info.seed % (2 ** 31 - 1))
+
+
 def _build_loaders(image_dir, mask_dir, cfg, transform):
+    if cfg.num_workers > 0 and cfg.cache_dataset:
+        warnings.warn("num_workers>0 with cache_dataset=True caches per-worker and discards "
+                      "it each epoch; use --no-cache-dataset for large datasets.", stacklevel=2)
     train_ds, val_ds = train_val_split(
         image_dir, mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
         transform=transform, cache=cfg.cache_dataset)
@@ -29,9 +42,19 @@ def _build_loaders(image_dir, mask_dir, cfg, transform):
     # isn't zeroed out. num_workers>0 is only safe with cache_dataset=False.
     drop_last = len(train_ds) > cfg.batch_size
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
-                              num_workers=cfg.num_workers, drop_last=drop_last)
-    val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
+                              num_workers=cfg.num_workers, drop_last=drop_last,
+                              worker_init_fn=_worker_init)
+    val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers,
+                            worker_init_fn=_worker_init)
     return train_loader, val_loader
+
+
+def _validate_export(cfg):
+    # Fail fast (before any training) rather than after a full run.
+    if cfg.export_keras and cfg.arch != "unet":
+        raise ValueError(
+            f"--export-keras is UNet-only (the Keras mirror is UNet-specific); "
+            f"arch={cfg.arch!r} exports ONNX + .pt")
 
 
 def _export(model, cfg):
@@ -42,13 +65,8 @@ def _export(model, cfg):
     if cfg.pt_out:
         export_to_pt(model, cfg.pt_out)
     # ONNX is the uniform path — every architecture loads the same way via OnnxSegmenter.
-    # The Keras .hdf5/.keras mirror is UNet-specific and opt-in (--export-keras) for the
-    # unmodified-analyzer drop-in.
+    # The Keras .hdf5/.keras mirror is UNet-specific and opt-in (validated upfront).
     if cfg.export_keras:
-        if cfg.arch != "unet":
-            raise ValueError(
-                f"--export-keras is UNet-only (the Keras mirror is UNet-specific); "
-                f"arch={cfg.arch!r} exports ONNX + .pt")
         export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
         if cfg.keras_out:
             export_to_keras(model, cfg.keras_out, dropout=cfg.dropout)
@@ -56,6 +74,7 @@ def _export(model, cfg):
 
 
 def run_training(cfg):
+    _validate_export(cfg)                        # fail fast before training
     torch.manual_seed(cfg.seed)
     transform = build_augmentation(cfg)         # seeded internally via cfg.seed
     train_loader, val_loader = _build_loaders(cfg.image_dir, cfg.mask_dir, cfg, transform)
@@ -70,6 +89,7 @@ def run_training(cfg):
 def run_two_stage(cfg):
     """Two-stage fine-tune: train on GenDS (stage 1), then fine-tune the same model
     on SpecDS (stage 2). Final metrics + export come from the stage-2 (species) model."""
+    _validate_export(cfg)                        # fail fast before either stage
     torch.manual_seed(cfg.seed)
     transform = build_augmentation(cfg)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
