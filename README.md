@@ -68,6 +68,20 @@ python scripts/build_dataset.py --src /path/to/raw --dst /path/to/ready
 It pairs by shared key, renames to sequential `train{i}`/`mask{i}`, and binarizes masks
 (any pixel > 0 → foreground). Source is never mutated.
 
+**Fixed train/val split** — by default training does a deterministic 80/20 split of
+`--data-dir` (`--val-fraction`/`--seed`). To pin an explicit, shareable held-out set (e.g.
+so PyTorch and R evaluate on the same tiles), materialize it once and train against it:
+
+```bash
+python scripts/split_dataset.py --src /path/to/ready --dst /path/to/split   # -> split/{train,val}
+python -m training.run_train --data-dir /path/to/split/train \
+  --val-data-dir /path/to/split/val --arch deeplabv3plus ...
+```
+
+With `--val-data-dir`, training uses **all** of `--data-dir` for training and the given dir
+for validation (no re-splitting). The materialized `val/` matches `train_val_split` for the
+same fraction+seed.
+
 **Large datasets** — the resize cache is ~4 MB/pair; for thousands of pairs pass
 `--no-cache-dataset --num-workers 4` (loads per batch with parallel workers instead of
 caching, avoiding out-of-memory).
