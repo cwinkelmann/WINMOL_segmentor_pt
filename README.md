@@ -31,9 +31,10 @@ This trains the U-Net (single stage, deterministic 80/20 train/val split) with o
 **Architecture** — `--arch {unet,deeplabv3plus,hrnet}` (default `unet`). `deeplabv3plus`
 and `hrnet` use [segmentation-models-pytorch](https://github.com/qubvel-org/segmentation_models.pytorch);
 tune `--encoder` (default `resnet34`, for `deeplabv3plus`) and `--encoder-weights`
-(`None`, or `imagenet` for a pretrained encoder — needs network). Any architecture exports
-a contract-conformant `.onnx` (+ `.pt`); the Keras `.hdf5`/`.keras` mirror is UNet-specific,
-so **non-UNet models export ONNX + `.pt` only**. Example:
+(`None`, or `imagenet` for a pretrained encoder — needs network). **Every** architecture
+(incl. UNet) exports a contract-conformant `.onnx` (+ `.pt`) by default, so all models load
+the same way via `OnnxSegmenter`. The Keras `.hdf5`/`.keras` mirror is UNet-specific and
+opt-in with `--export-keras` (for the unmodified-analyzer drop-in). Example:
 
 ```bash
 python -m training.run_train --data-dir /path/to/TestDS --out-dir output/deeplab \

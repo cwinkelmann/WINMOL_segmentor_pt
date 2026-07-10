@@ -35,7 +35,7 @@ def test_run_training_writes_all_four(tmp_path):
         log_dir=str(tmp_path / "log"),
         pt_out=str(pt_dir / "m.pt"), keras_out=str(pt_dir / "m.keras"),
         hdf5_out=str(hdf5_dir / "m.hdf5"), onnx_out=str(hdf5_dir / "m.onnx"),
-        epochs=1, batch_size=2, patience=999, device="cpu",
+        epochs=1, batch_size=2, patience=999, device="cpu", export_keras=True,
     )
     run_training(cfg)
     for p in (pt_dir / "m.pt", pt_dir / "m.keras", hdf5_dir / "m.hdf5", hdf5_dir / "m.onnx"):

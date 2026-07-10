@@ -41,8 +41,14 @@ def _export(model, cfg):
             os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
     if cfg.pt_out:
         export_to_pt(model, cfg.pt_out)
-    # The Keras HDF5/.keras mirror is UNet-specific; non-UNet models are ONNX-only.
-    if cfg.arch == "unet":
+    # ONNX is the uniform path — every architecture loads the same way via OnnxSegmenter.
+    # The Keras .hdf5/.keras mirror is UNet-specific and opt-in (--export-keras) for the
+    # unmodified-analyzer drop-in.
+    if cfg.export_keras:
+        if cfg.arch != "unet":
+            raise ValueError(
+                f"--export-keras is UNet-only (the Keras mirror is UNet-specific); "
+                f"arch={cfg.arch!r} exports ONNX + .pt")
         export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
         if cfg.keras_out:
             export_to_keras(model, cfg.keras_out, dropout=cfg.dropout)
@@ -110,6 +116,8 @@ def config_from_args(argv=None):
     p.add_argument("--arch", default="unet", help="unet|deeplabv3plus|hrnet")
     p.add_argument("--encoder", default="resnet34", help="smp encoder (deeplabv3plus)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
+    p.add_argument("--export-keras", action="store_true",
+                   help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
     a = p.parse_args(argv)
     two_stage = a.gen_data_dir and a.spec_data_dir
     if not a.data_dir and not two_stage:
@@ -132,6 +140,7 @@ def config_from_args(argv=None):
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
         arch=a.arch, encoder=a.encoder, encoder_weights=a.encoder_weights,
+        export_keras=a.export_keras,
     )
 
 
