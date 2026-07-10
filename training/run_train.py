@@ -80,6 +80,34 @@ def _export(model, cfg):
     export_to_onnx(model, cfg.onnx_out)
 
 
+def _run_test(model, cfg):
+    """R cost_eval: evaluate the trained model on a held-out TestDS (no augmentation).
+    Prints, logs to TensorBoard, and writes test_results.md. Returns metrics or None."""
+    if not cfg.test_data_dir:
+        return None
+    from torch.utils.tensorboard import SummaryWriter
+    test_ds = StemDataset(os.path.join(cfg.test_data_dir, "train"),
+                          os.path.join(cfg.test_data_dir, "mask"),
+                          cfg.img_size, transform=None, cache=cfg.cache_dataset)
+    test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
+    m = evaluate(model, test_loader)             # model on its current device (no aug)
+    writer = SummaryWriter(os.path.join(cfg.log_dir, "test"))
+    for k, v in m.items():
+        writer.add_scalar(f"test/{k}", v, 0)
+    writer.close()
+    out_dir = os.path.dirname(cfg.onnx_out) or "."
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "test_results.md"), "w") as f:
+        f.write(f"# Test results\n\n**TestDS:** `{cfg.test_data_dir}` "
+                f"({len(test_ds)} tiles) | **arch:** {cfg.arch}\n\n"
+                "| metric | value |\n|--------|------:|\n")
+        for k in ("f1", "precision", "recall", "loss"):
+            f.write(f"| {k} | {m[k]:.4f} |\n")
+    print(f"TEST ({len(test_ds)} tiles): F1={m['f1']:.4f} P={m['precision']:.4f} "
+          f"R={m['recall']:.4f} loss={m['loss']:.4f}")
+    return m
+
+
 def run_training(cfg):
     _validate_export(cfg)                        # fail fast before training
     torch.manual_seed(cfg.seed)
@@ -91,6 +119,7 @@ def run_training(cfg):
                         encoder_weights=cfg.encoder_weights)
     train_one_run(model, train_loader, val_loader, cfg)
     val_metrics = evaluate(model, val_loader)   # on training device
+    _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
     _export(model, cfg)
     return val_metrics
 
@@ -113,6 +142,7 @@ def run_two_stage(cfg):
                   ckpt_name="best_stage2.pt", log_dir=os.path.join(cfg.log_dir, "stage2"))
 
     val_metrics = evaluate(model, spec_val)     # final = species val split
+    _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
     _export(model, cfg)
     return val_metrics
 
@@ -122,6 +152,8 @@ def config_from_args(argv=None):
     p.add_argument("--data-dir", default=None, help="single-stage dataset dir")
     p.add_argument("--val-data-dir", default=None,
                    help="single-stage: fixed val set (else 80/20 split of --data-dir)")
+    p.add_argument("--test-data-dir", default=None,
+                   help="held-out test set evaluated after training (writes test_results.md)")
     p.add_argument("--gen-data-dir", default=None, help="two-stage: general (stage 1) dir")
     p.add_argument("--spec-data-dir", default=None, help="two-stage: species (stage 2) dir")
     p.add_argument("--out-dir", default="output")
@@ -155,6 +187,7 @@ def config_from_args(argv=None):
         p.error("provide --data-dir (single-stage) or both --gen-data-dir and --spec-data-dir")
     return TrainConfig(
         data_dir=a.data_dir or "", val_data_dir=a.val_data_dir,
+        test_data_dir=a.test_data_dir,
         gen_data_dir=a.gen_data_dir, spec_data_dir=a.spec_data_dir,
         checkpoint_dir=os.path.join(a.out_dir, "checkpoints"),
         log_dir=os.path.join(a.out_dir, "logs"),

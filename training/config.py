@@ -44,6 +44,7 @@ class TrainConfig:
     patience_stage1: int = 3                 # early-stop patience, stage 1 (R value)
     patience_stage2: int = 5                 # early-stop patience, stage 2 (R value)
     val_data_dir: Optional[str] = None       # single-stage: fixed val set (else 80/20 split of data_dir)
+    test_data_dir: Optional[str] = None      # held-out test set evaluated after training (R cost_eval)
 
     @property
     def image_dir(self) -> str:
