@@ -43,6 +43,7 @@ class TrainConfig:
     spec_data_dir: Optional[str] = None      # two-stage: stage-2 species fine-tune dataset
     patience_stage1: int = 3                 # early-stop patience, stage 1 (R value)
     patience_stage2: int = 5                 # early-stop patience, stage 2 (R value)
+    val_data_dir: Optional[str] = None       # single-stage: fixed val set (else 80/20 split of data_dir)
 
     @property
     def image_dir(self) -> str:
@@ -51,6 +52,14 @@ class TrainConfig:
     @property
     def mask_dir(self) -> str:
         return os.path.join(self.data_dir, "mask")
+
+    @property
+    def val_image_dir(self) -> Optional[str]:
+        return os.path.join(self.val_data_dir, "train") if self.val_data_dir else None
+
+    @property
+    def val_mask_dir(self) -> Optional[str]:
+        return os.path.join(self.val_data_dir, "mask") if self.val_data_dir else None
 
     @property
     def gen_image_dir(self) -> str:

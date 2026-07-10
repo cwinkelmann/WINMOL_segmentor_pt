@@ -15,7 +15,7 @@ from winmol_unet.export_keras import export_to_keras, export_to_keras_hdf5
 
 from .augment import build_augmentation
 from .config import TrainConfig
-from .dataset import train_val_split
+from .dataset import StemDataset, train_val_split
 from .evaluate import evaluate
 from .model_factory import build_model
 from .train import train_one_run
@@ -30,13 +30,20 @@ def _worker_init(_):
         tf.set_random_seed(info.seed % (2 ** 31 - 1))
 
 
-def _build_loaders(image_dir, mask_dir, cfg, transform):
+def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_mask_dir=None):
     if cfg.num_workers > 0 and cfg.cache_dataset:
         warnings.warn("num_workers>0 with cache_dataset=True caches per-worker and discards "
                       "it each epoch; use --no-cache-dataset for large datasets.", stacklevel=2)
-    train_ds, val_ds = train_val_split(
-        image_dir, mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
-        transform=transform, cache=cfg.cache_dataset)
+    if val_image_dir is not None:
+        # pre-materialized fixed split: train on all of image_dir, validate on the given dir
+        train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
+                               cache=cfg.cache_dataset)
+        val_ds = StemDataset(val_image_dir, val_mask_dir, cfg.img_size, transform=None,
+                             cache=cfg.cache_dataset)
+    else:
+        train_ds, val_ds = train_val_split(
+            image_dir, mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
+            transform=transform, cache=cfg.cache_dataset)
     # drop_last avoids a trailing batch of 1 (breaks BatchNorm in DeepLabV3+ ASPP
     # [N,C,1,1]) — only when there is more than one batch's worth, so a tiny set
     # isn't zeroed out. num_workers>0 is only safe with cache_dataset=False.
@@ -77,7 +84,9 @@ def run_training(cfg):
     _validate_export(cfg)                        # fail fast before training
     torch.manual_seed(cfg.seed)
     transform = build_augmentation(cfg)         # seeded internally via cfg.seed
-    train_loader, val_loader = _build_loaders(cfg.image_dir, cfg.mask_dir, cfg, transform)
+    train_loader, val_loader = _build_loaders(
+        cfg.image_dir, cfg.mask_dir, cfg, transform,
+        val_image_dir=cfg.val_image_dir, val_mask_dir=cfg.val_mask_dir)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
                         encoder_weights=cfg.encoder_weights)
     train_one_run(model, train_loader, val_loader, cfg)
@@ -111,6 +120,8 @@ def run_two_stage(cfg):
 def config_from_args(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--data-dir", default=None, help="single-stage dataset dir")
+    p.add_argument("--val-data-dir", default=None,
+                   help="single-stage: fixed val set (else 80/20 split of --data-dir)")
     p.add_argument("--gen-data-dir", default=None, help="two-stage: general (stage 1) dir")
     p.add_argument("--spec-data-dir", default=None, help="two-stage: species (stage 2) dir")
     p.add_argument("--out-dir", default="output")
@@ -143,7 +154,7 @@ def config_from_args(argv=None):
     if not a.data_dir and not two_stage:
         p.error("provide --data-dir (single-stage) or both --gen-data-dir and --spec-data-dir")
     return TrainConfig(
-        data_dir=a.data_dir or "",
+        data_dir=a.data_dir or "", val_data_dir=a.val_data_dir,
         gen_data_dir=a.gen_data_dir, spec_data_dir=a.spec_data_dir,
         checkpoint_dir=os.path.join(a.out_dir, "checkpoints"),
         log_dir=os.path.join(a.out_dir, "logs"),
