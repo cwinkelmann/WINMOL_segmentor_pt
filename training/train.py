@@ -22,6 +22,9 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
     device = resolve_device(cfg.device)
     model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    # ReduceLROnPlateau matches the R callbacks (factor 0.1, patience 2, min_delta 1e-4)
+    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        opt, mode="min", factor=0.1, patience=2, threshold=1e-4)
 
     best_val = float("inf")
     since_improve = 0
@@ -40,12 +43,14 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
             train_loss = running / nb if nb else 0.0
 
             val = evaluate(model, val_loader)
+            sched.step(val["loss"])              # reduce LR on val-loss plateau (R schedule)
             logger.log_scalars({
                 "train/loss": train_loss,
                 "val/loss": val["loss"],
                 "val/precision": val["precision"],
                 "val/recall": val["recall"],
                 "val/f1": val["f1"],
+                "lr": opt.param_groups[0]["lr"],
             }, epoch)
 
             if val["loss"] < best_val:

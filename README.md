@@ -82,6 +82,12 @@ With `--val-data-dir`, training uses **all** of `--data-dir` for training and th
 for validation (no re-splitting). The materialized `val/` matches `train_val_split` for the
 same fraction+seed.
 
+**Held-out test stage** (as in the R `cost_eval`) — pass `--test-data-dir /path/to/TestDS`
+(a `train/` + `mask/` dataset). After training (single- or two-stage), the final model is
+evaluated on it with no augmentation; precision/recall/F1 are printed, logged to TensorBoard
+(`logs/test/`), and written to `test_results.md` in `--out-dir`. Training also uses
+`ReduceLROnPlateau` (factor 0.1, patience 2) matching the R LR schedule.
+
 **Large datasets** — the resize cache is ~4 MB/pair; for thousands of pairs pass
 `--no-cache-dataset --num-workers 4` (loads per batch with parallel workers instead of
 caching, avoiding out-of-memory).

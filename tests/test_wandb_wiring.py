@@ -69,5 +69,5 @@ def test_train_calls_wandb_log_when_enabled(tmp_path, monkeypatch):
     assert len(calls) == 2                                  # one wandb.log per epoch
     scalars, step = calls[0]
     assert set(scalars) == {"train/loss", "val/loss", "val/precision",
-                            "val/recall", "val/f1"}
+                            "val/recall", "val/f1", "lr"}
     assert step == 0
