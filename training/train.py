@@ -10,10 +10,15 @@ from .losses import bce_soft_f1_loss
 from .run_logger import RunLogger
 
 
-def train_one_run(model, train_loader, val_loader, cfg):
+def train_one_run(model, train_loader, val_loader, cfg, patience=None,
+                  ckpt_name="best.pt", log_dir=None):
+    # patience/ckpt_name/log_dir default to the single-stage config; two-stage passes
+    # per-stage values so stage 2 doesn't clobber stage 1's checkpoint or TB curves.
+    patience = cfg.patience if patience is None else patience
+    log_dir = cfg.log_dir if log_dir is None else log_dir
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
-    ckpt = os.path.join(cfg.checkpoint_dir, "best.pt")
-    logger = RunLogger(cfg.log_dir, cfg.wandb, cfg.wandb_project, cfg.wandb_run_name)
+    ckpt = os.path.join(cfg.checkpoint_dir, ckpt_name)
+    logger = RunLogger(log_dir, cfg.wandb, cfg.wandb_project, cfg.wandb_run_name)
     device = resolve_device(cfg.device)
     model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
@@ -49,7 +54,7 @@ def train_one_run(model, train_loader, val_loader, cfg):
                 torch.save(model.state_dict(), ckpt)
             else:
                 since_improve += 1
-                if since_improve >= cfg.patience:
+                if since_improve >= patience:
                     break
     finally:
         logger.close()   # always flush TB + wandb.finish, even on error/early exit

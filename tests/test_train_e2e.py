@@ -25,6 +25,7 @@ def test_end_to_end_train_export_hdf5_dropin(tmp_path):
         data_dir=str(tmp_path), checkpoint_dir=str(tmp_path / "ck"),
         log_dir=str(tmp_path / "log"), hdf5_out=str(out / "m.hdf5"),
         onnx_out=str(out / "m.onnx"), epochs=2, batch_size=2, patience=999,
+        export_keras=True,     # this test exercises the UNet Keras HDF5 drop-in
     )
     metrics = run_training(cfg)
     assert set(metrics) == {"loss", "precision", "recall", "f1"}

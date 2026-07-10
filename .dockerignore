@@ -1,0 +1,16 @@
+.venv/
+.git/
+.github/
+.idea/
+.cadence/
+.superpowers/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.egg-info/
+output/
+data/
+docs/
+tests/
+*.md
+!README.md

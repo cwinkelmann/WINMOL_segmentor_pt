@@ -27,18 +27,23 @@ def _paired_ids(image_dir, mask_dir):
 
 class StemDataset(Dataset):
     """Paired jpeg-image / gif-mask dataset. Resizes to img_size (bicubic image,
-    nearest mask) via winmol_unet.preprocess and caches the resized numpy arrays
-    (~4 MB/pair) so the skimage resize runs once; the optional albumentations
-    `transform` runs per __getitem__ on the cached arrays. Requires
-    DataLoader(num_workers=0) for the cache to persist across epochs.
+    nearest mask) via winmol_unet.preprocess; the optional albumentations `transform`
+    runs per __getitem__. When cache=True (default) the resized numpy arrays are kept
+    in memory (~4 MB/pair) so the skimage resize runs once — this requires
+    DataLoader(num_workers=0) to persist across epochs. For large datasets use
+    cache=False (loads per __getitem__, bounded memory) with num_workers>0.
     """
 
-    def __init__(self, image_dir, mask_dir, img_size=512, transform=None, ids=None):
+    def __init__(self, image_dir, mask_dir, img_size=512, transform=None, ids=None, cache=True):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.img_size = img_size
         self.transform = transform   # albumentations Compose (seeded via cfg.seed) or None
         self.ids = ids if ids is not None else _paired_ids(image_dir, mask_dir)
+        # In-memory resize cache (~4 MB/pair) — fast for small sets but unbounded, so
+        # disable it for large datasets (e.g. cache=False, num_workers>0). When off,
+        # __getitem__ loads+resizes per call (bounded memory).
+        self.cache = cache
         self._cache = {}   # n -> (image HWC float32 [0,1], mask HW float32 {0,1})
 
     def __len__(self):
@@ -59,9 +64,12 @@ class StemDataset(Dataset):
 
     def __getitem__(self, i):
         n = self.ids[i]
-        if n not in self._cache:
-            self._cache[n] = (self._load_image(n), self._load_mask(n))
-        img, mask = self._cache[n]
+        if self.cache:
+            if n not in self._cache:
+                self._cache[n] = (self._load_image(n), self._load_mask(n))
+            img, mask = self._cache[n]
+        else:
+            img, mask = self._load_image(n), self._load_mask(n)
         if self.transform is not None:
             out = self.transform(image=img, mask=mask)   # albumentations returns new arrays
             img, mask = out["image"], out["mask"]
@@ -70,7 +78,8 @@ class StemDataset(Dataset):
         return img_t.float(), (mask_t >= 0.5).float()
 
 
-def train_val_split(image_dir, mask_dir, val_fraction, seed, img_size=512, transform=None):
+def train_val_split(image_dir, mask_dir, val_fraction, seed, img_size=512, transform=None,
+                    cache=True):
     ids = _paired_ids(image_dir, mask_dir)
     rng = random.Random(seed)
     shuffled = ids[:]
@@ -78,6 +87,7 @@ def train_val_split(image_dir, mask_dir, val_fraction, seed, img_size=512, trans
     n_val = max(1, int(round(len(shuffled) * val_fraction)))
     val_ids = sorted(shuffled[:n_val])
     train_ids = sorted(shuffled[n_val:])
-    train_ds = StemDataset(image_dir, mask_dir, img_size, transform=transform, ids=train_ids)
-    val_ds = StemDataset(image_dir, mask_dir, img_size, transform=None, ids=val_ids)
+    train_ds = StemDataset(image_dir, mask_dir, img_size, transform=transform, ids=train_ids,
+                           cache=cache)
+    val_ds = StemDataset(image_dir, mask_dir, img_size, transform=None, ids=val_ids, cache=cache)
     return train_ds, val_ds

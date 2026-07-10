@@ -36,4 +36,4 @@ def test_run_training_with_rotation_enabled(tmp_path):
     )
     metrics = run_training(cfg)          # exercises the full albumentations path
     assert set(metrics) == {"loss", "precision", "recall", "f1"}
-    assert os.path.exists(cfg.hdf5_out)
+    assert os.path.exists(cfg.onnx_out)  # ONNX is the uniform default export
