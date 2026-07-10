@@ -20,19 +20,35 @@ def _dim_values(tensor_type):
     return dims
 
 
+def _spatial_ok(dim):
+    # A spatial dim conforms if it is fixed 512 OR dynamic (symbolic string).
+    # Some architectures (e.g. smp HRNet, whose decoder uses a Resize op) export
+    # with symbolic spatial dims; at runtime a 512x512 input still yields 512x512
+    # output, which is all the analyzer ever feeds. A WRONG fixed size (e.g. 256)
+    # is still rejected.
+    return dim == IMG_SIZE or isinstance(dim, str)
+
+
+def _check_shape(got, channels, label):
+    if len(got) != 4:
+        raise ValueError(f"{label} must be 4D NCHW, got {got}")
+    if isinstance(got[0], int):
+        raise ValueError(f"{label} batch axis must be dynamic (symbolic), not fixed: {got}")
+    if got[1] != channels:
+        raise ValueError(f"{label} channel dim must be {channels}, got {got}")
+    if not (_spatial_ok(got[2]) and _spatial_ok(got[3])):
+        raise ValueError(f"{label} spatial dims must be {IMG_SIZE} or dynamic, got {got}")
+
+
 def validate_onnx_model(onnx_model):
-    """Raise ValueError if the model graph violates the contract."""
+    """Raise ValueError if the model graph violates the contract.
+
+    Batch axis must be dynamic; channels fixed (3 in / 1 out); spatial dims either
+    fixed 512 or dynamic (see _spatial_ok).
+    """
     graph = onnx_model.graph
     if len(graph.input) != 1 or len(graph.output) != 1:
         raise ValueError("Contract requires exactly one input and one output")
 
-    got_in = _dim_values(graph.input[0].type.tensor_type)
-    got_out = _dim_values(graph.output[0].type.tensor_type)
-
-    # spatial + channel dims must match; batch dim must be symbolic (dynamic)
-    if got_in[1:] != [IN_CHANNELS, IMG_SIZE, IMG_SIZE]:
-        raise ValueError(f"Input shape {got_in} violates contract {INPUT_SHAPE}")
-    if got_out[1:] != [OUT_CHANNELS, IMG_SIZE, IMG_SIZE]:
-        raise ValueError(f"Output shape {got_out} violates contract {OUTPUT_SHAPE}")
-    if isinstance(got_in[0], int) or isinstance(got_out[0], int):
-        raise ValueError("Batch axis must be dynamic (symbolic), not fixed")
+    _check_shape(_dim_values(graph.input[0].type.tensor_type), IN_CHANNELS, "Input")
+    _check_shape(_dim_values(graph.output[0].type.tensor_type), OUT_CHANNELS, "Output")
