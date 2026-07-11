@@ -21,9 +21,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1
 
-# Runtime libs for opencv (pulled by albumentations)
+# Runtime libs for opencv (pulled by albumentations) + a C/C++ toolchain: the
+# albumentations>=2.0 -> albucore -> stringzilla chain ships stringzilla as a
+# source-only sdist (no wheel for the base image's cpython), so it must compile.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libglib2.0-0 && \
+    apt-get install -y --no-install-recommends libglib2.0-0 build-essential && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

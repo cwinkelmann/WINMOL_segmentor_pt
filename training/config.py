@@ -31,6 +31,11 @@ class TrainConfig:
     aug_brightness_limit: float = 0.2
     aug_contrast_limit: float = 0.2
     aug_hsv_p: float = 0.5
+    # HueSaturationValue magnitudes (albumentations defaults; the benchmark lowers
+    # them to mirror the R input_pipeline.R random_hue/random_saturation ranges).
+    aug_hue_shift: int = 20
+    aug_sat_shift: int = 30
+    aug_val_shift: int = 20
     keras_out: Optional[str] = None
     pt_out: Optional[str] = None
     arch: str = "unet"                       # unet | deeplabv3plus | hrnet

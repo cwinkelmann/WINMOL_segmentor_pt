@@ -11,9 +11,12 @@ from .run_logger import RunLogger
 
 
 def train_one_run(model, train_loader, val_loader, cfg, patience=None,
-                  ckpt_name="best.pt", log_dir=None):
+                  ckpt_name="best.pt", log_dir=None, optimizer=None):
     # patience/ckpt_name/log_dir default to the single-stage config; two-stage passes
     # per-stage values so stage 2 doesn't clobber stage 1's checkpoint or TB curves.
+    # optimizer: pass a shared optimizer to CARRY its state (and decayed lr) across stages,
+    # mirroring the R pipeline which compiles one optimizer once for both cost_train stages.
+    # When None (single-stage) a fresh Adam is created.
     patience = cfg.patience if patience is None else patience
     log_dir = cfg.log_dir if log_dir is None else log_dir
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
@@ -21,8 +24,9 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
     logger = RunLogger(log_dir, cfg.wandb, cfg.wandb_project, cfg.wandb_run_name)
     device = resolve_device(cfg.device)
     model.to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
-    # ReduceLROnPlateau matches the R callbacks (factor 0.1, patience 2, min_delta 1e-4)
+    opt = optimizer if optimizer is not None else torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    # Fresh ReduceLROnPlateau per stage (matches R's fresh callbacks_train1/2), but it reads
+    # and writes the shared optimizer's lr, so a decayed lr carries into the next stage.
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(
         opt, mode="min", factor=0.1, patience=2, threshold=1e-4)
 

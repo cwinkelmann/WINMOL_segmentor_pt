@@ -24,5 +24,7 @@ def build_augmentation(cfg):
             brightness_limit=cfg.aug_brightness_limit,
             contrast_limit=cfg.aug_contrast_limit, p=cfg.aug_bc_p))
     if cfg.aug_hsv_p > 0:
-        transforms.append(A.HueSaturationValue(p=cfg.aug_hsv_p))
+        transforms.append(A.HueSaturationValue(
+            hue_shift_limit=cfg.aug_hue_shift, sat_shift_limit=cfg.aug_sat_shift,
+            val_shift_limit=cfg.aug_val_shift, p=cfg.aug_hsv_p))
     return A.Compose(transforms, seed=cfg.seed)   # seed the Compose (global numpy seed is ignored)
