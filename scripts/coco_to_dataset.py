@@ -6,7 +6,8 @@ For each sampled image: the source image is converted to RGB and saved as
 ``<dst>/train/train{i}.jpeg``; a **binary** mask (union of all category polygons -> 255)
 is rasterized and saved as ``<dst>/mask/mask{i}.gif``. Segmentations must be polygons
 (rasterized with PIL) — RLE is not supported (raises). By default only images with at
-least one annotation are sampled (so masks are non-empty). Deterministic given --seed.
+least one annotation are sampled (so masks are non-empty). Images whose file is missing on
+disk are skipped (some COCO splits reference never-shipped images). Deterministic given --seed.
 
 Usage:
   python scripts/coco_to_dataset.py \
@@ -21,7 +22,8 @@ import random
 from PIL import Image, ImageDraw
 
 
-def coco_to_dataset(coco_json, images_dir, dst, limit=100, seed=1, require_annotations=True):
+def coco_to_dataset(coco_json, images_dir, dst, limit=100, seed=1, require_annotations=True,
+                    quality=95):
     coco = json.load(open(coco_json))
     id2file = {im["id"]: im["file_name"] for im in coco["images"]}
     id2size = {im["id"]: (im["width"], im["height"]) for im in coco["images"]}
@@ -29,7 +31,12 @@ def coco_to_dataset(coco_json, images_dir, dst, limit=100, seed=1, require_annot
     for a in coco["annotations"]:
         anns_by_img.setdefault(a["image_id"], []).append(a)
 
-    ids = [i for i in id2file if anns_by_img.get(i)] if require_annotations else list(id2file)
+    # Only consider images whose file actually exists on disk — some COCO splits reference
+    # a handful of images that were never shipped; skipping them (rather than crashing on the
+    # first missing .tif) lets sampling still reach `limit` from the images that are present.
+    ondisk = set(os.listdir(images_dir))
+    ids = [i for i in id2file
+           if id2file[i] in ondisk and (not require_annotations or anns_by_img.get(i))]
     ids.sort()                                   # deterministic order before shuffle
     random.Random(seed).shuffle(ids)
     chosen = ids[:limit]
@@ -43,7 +50,7 @@ def coco_to_dataset(coco_json, images_dir, dst, limit=100, seed=1, require_annot
 
     for i, image_id in enumerate(chosen, start=1):
         Image.open(os.path.join(images_dir, id2file[image_id])).convert("RGB").save(
-            os.path.join(img_dst, f"train{i}.jpeg"))
+            os.path.join(img_dst, f"train{i}.jpeg"), quality=quality)
         w, h = id2size[image_id]
         mask = Image.new("L", (w, h), 0)
         draw = ImageDraw.Draw(mask)
@@ -68,9 +75,10 @@ def main():
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--allow-empty", action="store_true",
                    help="also sample images with no annotations (empty masks)")
+    p.add_argument("--quality", type=int, default=95, help="output JPEG quality (default 95)")
     a = p.parse_args()
     n = coco_to_dataset(a.coco_json, a.images_dir, a.dst, a.limit, a.seed,
-                        require_annotations=not a.allow_empty)
+                        require_annotations=not a.allow_empty, quality=a.quality)
     print(f"wrote {n} pairs to {a.dst}")
 
 
