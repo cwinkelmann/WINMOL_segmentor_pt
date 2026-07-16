@@ -46,9 +46,16 @@ def _param_count(arch, cfg):
 
 def _onnx_served_f1(onnx_path, spec_data_dir, cfg, max_tiles=60, batch=4):
     os.environ["WINMOL_ONNX_FORCE_CPU"] = "1"     # exact fp32, machine-independent
-    _, val = train_val_split(os.path.join(spec_data_dir, "train"),
-                             os.path.join(spec_data_dir, "mask"),
-                             cfg.val_fraction, cfg.seed, cfg.img_size, cache=False)
+    # Prefer the pre-materialized fixed val split (single-stage --val-data-dir) so this
+    # ONNX-served sanity number matches the validation set the model early-stopped on;
+    # otherwise fall back to an 80/20 split of spec_data_dir (two-stage / no fixed val).
+    if cfg.val_data_dir:
+        val = StemDataset(cfg.val_image_dir, cfg.val_mask_dir, cfg.img_size,
+                          transform=None, cache=False)
+    else:
+        _, val = train_val_split(os.path.join(spec_data_dir, "train"),
+                                 os.path.join(spec_data_dir, "mask"),
+                                 cfg.val_fraction, cfg.seed, cfg.img_size, cache=False)
     seg = OnnxSegmenter(onnx_path)
     n = min(max_tiles, len(val))
     tp = fp = fn = 0
@@ -124,16 +131,20 @@ def _onnx_test_metrics(onnx_path, test_data_dir, cfg, batch=4):
 
 def _write_arch_md(path, arch, cfg, r):
     m = r["metrics"]
-    md = f"""# {arch} — two-stage benchmark result
+    single = bool(r.get("single_stage"))
+    regime = ("single-stage (train on spec-data-dir)" if single
+              else "two-stage GenDS -> SpecDS (fine-tune)")
+    md = f"""# {arch} — {'single-stage' if single else 'two-stage'} benchmark result
 
 **Date:** {r['date']}
-**Regime:** two-stage GenDS -> SpecDS (fine-tune)
+**Regime:** {regime}
 **Config:** encoder={cfg.encoder}, encoder_weights={cfg.encoder_weights}, epochs={cfg.epochs}, \
 batch_size={cfg.batch_size}, lr={cfg.lr}, device={cfg.device}, seed={cfg.seed}, \
 patience={cfg.patience_stage1}/{cfg.patience_stage2}
 **Augmentation:** hflip={cfg.aug_hflip_p} vflip={cfg.aug_vflip_p} rotate={cfg.aug_rotate_p} \
 bc={cfg.aug_bc_p} hsv={cfg.aug_hsv_p}
-**Data:** GenDS=`{cfg.gen_data_dir}`, SpecDS=`{cfg.spec_data_dir}`
+**Data:** {'train=`%s`, val=`%s`' % (cfg.spec_data_dir, cfg.val_data_dir) if single
+           else 'GenDS=`%s`, SpecDS=`%s`' % (cfg.gen_data_dir, cfg.spec_data_dir)}
 **Parameters:** {r['params']:,}
 **Train time:** {r['minutes']:.1f} min
 
@@ -176,14 +187,18 @@ Full per-epoch metrics (train_loss/val_*/lr, both stages): `{arch}/metrics.csv`
         f.write(md)
 
 
-def _write_summary_md(path, cfg, results):
+def _write_summary_md(path, cfg, results, single_stage=False):
+    regime = "single-stage (train -> val -> test)" if single_stage else "two-stage GenDS -> SpecDS"
+    data_line = (f"**train:** `{cfg.spec_data_dir}` | **val:** `{cfg.val_data_dir}` | "
+                 f"**test:** `{cfg.test_data_dir}`" if single_stage else
+                 f"**GenDS:** `{cfg.gen_data_dir}` | **SpecDS:** `{cfg.spec_data_dir}` | "
+                 f"**TestDS:** `{cfg.test_data_dir}`")
     rows = [
         "# Architecture benchmark — PyTorch (to compare vs R-style UNet)",
         "",
-        f"**Regime:** two-stage GenDS -> SpecDS | **epochs:** {cfg.epochs} | "
+        f"**Regime:** {regime} | **epochs:** {cfg.epochs} | "
         f"**encoder:** {cfg.encoder}/{cfg.encoder_weights} | **seed:** {cfg.seed}",
-        f"**GenDS:** `{cfg.gen_data_dir}` | **SpecDS:** `{cfg.spec_data_dir}` | "
-        f"**TestDS:** `{cfg.test_data_dir}`",
+        data_line,
         "",
         "| Architecture | Params | Best val F1 | Final val F1 | TestDS F1 | TestDS P | TestDS R | Train (min) |",
         "|--------------|-------:|------------:|-------------:|----------:|---------:|---------:|------------:|",
@@ -202,13 +217,16 @@ def _write_summary_md(path, cfg, results):
         rows.append(
             f"| {arch} | {r['params'] / 1e6:.1f}M | {best:.4f} | {m['f1']:.4f} | "
             f"{tf1} | {tp} | {tr} | {r['minutes']:.1f} |")
+    if not single_stage:
+        rows.append(
+            "| **R UNet (reference)** | _TBD_ | _fill_ | _fill_ | _fill_ | _fill_ | _fill_ | _fill_ |")
     rows += [
-        "| **R UNet (reference)** | _TBD_ | _fill_ | _fill_ | _fill_ | _fill_ | _fill_ | _fill_ |",
         "",
         "TestDS columns are the held-out ONNX-served metrics (CPU EP). Per-architecture detail:"
         " the individual `<arch>.md` files + `<arch>/metrics.csv`.",
-        "The R reference row is filled by `write_comparison_summary.py` from the R run.",
     ]
+    if not single_stage:
+        rows.append("The R reference row is filled by `write_comparison_summary.py` from the R run.")
     with open(path, "w") as f:
         f.write("\n".join(rows) + "\n")
 
@@ -257,6 +275,7 @@ def benchmark(cfg_base, out_dir, skip_stage1=False):
                       if cfg.test_data_dir else None, None)
         results[arch] = {
             "metrics": metrics, "minutes": (time.time() - t0) / 60,
+            "single_stage": skip_stage1,
             "params": _try("param-count", lambda: _param_count(arch, cfg), 0),
             "stage1_f1": [round(r["val_f1"], 4) for r in s1 if "val_f1" in r],
             "stage2_f1": [round(r["val_f1"], 4) for r in s2 if "val_f1" in r],
@@ -272,7 +291,8 @@ def benchmark(cfg_base, out_dir, skip_stage1=False):
         tf1 = f", TestDS F1 {test_m['f1']:.3f}" if test_m else ""
         print(f"{arch}: val F1 {metrics['f1']:.3f}, ONNX F1 {onnx_f1:.3f}{tf1}, "
               f"{results[arch]['minutes']:.1f} min", flush=True)
-    _write_summary_md(os.path.join(out_dir, "SUMMARY.md"), cfg_base, results)
+    _write_summary_md(os.path.join(out_dir, "SUMMARY.md"), cfg_base, results,
+                      single_stage=skip_stage1)
     with open(os.path.join(out_dir, "pytorch_results.json"), "w") as f:
         json.dump(results, f, indent=2)
     print(f"wrote {out_dir}/SUMMARY.md + pytorch_results.json")
@@ -285,8 +305,12 @@ def _none_or_str(v):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--gen-data-dir", required=True)
+    p.add_argument("--gen-data-dir", default=None,
+                   help="stage-1 GenDS (two-stage only); required unless --skip-stage1")
     p.add_argument("--spec-data-dir", required=True)
+    p.add_argument("--val-data-dir", default=None,
+                   help="pre-materialized fixed val split (single-stage); else 80/20 split of "
+                        "--spec-data-dir")
     p.add_argument("--test-data-dir", default=None,
                    help="held-out test set (TestDS); ONNX-served metrics reported per arch")
     p.add_argument("--out-dir", default="results")
@@ -301,9 +325,11 @@ def main():
     p.add_argument("--skip-stage1", action="store_true",
                    help="single-stage ablation: train on SpecDS only (no GenDS10 pretraining)")
     a = p.parse_args()
+    if not a.skip_stage1 and not a.gen_data_dir:
+        p.error("--gen-data-dir is required unless --skip-stage1")
     cfg_base = TrainConfig(
-        data_dir="", gen_data_dir=a.gen_data_dir, spec_data_dir=a.spec_data_dir,
-        test_data_dir=a.test_data_dir,
+        data_dir="", gen_data_dir=a.gen_data_dir or "", spec_data_dir=a.spec_data_dir,
+        val_data_dir=a.val_data_dir, test_data_dir=a.test_data_dir,
         checkpoint_dir=a.out_dir, log_dir=a.out_dir, hdf5_out="", onnx_out="",
         epochs=a.epochs, batch_size=a.batch_size, device=a.device,
         encoder=a.encoder, encoder_weights=_none_or_str(a.encoder_weights),
