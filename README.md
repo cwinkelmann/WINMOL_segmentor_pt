@@ -8,7 +8,44 @@ export to ONNX and Keras (`.hdf5` / native `.keras`) for use in the WINMOL Analy
 
 ```bash
 pip install -e ".[train,wandb]"   # training deps + optional Weights & Biases
+pip install -e ".[keras]"         # + tensorflow (only for the UNet Keras .hdf5/.keras export)
+pip install -e ".[dev]"           # + pytest
 ```
+
+To only **serve** exported ONNX models (e.g. inside the WINMOL Analyzer), install the base
+package — it pulls in just `onnxruntime` + `numpy`, no torch/tensorflow:
+
+```bash
+pip install .
+```
+
+## Datasets
+
+Training expects a **loader-ready** directory: `train/trainN.jpeg` (RGB) + `mask/maskN.gif`
+(binary), paired by the integer `N`. Three tools build one:
+
+- **From a COCO instance-segmentation split** (e.g. the BAMFORESTS `coco1024` tree set) — run
+  once per split (train / val / test):
+  ```bash
+  python scripts/coco_to_dataset.py \
+    --coco-json .../annotations/instances_tree_train2023.json \
+    --images-dir .../train2023 --dst .../dataset/train --limit 1000 --seed 1
+  ```
+  Samples `--limit` annotated images (deterministic per `--seed`; skips any whose file is
+  missing on disk), saves each as RGB `trainN.jpeg` (`--quality`, default 95), and rasterizes
+  the union of category polygons to a binary `maskN.gif`. RLE segmentations are not supported.
+
+- **From an arbitrary image+mask folder** (non-integer names, palette/instance masks):
+  ```bash
+  python scripts/build_dataset.py --src <raw> --dst <loader-ready>
+  ```
+  Pairs images↔masks by shared key and binarizes the masks.
+
+- **Materialize a fixed train/val split** so multiple runs share an identical split:
+  ```bash
+  python scripts/split_dataset.py --src <dataset> --dst <split> --val-fraction 0.2 --seed 1
+  ```
+  Writes `<split>/train` and `<split>/val`; pass the latter to `--val-data-dir`.
 
 ## Training
 
@@ -122,3 +159,64 @@ flags to use the defaults (flips + brightness/contrast + hue/saturation at `p=0.
 **Logging** — metrics always go to TensorBoard (`<out-dir>/logs/`). Add `--wandb`
 (with `--wandb-project` / `--wandb-run-name`) to also log to Weights & Biases; put your
 `WANDB_API_KEY` in a `.env` file at the repo root (loaded automatically).
+
+## End-to-end: BAMFORESTS multi-scale run
+
+Build the three splits from `coco1024`, then train at native fidelity with multi-scale crops
+and evaluate with deterministic tiling:
+
+```bash
+BASE=/path/to/BAMFORESTS/coco1024
+OUT=/path/to/1000_images
+for s in "train:instances_tree_train2023.json:train2023" \
+         "val:instances_tree_eval2023.json:val2023" \
+         "test:instances_tree_TestSet12023.json:test2023/Test-Set-1"; do
+  name=${s%%:*}; rest=${s#*:}; json=${rest%%:*}; dir=${rest#*:}
+  python scripts/coco_to_dataset.py --coco-json "$BASE/annotations/$json" \
+    --images-dir "$BASE/$dir" --dst "$OUT/$name" --limit 1000 --seed 1
+done
+
+python -m training.run_train --arch deeplabv3plus --encoder resnet34 --encoder-weights imagenet \
+  --data-dir "$OUT/train" --val-data-dir "$OUT/val" --test-data-dir "$OUT/test" \
+  --out-dir output/bamforests --device cuda --no-cache-dataset --num-workers 4 \
+  --multiscale --crop-min-px 400 --crop-max-px 1024 --eval-tiling \
+  --aug-rotate-p 0.5 --aug-rotate-limit 180 --aug-hflip-p 0.5 --aug-vflip-p 0.5 --aug-hsv-p 0.5
+```
+
+This writes `model.onnx` / `model.pt`, TensorBoard logs, and `test_results.md`. To compare
+architectures on the same data, `scripts/benchmark_architectures.py` trains unet /
+deeplabv3plus / hrnet identically and writes a `SUMMARY.md` (`--help` for its flags).
+
+## ONNX inference (WINMOL Analyzer bridge)
+
+Every architecture exports the **same** ONNX graph — NCHW `[N,3,512,512]` → `[N,1,512,512]`,
+dynamic batch, sigmoid baked in — served by `OnnxSegmenter`, which duck-types the Keras model
+the Analyzer expects (`predict_on_batch(NHWC) → NHWC`):
+
+```python
+import numpy as np
+from winmol_unet.runtime import OnnxSegmenter
+
+seg = OnnxSegmenter("output/bamforests/model.onnx")     # loads with the best available EP
+batch = np.zeros((4, 512, 512, 3), dtype=np.float32)    # NHWC, values in [0,1]
+prob = seg.predict_on_batch(batch)                      # NHWC [4, 512, 512, 1] in [0,1]
+```
+
+**Execution provider** — `OnnxSegmenter` auto-selects **CUDA → CoreML → CPU** (CPU is always
+kept as a fallback). Override via environment variables:
+
+- `WINMOL_ONNX_PROVIDERS="CUDAExecutionProvider,CPUExecutionProvider"` — pin an explicit
+  provider list (highest priority).
+- `WINMOL_ONNX_FORCE_CPU=1` — force CPU only. Use for **exact fp32 parity** with the
+  PyTorch/Keras reference, since CoreML/CUDA compute in fp16 (the ONNX parity tests set this).
+
+## Tests
+
+```bash
+pytest                              # full suite (trains small models; a few minutes)
+pytest -k onnx                      # by keyword
+pytest tests/test_multiscale.py -q  # a single file
+```
+
+Tests are hermetic (synthetic data in `tmp_path`, `encoder_weights=None` so smp archs need no
+download). Parity tests pin the CPU EP via `WINMOL_ONNX_FORCE_CPU` for bit-exact comparison.
