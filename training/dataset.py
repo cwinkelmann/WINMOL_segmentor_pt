@@ -26,8 +26,8 @@ def _paired_ids(image_dir, mask_dir):
 
 
 class StemDataset(Dataset):
-    """Paired jpeg-image / gif-mask dataset. Resizes to img_size (bicubic image,
-    nearest mask) via winmol_unet.preprocess; the optional albumentations `transform`
+    """Paired jpeg-image / gif-mask dataset. Resizes to img_size (nearest image +
+    mask, mirroring the R input_pipeline.R) via winmol_unet.preprocess; the optional albumentations `transform`
     runs per __getitem__. When cache=True (default) the resized numpy arrays are kept
     in memory (~4 MB/pair) so the skimage resize runs once — this requires
     DataLoader(num_workers=0) to persist across epochs. For large datasets use
@@ -52,7 +52,10 @@ class StemDataset(Dataset):
     def _load_image(self, n):
         im = Image.open(os.path.join(self.image_dir, f"train{n}.jpeg")).convert("RGB")
         arr = to_float01(np.asarray(im))                       # HWC [0,1]
-        arr = resize_batch(arr[None], size=self.img_size, mode="bicubic")[0]
+        # nearest to mirror the R input_pipeline.R (tf.image.resize method="nearest"
+        # for both image and mask) so the PyTorch benchmark matches the R U-Net's
+        # exact preprocessing.
+        arr = resize_batch(arr[None], size=self.img_size, mode="nearest")[0]
         return np.ascontiguousarray(arr, dtype=np.float32)     # HWC
 
     def _load_mask(self, n):

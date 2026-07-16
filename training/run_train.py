@@ -11,7 +11,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from winmol_unet.export import export_to_onnx, export_to_pt
-from winmol_unet.export_keras import export_to_keras, export_to_keras_hdf5
+# NOTE: winmol_unet.export_keras is imported lazily inside _export (only when
+# cfg.export_keras is set) because it pulls in TensorFlow, which the lean training
+# image (WITH_KERAS=0) does not install — importing it at module level would break
+# `python -m training.run_train` on any TF-less environment. Mirrors the lazy smp
+# import in model_factory.
 
 from .augment import build_augmentation
 from .config import TrainConfig
@@ -74,6 +78,7 @@ def _export(model, cfg):
     # ONNX is the uniform path — every architecture loads the same way via OnnxSegmenter.
     # The Keras .hdf5/.keras mirror is UNet-specific and opt-in (validated upfront).
     if cfg.export_keras:
+        from winmol_unet.export_keras import export_to_keras, export_to_keras_hdf5  # lazy: pulls in TF
         export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
         if cfg.keras_out:
             export_to_keras(model, cfg.keras_out, dropout=cfg.dropout)
@@ -132,14 +137,27 @@ def run_two_stage(cfg):
     transform = build_augmentation(cfg)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
                         encoder_weights=cfg.encoder_weights)
+    # ONE optimizer shared across both stages (Adam moment estimates carry over, as they do in
+    # the R pipeline's single compiled optimizer), BUT the learning rate is reset to cfg.lr at
+    # the start of stage 2 — mirroring the R fix `k_set_value(optimizer$lr, BASE_LR)`. Without
+    # the reset, the LR that stage-1's ReduceLROnPlateau decayed (down to ~1e-6) carries into
+    # stage 2 and cripples fine-tuning. Move params to the device first so the optimizer binds
+    # device tensors.
+    from .device import resolve_device
+    model.to(resolve_device(cfg.device))
+    opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
 
     gen_train, gen_val = _build_loaders(cfg.gen_image_dir, cfg.gen_mask_dir, cfg, transform)
     train_one_run(model, gen_train, gen_val, cfg, patience=cfg.patience_stage1,
-                  ckpt_name="best_stage1.pt", log_dir=os.path.join(cfg.log_dir, "stage1"))
+                  ckpt_name="best_stage1.pt", log_dir=os.path.join(cfg.log_dir, "stage1"),
+                  optimizer=opt)
 
+    for g in opt.param_groups:                   # reset LR for stage 2 (mirrors R's k_set_value)
+        g["lr"] = cfg.lr
     spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform)
     train_one_run(model, spec_train, spec_val, cfg, patience=cfg.patience_stage2,
-                  ckpt_name="best_stage2.pt", log_dir=os.path.join(cfg.log_dir, "stage2"))
+                  ckpt_name="best_stage2.pt", log_dir=os.path.join(cfg.log_dir, "stage2"),
+                  optimizer=opt)
 
     val_metrics = evaluate(model, spec_val)     # final = species val split
     _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
