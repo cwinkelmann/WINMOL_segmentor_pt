@@ -56,3 +56,19 @@ def test_raises_when_too_few_annotated(tmp_path):
     coco_json, img_dir = _make_coco(tmp_path, n_images=5, n_annotated=2)
     with pytest.raises(ValueError, match="eligible"):
         coco_to_dataset(coco_json, img_dir, str(tmp_path / "out"), limit=4, seed=1)
+
+
+def test_skips_images_missing_on_disk(tmp_path):
+    # 5 annotated images referenced by the json, but 2 of their .tif files are absent
+    # (some COCO splits reference never-shipped images). Sampling must skip the missing
+    # ones and still reach the limit from the 3 present, instead of crashing.
+    coco_json, img_dir = _make_coco(tmp_path, n_images=5, n_annotated=5)
+    os.remove(os.path.join(img_dir, "im2.tif"))
+    os.remove(os.path.join(img_dir, "im4.tif"))
+    n = coco_to_dataset(coco_json, img_dir, str(tmp_path / "out"), limit=3, seed=1)
+    assert n == 3
+    assert len(os.listdir(tmp_path / "out" / "train")) == 3
+
+    import pytest                                   # only 3 present -> limit 4 is unreachable
+    with pytest.raises(ValueError, match="eligible"):
+        coco_to_dataset(coco_json, img_dir, str(tmp_path / "out2"), limit=4, seed=1)
