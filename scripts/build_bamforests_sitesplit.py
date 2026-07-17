@@ -31,7 +31,14 @@ import json
 import os
 import re
 
+from PIL import ImageFile
+
 from coco_to_dataset import coco_to_dataset
+
+# Some BAMFORESTS source tiles are truncated (a few missing trailing bytes) and make PIL
+# raise "image file is truncated" mid-convert. Tolerate it — PIL fills the missing bytes so
+# the tile is usable (only the very edge may be blank) rather than aborting the whole build.
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # split -> (annotation json basename, images subdir under --coco-root)
 SPLITS = {

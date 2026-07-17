@@ -51,7 +51,9 @@ pytorch_run() {   # $1=out-subdir  $2..=extra args to augmentation_ablation.py
 }
 
 echo "=== [0/3] build site-held-out split (train/val=Stadtwald+Tretzendorf, test=Hain) ==="
-if [ ! -d "$SITE_SPLIT/train/train" ]; then
+# SITES.md is written only after all splits convert successfully, so it (not the early-created
+# train/ dir) is the completion marker — a crashed partial build re-runs cleanly.
+if [ ! -f "$SITE_SPLIT/SITES.md" ]; then
   python3 "$PT_REPO/scripts/build_bamforests_sitesplit.py" --coco-root "$COCO_ROOT" \
     --dst "$SITE_SPLIT" \
     --limit-train "${LIMIT_TRAIN:-0}" --limit-val "${LIMIT_VAL:-0}" \
