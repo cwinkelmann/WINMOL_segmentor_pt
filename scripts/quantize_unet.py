@@ -47,19 +47,34 @@ def quantize_dynamic_int8(src, dst):
 
 
 class _TileCalibrationReader:
-    """Feeds [0,1] NCHW tiles from a StemDataset dir to the static quantizer."""
+    """Feeds [0,1] NCHW tiles to the static quantizer by globbing image files.
+
+    Calibration needs only input tiles (no masks), so this reads images directly rather than
+    via StemDataset's integer trainN/maskN pairing -- it works for any dataset naming (e.g. the
+    descriptively-named spruce tiles). Looks in ``<calib_dir>/train`` then ``<calib_dir>``.
+    """
+
+    _EXTS = ("*.jpeg", "*.jpg", "*.png", "*.tif", "*.tiff")
 
     def __init__(self, calib_dir, input_name, n_samples, img_size):
-        from training.dataset import StemDataset
-        ds = StemDataset(os.path.join(calib_dir, "train"),
-                         os.path.join(calib_dir, "mask"),
-                         img_size, transform=None, cache=False)
-        n = min(n_samples, len(ds))
-        self._input_name = input_name
-        self._data = (
-            {input_name: ds[i][0].numpy()[None].astype(np.float32)}  # 1CHW
-            for i in range(n)
-        )
+        import glob
+        from PIL import Image
+        from winmol_unet.preprocess import resize_batch, to_float01
+
+        base = os.path.join(calib_dir, "train")
+        if not os.path.isdir(base):
+            base = calib_dir
+        files = sorted(f for e in self._EXTS for f in glob.glob(os.path.join(base, e)))
+        files = files[:n_samples]
+        if not files:
+            raise FileNotFoundError(f"no calibration images under {base}")
+        data = []
+        for f in files:
+            arr = to_float01(np.asarray(Image.open(f).convert("RGB")))[None]  # 1HWC [0,1]
+            arr = resize_batch(arr, img_size)                                 # 1,S,S,3
+            data.append({input_name: np.ascontiguousarray(
+                np.transpose(arr, (0, 3, 1, 2)), dtype=np.float32)})          # 1CHW
+        self._data = iter(data)
 
     def get_next(self):
         return next(self._data, None)

@@ -116,6 +116,31 @@ builds + INT8 — a worthwhile follow-up if GPU throughput ever becomes the cons
 Bottom line for GPU: the levers port, fp16 is free and lossless, but the payoff (~5×, on already-
 single-digit-ms latency) is a throughput/power win, not the bottleneck-removal it is on CPU.
 
+### Going further on GPU: TensorRT EP (w05 UNet, RTX 4080S)
+
+The ORT CUDA EP leaves performance on the table (per-call overhead, less fusion). The
+**TensorRT EP** compiles a fused, autotuned engine and recovers it. Built `winmol-onnxgpu` with
+TensorRT 10; measured on the w05 UNet:
+
+| provider | b1 | b8 throughput | vs CUDA EP (b1) |
+|----------|---:|--------------:|----------------:|
+| CUDA fp32 | 5.98 ms | 142 img/s | 1.0× |
+| **TRT fp16** | **3.09 ms** | **377 img/s** | **1.9× (2.7× throughput)** |
+| TRT int8 (QDQ) | 6.58 ms | 123 img/s | 0.9× — slower |
+
+- **TensorRT fp16 is the GPU winner** — ~1.9× over the CUDA EP at batch-1 and **2.7× throughput**
+  at batch-8; it also beats the plain CUDA-EP fp16 (4.3 ms → 3.09 ms).
+- **TensorRT int8 is not worth it here** — *slower* than fp16, and TRT's ONNX parser rejects the
+  ORT-QDQ quantize-on-bias nodes (falls back / mis-optimises). GPU int8 wants a native TRT int8
+  calibration, and for a model this small it's overhead-bound anyway. **int8 stays a CPU lever.**
+
+**How to use it (no new artifact):** the ONNX we ship *is* what TensorRT consumes. Serve through
+the TRT EP — e.g. `WINMOL_ONNX_PROVIDERS="TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider"`
+plus `trt_fp16_enable` — and TensorRT builds+caches the engine on the target GPU. The engine is
+device/TRT-version specific (built at run time, never distributed). Requires `onnxruntime-gpu`
+**and** TensorRT libs (`libnvinfer`) — the analyzer env needs both. To flip on fp16/int8 the
+session must pass provider *options*, so `OnnxSegmenter` would need a small change to accept them.
+
 ## Artifacts
 
 - `results/cpu_speedup/train/{w10,w05,w025}/model.onnx` + `.pt` — retrained width variants (fp32).
