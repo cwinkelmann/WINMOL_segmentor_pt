@@ -21,6 +21,16 @@ import numpy as np
 from winmol_unet.contract import INPUT_NAME
 
 
+def to_fp16(src, dst):
+    """Convert an fp32 ONNX to fp16 (GPU Tensor-Core path), keeping I/O fp32 so the
+    contract still validates and OnnxSegmenter feeds/reads float32 unchanged."""
+    import onnx
+    from onnxconverter_common import float16
+    m16 = float16.convert_float_to_float16(onnx.load(src), keep_io_types=True)
+    onnx.save(m16, dst)
+    return dst
+
+
 def _preprocess(src, dst):
     """ORT's shape-inference + graph clean-up; recommended before static quant."""
     from onnxruntime.quantization.shape_inference import quant_pre_process
@@ -79,14 +89,16 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("src")
     ap.add_argument("dst")
-    ap.add_argument("--mode", choices=["dynamic", "static"], default="static")
+    ap.add_argument("--mode", choices=["dynamic", "static", "fp16"], default="static")
     ap.add_argument("--calib-dir", default=None, help="StemDataset dir (required for static)")
     ap.add_argument("--n-samples", type=int, default=128)
     ap.add_argument("--img-size", type=int, default=512)
     ap.add_argument("--no-per-channel", action="store_true")
     args = ap.parse_args()
 
-    if args.mode == "dynamic":
+    if args.mode == "fp16":
+        to_fp16(args.src, args.dst)
+    elif args.mode == "dynamic":
         quantize_dynamic_int8(args.src, args.dst)
     else:
         if not args.calib_dir:

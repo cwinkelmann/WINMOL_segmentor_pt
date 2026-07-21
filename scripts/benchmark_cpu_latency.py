@@ -33,8 +33,19 @@ def latency_stats(samples_ms):
     }
 
 
-def build_session(onnx_path, threads):
-    """A CPU-EP InferenceSession with full graph opt and a pinned intra-op thread count."""
+_PROVIDER_ALIASES = {
+    "cpu": ["CPUExecutionProvider"],
+    "cuda": ["CUDAExecutionProvider", "CPUExecutionProvider"],
+    "tensorrt": ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"],
+}
+
+
+def build_session(onnx_path, threads, providers=None):
+    """An InferenceSession with full graph opt and a pinned intra-op thread count.
+
+    providers defaults to CPU; pass a provider list (or use the CLI alias) to serve on
+    the CUDA / TensorRT EP for production-representative GPU timing.
+    """
     import onnxruntime as ort
 
     so = ort.SessionOptions()
@@ -42,12 +53,13 @@ def build_session(onnx_path, threads):
     so.intra_op_num_threads = int(threads)
     so.inter_op_num_threads = 1
     return ort.InferenceSession(onnx_path, sess_options=so,
-                                providers=["CPUExecutionProvider"])
+                                providers=providers or ["CPUExecutionProvider"])
 
 
-def measure_latency(onnx_path, threads=4, batch=1, warmup=5, runs=30, tile=None):
+def measure_latency(onnx_path, threads=4, batch=1, warmup=5, runs=30, tile=None,
+                    providers=None):
     """Time session.run on a fixed NCHW input; return latency_stats + config."""
-    sess = build_session(onnx_path, threads)
+    sess = build_session(onnx_path, threads, providers)
     if tile is not None:
         x = np.ascontiguousarray(np.broadcast_to(tile, (batch, 3, IMG_SIZE, IMG_SIZE)),
                                  dtype=np.float32)
@@ -102,6 +114,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("models", nargs="+", help="label=path.onnx or just path.onnx")
     ap.add_argument("--test-data-dir", default=None, help="StemDataset dir for F1 (train/ + mask/)")
+    ap.add_argument("--provider", choices=list(_PROVIDER_ALIASES), default="cpu",
+                    help="execution provider for latency (cpu/cuda/tensorrt)")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--thread-sweep", default=None, help="comma list, e.g. 1,2,4,8 (batch-1 latency)")
     ap.add_argument("--batches", default="1,4", help="comma list of batch sizes")
@@ -112,6 +126,7 @@ def main():
     args = ap.parse_args()
 
     batches = [int(b) for b in args.batches.split(",") if b]
+    providers = _PROVIDER_ALIASES[args.provider]
     tile = None
     if args.test_data_dir:
         tile = _real_tile(args.test_data_dir, IMG_SIZE)[None]  # 1CHW for broadcast
@@ -122,10 +137,11 @@ def main():
         size_mb = os.path.getsize(path) / 1e6
         row = {"label": label, "path": path, "size_mb": round(size_mb, 1), "latency": {}}
         for b in batches:
-            row["latency"][b] = measure_latency(path, args.threads, b, args.warmup, args.runs, tile)
+            row["latency"][b] = measure_latency(path, args.threads, b, args.warmup, args.runs,
+                                                tile, providers)
         if args.thread_sweep:
             row["thread_sweep"] = {
-                int(t): measure_latency(path, int(t), 1, args.warmup, args.runs, tile)
+                int(t): measure_latency(path, int(t), 1, args.warmup, args.runs, tile, providers)
                 for t in args.thread_sweep.split(",") if t
             }
         if args.test_data_dir:

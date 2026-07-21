@@ -90,6 +90,32 @@ Batch-1 latency, speedup vs fp32 full-width:
 **MPS/CoreML not measured** (no Apple hardware); CoreML already computes in fp16, so expect the
 fp16 lever to be largely automatic there and width scaling to add on top.
 
+### Production path: ONNX Runtime CUDA EP (not torch eager)
+
+The numbers above are torch eager. The analyzer serves **ONNX**, so I built `winmol-onnxgpu`
+(`Dockerfile.onnxgpu`, onnxruntime-gpu CUDA-12 build) and re-measured the actual served path.
+Batch-1 median, speedup vs w1.0-fp32, and img/s at batch 8 (throughput regime):
+
+| model | b1 latency | speedup | b8 img/s | ONNX size |
+|-------|-----------:|--------:|---------:|----------:|
+| w1.0 fp32 | 14.9 ms | 1.0× | 62 | 124 MB |
+| w1.0 fp16 | 8.6 ms | 1.7× | 105 | 62 MB |
+| w0.5 fp32 | 5.7 ms | 2.6× | 143 | 31 MB |
+| **w0.5 fp16** | 4.3 ms | 3.4× | 216 | 16 MB |
+| w0.25 fp32 | 3.5 ms | 4.3× | 260 | 8 MB |
+| **w0.25 fp16** | 3.1 ms | 4.9× (5.9× at b4) | 346 | 4 MB |
+
+**ONNX-CUDA gains are real but *more modest* than torch eager** (fp16 1.7× vs 1.9×; w0.25+fp16
+5–6× vs 10–14×). ORT's CUDA EP carries higher per-call overhead (input/output binding + H2D/D2H
+copies, less kernel fusion than eager cudnn) which dominates for these tiny/narrow models — so the
+speedup plateaus around 5–6×. This is the honest deployment figure. **fp16 is bit-lossless through
+this served path** (measured: w0.5 ONNX-CUDA fp32 F1 0.7603 = fp16 0.7603). The `TensorrtExecutionProvider`
+is available in the image and would likely recover eager-level (or better) via per-shape engine
+builds + INT8 — a worthwhile follow-up if GPU throughput ever becomes the constraint.
+
+Bottom line for GPU: the levers port, fp16 is free and lossless, but the payoff (~5×, on already-
+single-digit-ms latency) is a throughput/power win, not the bottleneck-removal it is on CPU.
+
 ## Artifacts
 
 - `results/cpu_speedup/train/{w10,w05,w025}/model.onnx` + `.pt` — retrained width variants (fp32).
