@@ -22,46 +22,54 @@ import sys
 # base dirs: "archive" (model archive root), "optimised" (cpu-speedup build outputs),
 # "keras" (Keras->ONNX conversions), "zenodo" (upstream HDF5 under archive/zenodo_analyzer).
 
-# The retrained PyTorch UNet: original + the best optimised (width-scaled) variants.
+# Our retrained models are all beech (GenDS10 -> SpecDS-beech), so they carry the SpecDS_Beech
+# flavour with an <arch>_<framework> qualifier (and _w05 for the width-scaled optimised UNet).
+_B = "model_{arch}_SpecDS_Beech_512{q}"
+
+# The retrained PyTorch UNet: original (full-width) + the best optimised (width-0.5) variants.
 PYTORCH_MODELS = [
-    {"asset": "unet_fp32.onnx", "base": "archive", "src": "pytorch/twostage_lrfix/unet.onnx",
-     "group": "PyTorch UNet", "title": "Original UNet (fp32)", "backend": "any",
-     "notes": "reference WINMOL UNet, two-stage lrfix, TestDS F1 0.760"},
-    {"asset": "unet_w05_int8_cpu.onnx", "base": "optimised", "src": "w05_static.onnx",
-     "group": "PyTorch UNet", "title": "CPU-optimised (width-0.5 + static int8)", "backend": "CPU",
+    {"asset": _B.format(arch="UNet", q="_pytorch") + ".onnx", "base": "archive",
+     "src": "pytorch/twostage_lrfix/unet.onnx", "group": "PyTorch UNet (our beech retrain)",
+     "title": "UNet fp32 (full width)", "backend": "any",
+     "notes": "our PyTorch WINMOL UNet, two-stage lrfix, TestDS F1 0.760"},
+    {"asset": _B.format(arch="UNet", q="_pytorch_w05_int8") + ".onnx", "base": "optimised",
+     "src": "w05_static.onnx", "group": "PyTorch UNet (our beech retrain)",
+     "title": "UNet width-0.5 int8 (CPU-optimised)", "backend": "CPU",
      "notes": "10x faster CPU (AVX-VNNI), TestDS F1 0.760 (lossless)"},
-    {"asset": "unet_w05_fp16_gpu.onnx", "base": "optimised", "src": "w05_fp16.onnx",
-     "group": "PyTorch UNet", "title": "GPU-optimised (width-0.5 + fp16)", "backend": "GPU",
+    {"asset": _B.format(arch="UNet", q="_pytorch_w05_fp16") + ".onnx", "base": "optimised",
+     "src": "w05_fp16.onnx", "group": "PyTorch UNet (our beech retrain)",
+     "title": "UNet width-0.5 fp16 (GPU-optimised)", "backend": "GPU",
      "notes": "Tensor-Core fp16, TestDS F1 0.760 (lossless)"},
 ]
 
 # Our R/Keras reimplementation, 512px beech UNet (same family as Zenodo SpecDS_Beech),
 # converted to ONNX + PTQ variants. The 256px R models can't meet the 512 ONNX contract.
 RKERAS_MODELS = [
-    {"asset": "unet_rkeras_beech_512.onnx", "base": "keras", "src": "unet_rkeras_beech_512.onnx",
-     "group": "R/Keras UNet (our 512 beech retrain)", "title": "R/Keras beech UNet — ONNX fp32",
-     "backend": "any", "notes": "our R reimplementation, two-stage LR-fixed, TestDS F1 0.738 (512px)"},
-    {"asset": "unet_rkeras_beech_512_fp16.onnx", "base": "keras",
+    {"asset": _B.format(arch="UNet", q="_rkeras") + ".onnx", "base": "keras",
+     "src": "unet_rkeras_beech_512.onnx", "group": "R/Keras UNet (our 512 beech retrain)",
+     "title": "R/Keras UNet fp32", "backend": "any",
+     "notes": "our R reimplementation, two-stage LR-fixed, TestDS F1 0.738 (512px)"},
+    {"asset": _B.format(arch="UNet", q="_rkeras_fp16") + ".onnx", "base": "keras",
      "src": "unet_rkeras_beech_512_fp16.onnx", "group": "R/Keras UNet (our 512 beech retrain)",
-     "title": "R/Keras beech UNet — ONNX fp16 (GPU)", "backend": "GPU", "notes": "post-training fp16, lossless"},
-    {"asset": "unet_rkeras_beech_512_int8.onnx", "base": "keras",
+     "title": "R/Keras UNet fp16 (GPU)", "backend": "GPU", "notes": "post-training fp16, lossless"},
+    {"asset": _B.format(arch="UNet", q="_rkeras_int8") + ".onnx", "base": "keras",
      "src": "unet_rkeras_beech_512_int8.onnx", "group": "R/Keras UNet (our 512 beech retrain)",
-     "title": "R/Keras beech UNet — ONNX int8 (CPU)", "backend": "CPU", "notes": "post-training static int8"},
+     "title": "R/Keras UNet int8 (CPU)", "backend": "CPU", "notes": "post-training static int8, TestDS F1 0.740"},
 ]
 
 # Our other 512px PyTorch architectures (beech, two-stage LR-fixed): fp32 + fp16 (GPU). No
 # width-scaled variant (width_mult is UNet-only); no int8 -- the smp decoders' symbolic shapes
 # break the ORT static quantizer, and TRT-fp16 is the GPU path anyway.
 ARCH_MODELS = []
-for _arch, _f1 in [("deeplabv3plus", "0.742"), ("hrnet", "0.764")]:
-    _g = f"PyTorch {_arch} (beech)"
+for _arch, _archname, _f1 in [("deeplabv3plus", "DeepLabV3plus", "0.742"), ("hrnet", "HRNet", "0.764")]:
+    _g = f"PyTorch {_archname} (our beech retrain)"
     ARCH_MODELS += [
-        {"asset": f"{_arch}_fp32.onnx", "base": "optimised", "src": f"{_arch}_fp32.onnx",
-         "group": _g, "title": f"{_arch} — ONNX fp32", "backend": "any",
+        {"asset": _B.format(arch=_archname, q="") + ".onnx", "base": "optimised",
+         "src": f"{_arch}_fp32.onnx", "group": _g, "title": f"{_archname} fp32", "backend": "any",
          "notes": f"two-stage LR-fixed, TestDS F1 {_f1}"},
-        {"asset": f"{_arch}_fp16_gpu.onnx", "base": "optimised", "src": f"{_arch}_fp16_gpu.onnx",
-         "group": _g, "title": f"{_arch} — ONNX fp16 (GPU)", "backend": "GPU",
-         "notes": "post-training fp16, lossless"},
+        {"asset": _B.format(arch=_archname, q="_fp16") + ".onnx", "base": "optimised",
+         "src": f"{_arch}_fp16_gpu.onnx", "group": _g, "title": f"{_archname} fp16 (GPU)",
+         "backend": "GPU", "notes": "post-training fp16, lossless"},
     ]
 
 # Upstream Keras flavours (Zenodo 15907576, CC-BY-4.0): can't retrain, but convert + PTQ-quantize.
@@ -78,17 +86,20 @@ KERAS_FLAVOURS = [
 def _keras_entries():
     # The upstream HDF5 originals stay on Zenodo (DOI 10.5281/zenodo.15907576) and are NOT
     # re-hosted here -- the release carries only the converted ONNX + its optimised variants.
+    # Asset name = the exact upstream HDF5 filename with an .onnx suffix (keeps the timestamp so
+    # each ONNX traces to its Zenodo source); src = the on-disk converted file (timestamp-stripped).
     out = []
     for name, hdf5, desc in KERAS_FLAVOURS:
-        g = "Keras flavours (converted from Zenodo 15907576)"
+        stem = hdf5[:-5] if hdf5.endswith(".hdf5") else hdf5   # full name incl. timestamp
+        g = "Zenodo flavours — converted ONNX (upstream 15907576)"
         out += [
-            {"asset": f"{name}.onnx", "base": "keras", "src": f"{name}.onnx", "group": g,
+            {"asset": f"{stem}.onnx", "base": "keras", "src": f"{name}.onnx", "group": g,
              "title": f"{desc} — ONNX fp32 (converted)", "backend": "any",
              "notes": "converted from the upstream Keras HDF5, contract-conformant (numerically identical)"},
-            {"asset": f"{name}_fp16.onnx", "base": "keras", "src": f"{name}_fp16.onnx", "group": g,
+            {"asset": f"{stem}_fp16.onnx", "base": "keras", "src": f"{name}_fp16.onnx", "group": g,
              "title": f"{desc} — ONNX fp16 (GPU)", "backend": "GPU",
              "notes": "post-training fp16, lossless"},
-            {"asset": f"{name}_int8.onnx", "base": "keras", "src": f"{name}_int8.onnx", "group": g,
+            {"asset": f"{stem}_int8.onnx", "base": "keras", "src": f"{name}_int8.onnx", "group": g,
              "title": f"{desc} — ONNX int8 (CPU)", "backend": "CPU",
              "notes": "post-training static int8, domain-calibrated"},
         ]
@@ -129,12 +140,14 @@ def build_manifest(tag, entries):
                 lines.append(f"| `{e['asset']}` | {e['backend']} | {e.get('size_mb', 0):.1f} | "
                              f"{e['notes']} | `{e['sha256'][:16]}…` |")
     lines += ["",
-              "**Which to use (PyTorch UNet):** `unet_w05_int8_cpu.onnx` for CPU (10×, lossless), "
-              "`unet_w05_fp16_gpu.onnx` for GPU (lossless), `unet_fp32.onnx` as fp32 reference.",
-              "**Keras flavours:** pick your domain (Beech / Spruce / Spruce+Deadwood / generic "
-              "GenDS); use `_int8` on CPU, `_fp16` on GPU, plain `.onnx` for fp32. These are "
-              "ONNX conversions of the upstream WINMOL Analyzer models — the original `.hdf5` "
-              "stay at Zenodo DOI 10.5281/zenodo.15907576 (CC-BY-4.0), not re-hosted here.",
+              "**Naming:** `model_<Arch>_<Flavour>_512[...]`. Converted Zenodo models keep their "
+              "exact upstream filename + `.onnx` (timestamp traces to the source). Our retrained "
+              "models carry a `_pytorch` / `_rkeras` qualifier (and `_w05` for the width-0.5 UNet). "
+              "Precision suffix: none = fp32, `_fp16` = GPU, `_int8` = CPU.",
+              "**Which to use (our best):** `model_UNet_SpecDS_Beech_512_pytorch_w05_int8.onnx` for "
+              "CPU (10×, lossless), `...w05_fp16.onnx` for GPU. **Zenodo flavours:** pick your domain "
+              "(Beech / Spruce / Spruce+Deadwood / generic GenDS). The original `.hdf5` stay at "
+              "Zenodo DOI 10.5281/zenodo.15907576 (CC-BY-4.0), not re-hosted here.",
               "", "How optimisation works: see the repo README + "
               "`docs/2026-07-21-cpu-inference-speedup-results.md`. Full SHA256 in `SHA256SUMS`."]
     return "\n".join(lines) + "\n"
