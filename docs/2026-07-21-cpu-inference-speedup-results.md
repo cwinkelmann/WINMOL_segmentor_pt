@@ -61,6 +61,35 @@ is exactly this low-thread regime, where the win is biggest.
   full-width accuracy, so structured pruning (which at best recovers a smaller model's accuracy)
   has nothing to add here.
 
+## Does it port to GPU? (RTX 4080 SUPER, PyTorch eager CUDA)
+
+ONNX Runtime here is CPU-only, so GPU latency is measured with PyTorch eager on CUDA (the actual
+on-GPU compute; an onnxruntime-gpu/TensorRT deployment is typically no slower). The GPU analogue of
+the CPU int8 lever is **fp16** (Tensor Cores). Raw sweep: `results/cpu_speedup/gpu_sweep.md`.
+
+Batch-1 latency, speedup vs fp32 full-width:
+
+| config | latency | speedup | note |
+|--------|--------:|--------:|------|
+| fp32 width-1.0 | 13.8 ms | 1.0× | baseline (already ~180× faster than CPU fp32) |
+| fp16 width-1.0 | 7.2 ms | 1.9× | Tensor Cores, **F1 lossless** (0.7603=0.7603 measured) |
+| fp32 width-0.5 | 4.2 ms | 3.3× | width scaling helps GPU more than expected |
+| **fp16 width-0.5** | **2.6 ms** | **5.4×** | the CPU-recommended model, on GPU |
+| fp16 width-0.25 | 1.4 ms | 9.8× (14.6× at batch 4) | aggressive |
+
+**Yes, it ports — better than expected.** Both levers carry to GPU:
+- **Width scaling helps substantially on GPU** (2.5–3.3×), not the modest gain first guessed — the
+  4080 is compute-bound enough at 512² for this UNet. The gain shrinks slightly at larger batch
+  (b1 3.3× → b16 2.5×) as the full model uses the GPU more efficiently.
+- **fp16 stacks ~1.9× and is bit-lossless here** (measured, not assumed).
+- Combined **width-0.5 + fp16 = 5.4×** (lossless); width-0.25 + fp16 peaks at **14.6×** (batch 4).
+
+**Caveat — GPU is already fast:** fp32 full-width is 13.8 ms/tile. The optimization takes that to
+2.6 ms, which matters for **throughput/batched** workloads (73 → 390 img/s) and power, not because
+13.8 ms is slow. On CPU the same model went 2521 → 249 ms, where it actually removes a bottleneck.
+**MPS/CoreML not measured** (no Apple hardware); CoreML already computes in fp16, so expect the
+fp16 lever to be largely automatic there and width scaling to add on top.
+
 ## Artifacts
 
 - `results/cpu_speedup/train/{w10,w05,w025}/model.onnx` + `.pt` — retrained width variants (fp32).
