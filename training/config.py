@@ -39,6 +39,7 @@ class TrainConfig:
     keras_out: Optional[str] = None
     pt_out: Optional[str] = None
     arch: str = "unet"                       # unet | deeplabv3plus | hrnet
+    width_mult: float = 1.0                  # UNet channel-width scale (1.0 = full; <1 = smaller/faster)
     encoder: str = "resnet34"                # smp encoder (deeplabv3plus)
     encoder_weights: Optional[str] = None    # None (no download) or "imagenet"
     export_keras: bool = False               # also emit Keras .hdf5/.keras (UNet only)

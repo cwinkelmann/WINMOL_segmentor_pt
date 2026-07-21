@@ -121,7 +121,7 @@ def run_training(cfg):
         cfg.image_dir, cfg.mask_dir, cfg, transform,
         val_image_dir=cfg.val_image_dir, val_mask_dir=cfg.val_mask_dir)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
-                        encoder_weights=cfg.encoder_weights)
+                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult)
     train_one_run(model, train_loader, val_loader, cfg)
     val_metrics = evaluate(model, val_loader)   # on training device
     _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
@@ -136,7 +136,7 @@ def run_two_stage(cfg):
     torch.manual_seed(cfg.seed)
     transform = build_augmentation(cfg)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
-                        encoder_weights=cfg.encoder_weights)
+                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult)
     # ONE optimizer shared across both stages (Adam moment estimates carry over, as they do in
     # the R pipeline's single compiled optimizer), BUT the learning rate is reset to cfg.lr at
     # the start of stage 2 — mirroring the R fix `k_set_value(optimizer$lr, BASE_LR)`. Without
@@ -195,6 +195,8 @@ def config_from_args(argv=None):
     p.add_argument("--aug-contrast-limit", type=float, default=0.2)
     p.add_argument("--aug-hsv-p", type=float, default=0.5)
     p.add_argument("--arch", default="unet", help="unet|deeplabv3plus|hrnet")
+    p.add_argument("--width-mult", type=float, default=1.0,
+                   help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
     p.add_argument("--encoder", default="resnet34", help="smp encoder (deeplabv3plus)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     p.add_argument("--export-keras", action="store_true",
@@ -221,7 +223,8 @@ def config_from_args(argv=None):
         aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
-        arch=a.arch, encoder=a.encoder, encoder_weights=a.encoder_weights,
+        arch=a.arch, width_mult=a.width_mult,
+        encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,
     )
 

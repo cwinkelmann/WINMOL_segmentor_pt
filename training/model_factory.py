@@ -13,10 +13,13 @@ are ONNX-only: the Keras HDF5/.keras mirror is UNet-specific and is skipped for 
 from winmol_unet.contract import IN_CHANNELS, OUT_CHANNELS
 
 
-def build_model(arch="unet", dropout=0.1, encoder="resnet34", encoder_weights=None):
+def build_model(arch="unet", dropout=0.1, encoder="resnet34", encoder_weights=None,
+                width_mult=1.0):
     if arch == "unet":
         from winmol_unet.model import UNet
-        return UNet(dropout=dropout)
+        return UNet(dropout=dropout, width_mult=width_mult)
+    if width_mult != 1.0:
+        raise ValueError("width_mult is only supported for arch='unet'")
     import segmentation_models_pytorch as smp
     if arch == "deeplabv3plus":
         return smp.DeepLabV3Plus(encoder_name=encoder, encoder_weights=encoder_weights,
