@@ -111,6 +111,37 @@ and end-to-end composability — not accuracy. To exceed the heuristic you need 
 did not produce: field-surveyed stems (DBH tape / TLS), or human-corrected vectorizations. Until
 those exist, "learned vectorization" can only be a faster reimplementation of what we already have.
 
+## Step 2 — real teacher labels at scale
+
+The step-1 study had two weaknesses: one plot, and an input mask *rendered from the labels* then
+hand-corrupted, so the net could partly read its targets out of its own input. Both are fixed by
+running the **real analyzer heuristic** over the segmentor's own training tiles — no orthophoto
+required, because `WINMOL_Analyzer/utils/VectorTilePipeline.process_prediction_array_to_gpkg()`
+drives skeletonization + vectorization + quantification straight from a mask array.
+
+`build_teacher_dataset.py` does this in two resumable phases: batched UNet prediction → mask PNG,
+then a CPU pool → one `.gpkg` per tile. `teacher_tiles.py` turns those into `(mask → fields)`
+training pairs; `train_teacher.py` / `eval_teacher.py` train and score on them.
+
+**The GSD is load-bearing.** Tiles are 512 px at the analyzer's own
+`Config.tile_size / img_width = 15/512 = 0.0293 m/px`, and every threshold in the heuristic
+(`min_length` 2.0 m, `max_distance` 8 m, `measuring_point_spacing` 0.5 m) is in **metres**. A wrong
+GSD yields plausible-looking garbage rather than an error, so it is pinned by a test.
+
+| sweep | tiles | vectorized | teacher stems | stems/tile | notes |
+|---|--:|--:|--:|--:|---|
+| SpecDS_ready, predicted masks | 3230 | 3142 | **12069** | 3.84 (max 12) | the training set |
+| GenDS10, predicted masks | 4540 | 3108 | 3584 | 1.15 (max 5) | sparse — see below |
+
+~5 s/tile. The SpecDS sweep alone is ~56× the labels of the single uploaded plot.
+
+**Mask quality dominates the teacher's output — not the vectorizer.** On the same 24 SpecDS tiles,
+ground-truth masks yield **155** stems but UNet-predicted masks only **86**. The GenDS10 row says
+the same thing at scale: the model used (`twostage_lrfix`) is fine-tuned to beech, so on the
+general dataset it predicts sparsely, 867 tiles come out empty and the teacher finds 1.15 stems per
+tile instead of 3.84. Whatever a learned vectorizer is trained on, it inherits the segmentation's
+errors first and the heuristic's second.
+
 ## Data status / what's needed
 
 - **Have:** one heuristic output — `…/uploads/…_Barnekow_4_…_detected_stems.gpkg` (3 layers:
