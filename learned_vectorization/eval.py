@@ -74,12 +74,17 @@ def main():
     ck = torch.load(args.ckpt, map_location="cpu")
     net = FieldNet(in_channels=1, base=ck["args"].get("base", 32))
     net.load_state_dict(ck["model"]); net.eval().to(args.device)
-    x = torch.from_numpy(np.asarray(mask[sl], np.float32))[None, None].to(args.device)
+    m = np.asarray(mask[sl], np.float32)
+    # the encoder halves 3x, so pad to a multiple of 8 and crop the predictions back
+    mult = 8
+    ph, pw = (-m.shape[0]) % mult, (-m.shape[1]) % mult
+    x = torch.from_numpy(np.pad(m, ((0, ph), (0, pw))))[None, None].to(args.device)
     with torch.no_grad():
         out = net(x)
-    p_heat = torch.sigmoid(out["heat"])[0, 0].cpu().numpy()
-    p_or = out["orient"][0].cpu().numpy()
-    p_d = out["diam"][0, 0].cpu().numpy()
+    H0, W0 = m.shape
+    p_heat = torch.sigmoid(out["heat"])[0, 0].cpu().numpy()[:H0, :W0]
+    p_or = out["orient"][0].cpu().numpy()[:, :H0, :W0]
+    p_d = out["diam"][0, 0].cpu().numpy()[:H0, :W0]
     pred = _decode_to_world(p_heat, p_or, p_d, sub_grid, args.gsd)
 
     rows = [("heuristic (teacher)", _summary(teacher)),
