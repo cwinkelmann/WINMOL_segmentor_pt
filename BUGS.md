@@ -12,18 +12,31 @@ what is **measured** from what is **hypothesis**, so nobody inherits a guess as 
 stage 1 comes from which is documented in the 2021 paper and in the docs, aside from data leakage
 in GenDS100."*
 
-**Why the leakage explanation is plausible — measured facts:**
+**What the paper actually reports.** The paper is Reder, Mund, Albert, Miranda, *Detection of
+Windthrown Tree Stems on UAV-Orthomosaics Using U-Net Convolutional Networks*, Remote Sens. 2022,
+14(1), 75 (doi 10.3390/rs14010075). Its headline results are **F1 73.9% (S1Mod10), 74.3%
+(S1Mod50), 75.6% (S1Mod100)** against a non-pre-trained baseline of **72.6%** — i.e. **~74–76%,
+not 98%**. Those are the stage-2 models evaluated on the *specific* windthrow dataset.
+(MDPI and ResearchGate both return HTTP 403 to automated fetches, so this comes from indexed
+abstract/summary text; the full Methods section has **not** been read. Anything below about the
+split is therefore inference, not quotation.)
 
-1. **`GenDS10` is 454 scenes × exactly 10 tiles each** (4540 tiles; `ls | sed 's/^train_//;
-   s/_[0-9]*\.jpeg$//' | sort | uniq -c` gives 10 for every one of the 454 prefixes). The tile
-   naming is `train_<scene>_<index>.jpeg`. So the trailing number in the dataset name is
-   **tiles per scene** — which makes `GenDS100` ~100 tiles drawn from the *same* source
-   orthomosaics, i.e. ~10x denser sampling of the same scenes.
-2. **The R training split is a plain random shuffle, not scene-aware.** `input_pipeline.R` uses
-   `dataset_shuffle(...)` with no grouping by `<scene>`. So tiles cut from the *same* orthomosaic
-   land in both train and validation. At 100 tiles/scene those tiles are near-duplicates of each
-   other (adjacent/overlapping crops of one image), so validation is effectively measuring
-   memorization of scenes it has already seen.
+**Corrected: what the 10/50/100 suffix means.** An earlier version of this entry inferred from the
+on-disk layout that the suffix meant *tiles per scene*. That was wrong. Per the paper, GenDS is a
+**synthetic** dataset: the network was *"pre-trained with generic datasets, randomly combining stems
+and background samples in a copy–paste augmentation"*, with **10, 50 and 100 augmentations per
+annotated windthrown stem**. The disk layout is consistent with that reading: `GenDS10` is
+**454 groups × exactly 10 tiles** (4540 tiles, `train_<a>_<b>.jpeg`), i.e. 454 annotated stems ×
+10 augmentations each — not 454 scenes.
+
+**Why leakage is still the likely explanation for a ~98% stage-1 number — and now more so:**
+
+1. **With 100 augmentations per annotated stem, the same stem appears in 100 tiles.** A random
+   split puts augmentations of the *same* annotated stem on both sides, so the validation set is
+   near-copies of the training set. That is textbook leakage, and it gets worse as the augmentation
+   count rises (10 → 50 → 100).
+2. **The R training split is a plain random shuffle, with no grouping.** `input_pipeline.R` uses
+   `dataset_shuffle(...)` with no grouping by the `<a>` field, so nothing prevents (1).
 3. **Exact duplication across dataset folders is real here, not theoretical.** `SpecDS_local` is a
    strict subset of `SpecDS_ready` — all 410 training images are **byte-identical**
    (verified by md5). Any evaluation mixing those folders is scoring on training data.
@@ -34,24 +47,31 @@ in GenDS100."*
 5. **Today's SpecDS run reproduces the optimistic regime:** UNet, 20 epochs, random *tile* split on
    `SpecDS_ready` → val F1 **0.9079**. High, on a split that does not respect scene boundaries.
 
-**Hypothesis (not yet verified):** a ~0.98 F1 on GenDS100 is an *in-scene* number — train and
-validation tiles come from the same orthomosaics — and is not a generalization estimate. It should
-not be compared against, or cited alongside, cross-site numbers.
+**Hypothesis (not yet verified):** the ~98% is the **stage-1 validation F1 on GenDS itself** —
+validating on copy-paste augmentations of the same annotated stems used for training — and is
+therefore a memorization score, not a generalization estimate. It is consistent with the paper
+reporting only 73.9–75.6% for the models that were actually evaluated on real windthrow data: the
+98% would never have been the headline number, which is why it does not appear in the abstract.
+A ~98% F1 on *real* stems would also be flatly inconsistent with everything measured in this repo
+(best cross-site F1 ≈ 0.81).
 
-**How to settle it definitively (cheap, ~1 h):** retrain stage 1 on `GenDS10` twice with everything
-else identical — once with the current random tile split, once with a **scene-grouped split**
-(group by the `<scene>` field of the filename, so all 10 tiles of a scene fall on the same side).
+**How to settle it definitively (cheap, ~1 h):** retrain stage 1 on `GenDS10` twice, everything else
+identical — once with the current random tile split, once with a **grouped split** on the `<a>`
+field of `train_<a>_<b>.jpeg`, so all 10 augmentations of one annotated stem land on the same side.
 `tile_key()` in `learned_vectorization/build_teacher_dataset.py` already parses these names. If the
-grouped split drops F1 substantially, leakage is confirmed and the gap quantifies it. Running it on
-GenDS100 (if it can be located — it is **not** on this host, only `GenDS10`) would test the
-stronger claim directly, since the leakage should scale with tiles-per-scene.
+grouped split drops F1 substantially, leakage is confirmed and the gap quantifies it. The effect
+should scale with the augmentation count, so `GenDS100` would show it strongest.
 
-**Blocker:** `GenDS100` is not present on this machine. `/home/christian/hnee/WINMOL_segmentor/
-datasets/` has only `GenDS10`, `SpecDS_ready`, `SpecDS_local`, `SpecDS_smoke`.
+**Blockers:**
+- `GenDS100` is not on this host. `/home/christian/hnee/WINMOL_segmentor/datasets/` has only
+  `GenDS10`, `SpecDS_ready`, `SpecDS_local`, `SpecDS_smoke`.
+- The paper's full text could not be retrieved (MDPI + ResearchGate both 403 automated fetches),
+  so the exact split protocol and the location of any 98% figure remain **unverified**. Someone
+  with the PDF should check Section "Materials and Methods" / the training tables directly.
 
-**Caveat:** I have not read the 2021 paper, so I cannot confirm what protocol it reports — the
-above explains how such a number could arise from this data layout, it does not prove that is what
-happened.
+**Note.** The paper's own stage-1 pre-training *is* copy-paste augmentation of stems onto
+backgrounds — the same idea re-implemented in `training/mix_augment.py` (2026-07-22), where at
+p=0.5 on SpecDS it did **not** improve held-out F1 (0.9014 vs 0.9079 baseline).
 
 ---
 
