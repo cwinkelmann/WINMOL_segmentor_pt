@@ -39,6 +39,25 @@ the diameter map. Orientation disambiguates crossings; the learned ridge bridges
 4. **Train + eval** (`train.py`, `eval.py`): distill on (mask→fields) pairs; eval = model-vs-heuristic
    (expected: approaches, does not exceed) and, if any field data exists, both-vs-field-truth.
 
+## Results
+
+**Step 0 — representation round-trip (DONE, no training).** `round_trip.py` on the real 215-stem
+Barnekow gpkg (grid 0.1 m/px, sigma 1.0): decode 0.6 s.
+
+| metric | heuristic (in) | round-trip (out) | ratio |
+|--------|---------------:|-----------------:|------:|
+| stems | 215 | 218 | 1.01 |
+| total length (m) | 1715 | 1806 | 1.05 |
+| mean diameter (m) | 0.228 | 0.229 | 1.00 |
+| total volume (m³) | 75.9 | 80.0 | 1.05 |
+
+The dense-field representation recovers stem count + diameter to ~1% and length/volume to ~5%
+(the +5% is decoder staircasing — tightenable with polyline simplification). **So the
+representation is not the ceiling** — a model that predicts these fields well would reproduce the
+heuristic to a few percent. That *is* the point: the ceiling is the heuristic labels, not the
+architecture. (The momentum tracer also passes crossings straight through — `test_decode_crossing`
+— the heuristic's worst case.)
+
 ## Data status / what's needed
 
 - **Have:** one heuristic output — `…/uploads/…_Barnekow_4_…_detected_stems.gpkg` (3 layers:

@@ -28,8 +28,8 @@ def _summary(stems, grid=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("gpkg")
-    ap.add_argument("--gsd", type=float, default=0.05, help="metres/pixel for the synthetic grid")
-    ap.add_argument("--sigma", type=float, default=1.5)
+    ap.add_argument("--gsd", type=float, default=0.1, help="metres/pixel for the synthetic grid")
+    ap.add_argument("--sigma", type=float, default=1.0)
     ap.add_argument("--heat-thresh", type=float, default=0.3)
     ap.add_argument("--min-len-m", type=float, default=0.5)
     args = ap.parse_args()
