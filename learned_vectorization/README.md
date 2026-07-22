@@ -130,17 +130,40 @@ GSD yields plausible-looking garbage rather than an error, so it is pinned by a 
 
 | sweep | tiles | vectorized | teacher stems | stems/tile | notes |
 |---|--:|--:|--:|--:|---|
-| SpecDS_ready, predicted masks | 3230 | 3142 | **12069** | 3.84 (max 12) | the training set |
+| SpecDS_ready, **predicted** masks | 3230 | 3142 | **12069** | 3.84 (max 12) | the training set |
+| SpecDS_ready, **ground-truth** masks | 3230 | 3225 | **24625** | 7.64 (max 25) | same tiles, same heuristic |
 | GenDS10, predicted masks | 4540 | 3108 | 3584 | 1.15 (max 5) | sparse — see below |
 
-~5 s/tile. The SpecDS sweep alone is ~56× the labels of the single uploaded plot.
+~5–7 s/tile. The SpecDS sweep alone is ~56× the labels of the single uploaded plot.
 
-**Mask quality dominates the teacher's output — not the vectorizer.** On the same 24 SpecDS tiles,
-ground-truth masks yield **155** stems but UNet-predicted masks only **86**. The GenDS10 row says
-the same thing at scale: the model used (`twostage_lrfix`) is fine-tuned to beech, so on the
-general dataset it predicts sparsely, 867 tiles come out empty and the teacher finds 1.15 stems per
-tile instead of 3.84. Whatever a learned vectorizer is trained on, it inherits the segmentation's
-errors first and the heuristic's second.
+**Mask quality dominates the teacher's output — not the vectorizer.** Rows 1 and 2 are the *same
+3230 tiles* through the *same heuristic*, differing only in whether the mask came from the UNet or
+from the dataset's ground truth: **24625 stems vs 12069, a factor of 2.04**. (A 24-tile spot check
+gave 155 vs 86, the same ratio.) The GenDS10 row says it again from the other direction: the model
+used (`twostage_lrfix`) is fine-tuned to beech, so on the general dataset it predicts sparsely, 867
+tiles come out empty and the teacher finds 1.15 stems/tile instead of 3.84.
+
+So the heuristic loses **half the stems** to segmentation error before any vectorizer, learned or
+not, gets a say. A learned vectorizer inherits the segmentation's errors first and the heuristic's
+second — which puts the entire model-vs-teacher gap (+8% stems) an order of magnitude below the
+gap that mask quality alone opens up.
+
+### Where the model and teacher actually disagree
+
+Greedy midpoint matching (<3 m) over 200 held-out tiles, 736 teacher vs 799 model stems:
+
+| | count | median length | <3 m | <4 m |
+|---|--:|--:|--:|--:|
+| model **extra** (unmatched) | 110 | 2.89 m | 55% | 82% |
+| teacher **missed** (unmatched) | 47 | 2.85 m | 53% | 70% |
+| **matched** | 689 (94% of teacher) | model traces +0.66 m longer (median), 60% within ±1 m | | |
+
+The model matches **94%** of the teacher's stems. The disagreement is short stems clustered just
+above the 2 m `min_length` cutoff, in both directions — and none of the extras is under 2 m, so the
+filter is being applied. The two effects are linked: tracing ~0.6 m long (decoder staircasing plus
+running further into tapering ends) pushes borderline fragments over the 2 m line that the teacher
+kept under it. This is boundary churn in the **decoder**, not a failure of the network to find
+stems, and it is fixable without retraining.
 
 ### Result — distilled from 12k real teacher stems
 
