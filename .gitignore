@@ -8,3 +8,4 @@ dist/
 output/
 results/
 learned_vectorization/runs/
+work/
