@@ -196,6 +196,51 @@ the 0.1 m/px plot — so part of the model's error is inherited from the encodin
 is a tuning knob (sigma/GSD), not a refutation, but it means these numbers are a *loose* upper
 bound on how well Approach A could do here.
 
+### How arbitrary is the teacher? A parameter-sensitivity sweep
+
+Same 600 tiles, **same cached masks**, only the analyzer's own `Config` varied — so every
+difference below is the heuristic's parameter sensitivity, nothing else
+(`build_teacher_dataset.py --config-json ... --mask-dir ...`).
+
+| config | stems (600 tiles) | vs base |
+|---|--:|--:|
+| base (`tolerance_angle` 7, `max_distance` 8, `min_length` 2) | 2104 | — |
+| `tolerance_angle` 5 | 2095 | −0.4% |
+| `tolerance_angle` 10 | 2138 | +1.6% |
+| `max_distance` 4 | 2099 | −0.2% |
+| `max_distance` 12 | 2117 | +0.6% |
+| **`min_length` 1.0** | **2976** | **+41.4%** |
+| **`min_length` 3.0** | **1535** | **−27.0%** |
+
+**The hypothesis that started this sweep was wrong, and the refutation is useful.** The idea was
+that the heuristic's knobs would move its output by more than the model-teacher gap, making
+"the teacher" an ill-defined target. For the *algorithmic* parameters that is simply false:
+`tolerance_angle` across 5–10° and `max_distance` across 4–12 m move the stem count by **under 2%**,
+well below the 8% model-teacher gap. The angle-voting grouping logic is stable, so the heuristic
+**is** a well-defined distillation target. Good news for distillation, and it means the residual
+model error is genuinely the model's, not label noise.
+
+**But one knob dominates everything: `min_length`.** Sweeping the definition of "a stem" from 1 m to
+3 m spans 1535 → 2976 stems, a factor of **1.94** — almost exactly the 2.04× that separates
+ground-truth masks from predicted ones. And this lands precisely where the model's disagreements
+already live: unmatched stems on both sides had median length ~2.9 m, i.e. the model's "errors" are
+concentrated in exactly the regime where the teacher's answer is a **convention rather than a fact**.
+
+### Error budget — what actually determines the stem count
+
+| source of variation | effect on stem count |
+|---|--:|
+| `min_length` definition (1 m → 3 m) | **1.94×** |
+| mask quality (predicted → ground truth) | **2.04×** |
+| model vs its teacher | 1.08× |
+| vectorizer grouping params (`tolerance_angle`, `max_distance`) | <1.02× |
+
+The two things that decide how many stems you report are **how good the segmentation is** and
+**what you choose to call a stem**. The learned-vs-heuristic vectorizer question — the one this
+mini-project set out to answer — is an order of magnitude smaller than either, and the heuristic's
+own geometric tuning is smaller still. That is the sharpest form of the original point: the
+vectorizer was never the bottleneck.
+
 ## Data status / what's needed
 
 - **Have:** one heuristic output — `…/uploads/…_Barnekow_4_…_detected_stems.gpkg` (3 layers:
