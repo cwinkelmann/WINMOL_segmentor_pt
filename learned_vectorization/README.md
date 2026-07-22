@@ -128,25 +128,34 @@ training pairs; `train_teacher.py` / `eval_teacher.py` train and score on them.
 (`min_length` 2.0 m, `max_distance` 8 m, `measuring_point_spacing` 0.5 m) is in **metres**. A wrong
 GSD yields plausible-looking garbage rather than an error, so it is pinned by a test.
 
-| sweep | tiles | vectorized | teacher stems | stems/tile | notes |
-|---|--:|--:|--:|--:|---|
-| SpecDS_ready, **predicted** masks | 3230 | 3142 | **12069** | 3.84 (max 12) | the training set |
-| SpecDS_ready, **ground-truth** masks | 3230 | 3225 | **24625** | 7.64 (max 25) | same tiles, same heuristic |
-| GenDS10, predicted masks | 4540 | 3108 | 3584 | 1.15 (max 5) | sparse — see below |
+All four arms, stems normalised per **attempted** tile so the arms are comparable:
 
-~5–7 s/tile. The SpecDS sweep alone is ~56× the labels of the single uploaded plot.
+| sweep | tiles | vectorized | teacher stems | stems/tile |
+|---|--:|--:|--:|--:|
+| SpecDS_ready, **predicted** masks | 3230 | 3142 | **12069** | 3.74 |
+| SpecDS_ready, **ground-truth** masks | 3230 | 3225 | **24625** | 7.62 |
+| GenDS10, predicted masks | 4540 | 3108 | 3584 | 0.79 |
+| GenDS10, ground-truth masks | 4540 | 4531 | 6265 | 1.38 |
+
+~5–7 s/tile. The SpecDS predicted-mask sweep alone is ~56× the labels of the single uploaded plot,
+and is what the model trains on.
 
 **Mask quality dominates the teacher's output — not the vectorizer.** Rows 1 and 2 are the *same
 3230 tiles* through the *same heuristic*, differing only in whether the mask came from the UNet or
-from the dataset's ground truth: **24625 stems vs 12069, a factor of 2.04**. (A 24-tile spot check
-gave 155 vs 86, the same ratio.) The GenDS10 row says it again from the other direction: the model
-used (`twostage_lrfix`) is fine-tuned to beech, so on the general dataset it predicts sparsely, 867
-tiles come out empty and the teacher finds 1.15 stems/tile instead of 3.84.
+from the dataset's ground truth: **24625 vs 12069 stems, a factor of 2.04** (a 24-tile spot check
+gave 155 vs 86, the same ratio). GenDS10 shows the same effect at 1.75×.
 
-So the heuristic loses **half the stems** to segmentation error before any vectorizer, learned or
+So the heuristic loses **half its stems to segmentation error** before any vectorizer, learned or
 not, gets a say. A learned vectorizer inherits the segmentation's errors first and the heuristic's
-second — which puts the entire model-vs-teacher gap (+8% stems) an order of magnitude below the
-gap that mask quality alone opens up.
+second — putting the entire model-vs-teacher gap (+8% stems) an order of magnitude below the gap
+that mask quality alone opens up.
+
+**Correction — GenDS10 is not sparse because the model is beech-tuned.** An earlier reading of this
+table blamed `twostage_lrfix`'s beech fine-tuning for GenDS10's low yield. The ground-truth arm
+refutes that: GenDS10 GT masks give only **1.38** stems/tile against SpecDS's **7.62**, so those
+scenes simply contain far fewer stems. Measured as the fraction of GT stems recovered, the model
+does slightly **better** on GenDS10 (57%) than on SpecDS (49%). Domain shift is not the story;
+stem density is.
 
 ### Where the model and teacher actually disagree
 
