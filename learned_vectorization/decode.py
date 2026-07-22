@@ -34,13 +34,18 @@ def _orient_vec(orient, r, c):
 def _walk(seed, pixset, degree, junctions, orient, visited_arm):
     """Trace from an endpoint `seed`, moving with momentum. Passes straight *through*
     junctions (shared crossing pixels), so two crossing stems each keep going instead of
-    fragmenting; only arm (non-junction) pixels are consumed via `visited_arm`."""
+    fragmenting; only arm (non-junction) pixels are consumed via `visited_arm`.
+
+    `seen` is per-walk: a single trace never revisits a pixel (so clusters of adjacent junction
+    pixels can't ping-pong into an infinite loop), while the *global* visited_arm lets a
+    different stem still reuse a junction -- crossings stay whole."""
     path = [seed]
+    seen = {seed}
     if seed not in junctions:
         visited_arm.add(seed)
     came, cur = None, seed
     while True:
-        cand = [n for n in _neighbors(cur, pixset) if n != came
+        cand = [n for n in _neighbors(cur, pixset) if n != came and n not in seen
                 and (n in junctions or n not in visited_arm)]
         if not cand:
             break
