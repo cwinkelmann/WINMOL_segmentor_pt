@@ -36,6 +36,11 @@ class TrainConfig:
     aug_hue_shift: int = 20
     aug_sat_shift: int = 30
     aug_val_shift: int = 20
+    # sample-mixing augmentation (training/mix_augment.py). Off by default so existing
+    # benchmarks stay comparable; these wrap the train Dataset, never the val/test one.
+    aug_mosaic_p: float = 0.0
+    aug_copypaste_p: float = 0.0
+    aug_cutout_p: float = 0.0
     keras_out: Optional[str] = None
     pt_out: Optional[str] = None
     arch: str = "unet"                       # unet | deeplabv3plus | hrnet
