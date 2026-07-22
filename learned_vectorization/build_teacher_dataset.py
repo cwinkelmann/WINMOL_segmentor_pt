@@ -153,7 +153,7 @@ def vectorize_one(job):
 
     Returns a small dict (never the analyzer's objects) so it survives the process boundary.
     """
-    key, mask_path, out_dir, analyzer_dir, quiet = job
+    key, mask_path, out_dir, analyzer_dir, quiet, overrides = job
     out_prefix = os.path.join(out_dir, key)
     if os.path.exists(out_prefix + ".gpkg"):
         return {"key": key, "status": "cached"}
@@ -167,6 +167,7 @@ def vectorize_one(job):
         return {"key": key, "status": "empty", "stems": 0}
     prof = tile_profile(*mask.shape)
     cfg = {"vector_summary_log": not quiet, "prediction_tile_log": not quiet}
+    cfg.update(overrides or {})            # e.g. {"tolerance_angle": 5, "max_distance": 12}
     try:
         sink = io.StringIO()
         ctx = contextlib.redirect_stdout(sink) if quiet else contextlib.nullcontext()
@@ -192,6 +193,12 @@ def main():
     ap.add_argument("--workers", type=int, default=max(os.cpu_count() - 2, 1))
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--analyzer-dir", default="/analyzer")
+    ap.add_argument("--config-json", default="{}",
+                    help='override analyzer Config fields, e.g. \'{"tolerance_angle": 5}\' -- '
+                         "used for the parameter-sensitivity sweep")
+    ap.add_argument("--mask-dir",
+                    help="reuse masks from an earlier run instead of predicting again "
+                         "(the sensitivity sweep varies only the vectorizer, never the mask)")
     ap.add_argument("--verbose", action="store_true", help="let the analyzer print per tile")
     args = ap.parse_args()
 
@@ -200,11 +207,18 @@ def main():
         tiles = tiles[:args.limit]
     print(f"{len(tiles)} paired tiles in {args.data_dir}", flush=True)
 
-    mask_dir = os.path.join(args.out, "masks")
+    overrides = json.loads(args.config_json)
+    if overrides:
+        print(f"analyzer config overrides: {overrides}", flush=True)
+
+    mask_dir = args.mask_dir or os.path.join(args.out, "masks")
     gpkg_dir = os.path.join(args.out, "gpkg")
     os.makedirs(gpkg_dir, exist_ok=True)
 
-    if args.source == "pred":
+    if args.source == "pred" and args.mask_dir:
+        print(f"reusing masks from {args.mask_dir}", flush=True)
+        mask_for = lambda k: os.path.join(mask_dir, k + ".png")
+    elif args.source == "pred":
         if not args.model:
             ap.error("--source pred needs --model")
         if args.model.endswith(".pt"):
@@ -217,7 +231,7 @@ def main():
     else:
         mask_for = lambda k: dict((t[0], t[2]) for t in tiles)[k]
 
-    jobs = [(k, mask_for(k), gpkg_dir, args.analyzer_dir, not args.verbose)
+    jobs = [(k, mask_for(k), gpkg_dir, args.analyzer_dir, not args.verbose, overrides)
             for k, _, _ in tiles]
 
     from multiprocessing import Pool
@@ -234,6 +248,7 @@ def main():
     for r in results:
         by_status[r["status"]] = by_status.get(r["status"], 0) + 1
     manifest = {"data_dir": args.data_dir, "source": args.source, "model": args.model,
+                "config_overrides": overrides,
                 "gsd": ANALYZER_GSD, "n_tiles": len(tiles), "status": by_status,
                 "total_stems": sum(r.get("stems", 0) for r in results),
                 "results": sorted(results, key=lambda r: r["key"])}

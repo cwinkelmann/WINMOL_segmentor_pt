@@ -20,6 +20,7 @@ from winmol_unet.export import export_to_onnx, export_to_pt
 from .augment import build_augmentation
 from .config import TrainConfig
 from .dataset import StemDataset, train_val_split
+from .mix_augment import MixAugmentDataset
 from .evaluate import evaluate
 from .model_factory import build_model
 from .train import train_one_run
@@ -48,6 +49,12 @@ def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_
         train_ds, val_ds = train_val_split(
             image_dir, mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
             transform=transform, cache=cfg.cache_dataset)
+    # sample-mixing augmentation wraps ONLY the training set — mixing val/test would
+    # change what is being measured.
+    if cfg.aug_mosaic_p or cfg.aug_copypaste_p or cfg.aug_cutout_p:
+        train_ds = MixAugmentDataset(train_ds, mosaic_p=cfg.aug_mosaic_p,
+                                     copypaste_p=cfg.aug_copypaste_p,
+                                     cutout_p=cfg.aug_cutout_p, seed=cfg.seed)
     # drop_last avoids a trailing batch of 1 (breaks BatchNorm in DeepLabV3+ ASPP
     # [N,C,1,1]) — only when there is more than one batch's worth, so a tiny set
     # isn't zeroed out. num_workers>0 is only safe with cache_dataset=False.
@@ -194,6 +201,12 @@ def config_from_args(argv=None):
     p.add_argument("--aug-brightness-limit", type=float, default=0.2)
     p.add_argument("--aug-contrast-limit", type=float, default=0.2)
     p.add_argument("--aug-hsv-p", type=float, default=0.5)
+    p.add_argument("--aug-mosaic-p", type=float, default=0.0,
+                   help="prob. of composing 4 tiles into one (crops, never rescales)")
+    p.add_argument("--aug-copypaste-p", type=float, default=0.0,
+                   help="prob. of pasting a donor tile's stems onto this one")
+    p.add_argument("--aug-cutout-p", type=float, default=0.0,
+                   help="prob. of erasing rectangles from image AND mask")
     p.add_argument("--arch", default="unet", help="unet|deeplabv3plus|hrnet")
     p.add_argument("--encoder", default="resnet34", help="smp encoder (deeplabv3plus)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
@@ -221,6 +234,8 @@ def config_from_args(argv=None):
         aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
+        aug_mosaic_p=a.aug_mosaic_p, aug_copypaste_p=a.aug_copypaste_p,
+        aug_cutout_p=a.aug_cutout_p,
         arch=a.arch, encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,
     )
