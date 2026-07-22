@@ -142,6 +142,37 @@ general dataset it predicts sparsely, 867 tiles come out empty and the teacher f
 tile instead of 3.84. Whatever a learned vectorizer is trained on, it inherits the segmentation's
 errors first and the heuristic's second.
 
+### Result — distilled from 12k real teacher stems
+
+FieldNet (base 32), 20 epochs on 2514 tiles, scored on the **628 held-out tiles** recorded in the
+checkpoint. Input is the UNet's own mask; labels are the analyzer's output on that same mask; both
+sides get the analyzer's 2 m minimum stem length.
+
+| source | stems | length (m) | mean diam (m) | volume (m³) |
+|---|--:|--:|--:|--:|
+| heuristic (teacher) | **2356** | **12615.7** | **0.230** | **566.86** |
+| GT-fields round-trip | 2161 | 12916.4 | 0.233 | 582.08 |
+| model prediction | 2553 | 14530.8 | 0.230 | 638.64 |
+
+**per-tile stem count: exact match 50.6% | MAE 0.64 stems/tile | teacher 3.75 vs model 4.07/tile**
+
+Pooled, the model looks close: mean diameter is *identical* to the teacher's (0.230 m), stem count
++8%, volume +13%. That is the same "approaches but does not exceed" picture as the single-plot
+study, now on 56× the data with a mask the net never saw the labels for.
+
+**But the per-tile number is the one to quote.** The model reproduces the teacher's stem count
+exactly on only **half** the tiles, and is off by 0.64 stems per tile on average. Pooled totals
+hide this: over- and under-counts on different tiles partially cancel, which is exactly why
+`eval_teacher.py` reports both. A distilled vectorizer that agrees with its teacher on half the
+tiles is not a replacement for it — and it *cannot* become better than it, because the only signal
+it has is the teacher's own output.
+
+Note the middle row: the GT-fields round-trip recovers 2161 of 2356 stems (−8%) at this 0.029 m/px
+GSD with `sigma=2.0`. The representation itself is now lossy — worse than the +1% it achieved on
+the 0.1 m/px plot — so part of the model's error is inherited from the encoding, not learned. That
+is a tuning knob (sigma/GSD), not a refutation, but it means these numbers are a *loose* upper
+bound on how well Approach A could do here.
+
 ## Data status / what's needed
 
 - **Have:** one heuristic output — `…/uploads/…_Barnekow_4_…_detected_stems.gpkg` (3 layers:
