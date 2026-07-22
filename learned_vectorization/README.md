@@ -58,6 +58,33 @@ heuristic to a few percent. That *is* the point: the ceiling is the heuristic la
 architecture. (The momentum tracer also passes crossings straight through — `test_decode_crossing`
 — the heuristic's worst case.)
 
+**Step 1 — distillation PoC (DONE).** `train.py` on the same plot, mask→fields, **spatial**
+split (left 75% train / right 25% val, 256 px gap → no shared pixels): 104 train / 26 val tiles,
+40 epochs, FieldNet base=32. Best val loss 0.239 (heat 0.125, orient 0.019, diam 0.095) — the
+orientation head is essentially solved; diameter carries the residual.
+
+`eval.py` on the held-out strip (cols 1536–1907), decoding *predicted* fields with the same
+decoder:
+
+| source | stems | length (m) | mean diam (m) | volume (m³) |
+|---|--:|--:|--:|--:|
+| heuristic (teacher) | 28 | 156.3 | 0.224 | 6.81 |
+| GT-fields round-trip | 28 | 151.3 | 0.229 | 6.72 |
+| model prediction | 35 | 168.1 | 0.217 | 6.82 |
+
+**Reading it.** Aggregate quantities the forester actually reports land on the teacher: volume
+6.82 vs 6.81 m³ (+0.2%), mean diameter 0.217 vs 0.224 m (−3%), length +7.5%. The one clear
+*deviation* is stem count — 35 vs 28, i.e. the net **over-segments**: where its predicted ridge
+dips below threshold mid-stem, the tracer emits two stems instead of one. That is error measured
+against the teacher, not an improvement: every deviation from 28 is, by construction, a mistake.
+
+**The point.** Both the representation (row 2) and the trained model (row 3) sit *at or just off*
+the teacher and never above it. There is no signal in the training data that could push the model
+past the heuristic, because the heuristic **is** the label. Distillation buys speed, differentiability
+and end-to-end composability — not accuracy. To exceed the heuristic you need labels the heuristic
+did not produce: field-surveyed stems (DBH tape / TLS), or human-corrected vectorizations. Until
+those exist, "learned vectorization" can only be a faster reimplementation of what we already have.
+
 ## Data status / what's needed
 
 - **Have:** one heuristic output — `…/uploads/…_Barnekow_4_…_detected_stems.gpkg` (3 layers:

@@ -69,7 +69,7 @@ def main():
             loss = field_loss(net(x), tgt)
             opt.zero_grad(); loss["total"].backward(); opt.step()
             for k in agg:
-                agg[k] += float(loss[k]) * x.size(0)
+                agg[k] += float(loss[k].detach()) * x.size(0)
         for k in agg:
             agg[k] /= max(len(tr), 1)
 
