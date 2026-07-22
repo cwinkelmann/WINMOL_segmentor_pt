@@ -84,29 +84,68 @@ def load_binary_mask(path, thresh=127):
     return (np.asarray(Image.open(path).convert("L")) > thresh).astype(np.uint8)
 
 
-def predict_masks(session, tiles, out_dir, batch_size=8, thresh=0.5, size=512):
-    """Phase 1: run the UNet ONNX over the tiles, writing a binary mask PNG per tile."""
+def _load_batch(paths, size=512):
+    from PIL import Image
+    batch = []
+    for p in paths:
+        im = Image.open(p).convert("RGB")
+        if im.size != (size, size):
+            im = im.resize((size, size), Image.BICUBIC)
+        batch.append(np.asarray(im, np.float32) / 255.0)
+    return np.stack(batch).transpose(0, 3, 1, 2)           # NHWC -> NCHW, the contract input
+
+
+def predict_masks(predict_fn, tiles, out_dir, batch_size=8, thresh=0.5, size=512):
+    """Phase 1: run the UNet over the tiles, writing a binary mask PNG per tile.
+
+    `predict_fn(NCHW float32 in [0,1]) -> (N,1,H,W) probabilities`.
+    """
     from PIL import Image
     os.makedirs(out_dir, exist_ok=True)
     todo = [(k, p) for k, p, _ in tiles if not os.path.exists(os.path.join(out_dir, k + ".png"))]
     print(f"predict: {len(todo)} tiles to do ({len(tiles) - len(todo)} already done)", flush=True)
-    iname = session.get_inputs()[0].name
 
     for i in range(0, len(todo), batch_size):
         chunk = todo[i:i + batch_size]
-        batch = []
-        for _, p in chunk:
-            im = Image.open(p).convert("RGB")
-            if im.size != (size, size):
-                im = im.resize((size, size), Image.BICUBIC)
-            batch.append(np.asarray(im, np.float32) / 255.0)
-        x = np.stack(batch).transpose(0, 3, 1, 2)          # NHWC -> NCHW, contract input
-        y = session.run(None, {iname: x})[0]               # sigmoid is baked into the export
+        y = predict_fn(_load_batch([p for _, p in chunk], size))
         for (k, _), prob in zip(chunk, y):
             m = (prob[0] >= thresh).astype(np.uint8) * 255
             Image.fromarray(m).save(os.path.join(out_dir, k + ".png"))
         if (i // batch_size) % 20 == 0:
             print(f"  {min(i + batch_size, len(todo))}/{len(todo)}", flush=True)
+
+
+def make_torch_predictor(ckpt_path, device="cuda"):
+    """UNet state-dict -> predict_fn on the GPU.
+
+    Preferred over ONNX here: the vec image ships plain `onnxruntime` (CPU-only), which turned
+    out to be ~5 s/tile -- hours for the sweep -- while torch in the same image has CUDA.
+    The .pt is a bare state dict for winmol_unet.model.UNet; sigmoid is NOT baked in (that is
+    added at ONNX export), so apply it here.
+    """
+    import torch
+    from winmol_unet.model import UNet
+
+    net = UNet()
+    net.load_state_dict(torch.load(ckpt_path, map_location="cpu", weights_only=False))
+    net.eval().to(device)
+
+    def predict_fn(x):
+        with torch.no_grad():
+            t = torch.from_numpy(x).to(device)
+            return torch.sigmoid(net(t)).cpu().numpy()
+    return predict_fn
+
+
+def make_onnx_predictor(model_path):
+    import onnxruntime as ort
+    providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
+                 if "CUDAExecutionProvider" in ort.get_available_providers()
+                 else ["CPUExecutionProvider"])
+    sess = ort.InferenceSession(model_path, providers=providers)
+    print(f"onnx {os.path.basename(model_path)} on {sess.get_providers()[0]}", flush=True)
+    iname = sess.get_inputs()[0].name
+    return lambda x: sess.run(None, {iname: x})[0]         # sigmoid baked in at export
 
 
 def vectorize_one(job):
@@ -147,7 +186,8 @@ def main():
     ap.add_argument("--out", required=True, help="output dir (masks/ + gpkg/ + manifest.json)")
     ap.add_argument("--source", choices=["pred", "gt"], default="pred",
                     help="pred = UNet output (deployment distribution); gt = ground-truth masks")
-    ap.add_argument("--model", help="UNet .onnx (required for --source pred)")
+    ap.add_argument("--model", help="UNet .pt (torch, GPU) or .onnx; required for --source pred")
+    ap.add_argument("--device", default="cuda", help="device for a .pt model")
     ap.add_argument("--limit", type=int, help="only the first N tiles (smoke runs)")
     ap.add_argument("--workers", type=int, default=max(os.cpu_count() - 2, 1))
     ap.add_argument("--batch-size", type=int, default=8)
@@ -167,13 +207,12 @@ def main():
     if args.source == "pred":
         if not args.model:
             ap.error("--source pred needs --model")
-        import onnxruntime as ort
-        providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
-                     if "CUDAExecutionProvider" in ort.get_available_providers()
-                     else ["CPUExecutionProvider"])
-        sess = ort.InferenceSession(args.model, providers=providers)
-        print(f"model {os.path.basename(args.model)} on {sess.get_providers()[0]}", flush=True)
-        predict_masks(sess, tiles, mask_dir, batch_size=args.batch_size)
+        if args.model.endswith(".pt"):
+            print(f"torch {os.path.basename(args.model)} on {args.device}", flush=True)
+            predict_fn = make_torch_predictor(args.model, args.device)
+        else:
+            predict_fn = make_onnx_predictor(args.model)
+        predict_masks(predict_fn, tiles, mask_dir, batch_size=args.batch_size)
         mask_for = lambda k: os.path.join(mask_dir, k + ".png")
     else:
         mask_for = lambda k: dict((t[0], t[2]) for t in tiles)[k]
