@@ -7,3 +7,4 @@ dist/
 *.egg-info/
 output/
 results/
+learned_vectorization/runs/

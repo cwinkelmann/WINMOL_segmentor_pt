@@ -28,6 +28,36 @@ def _segment_projection(pr, pc, a, b):
     return t, dist
 
 
+def render_mask(polylines, diameters, shape):
+    """Rasterize stems as filled bands: a pixel is foreground when its perpendicular distance to
+    a centerline segment is <= the locally interpolated radius (diameter/2).
+
+    Lets the study synthesize a plausible stem **mask** straight from a heuristic gpkg, so the
+    mask->graph model can be trained without the original orthophoto. NOTE: such a mask is
+    cleaner than a real UNet mask (no gaps/blobs/false positives) -- add noise for realism.
+    """
+    H, W = shape
+    mask = np.zeros((H, W), bool)
+    for line, dvec in zip(polylines, diameters):
+        line = np.asarray(line, float)
+        dvec = np.asarray(dvec, float)
+        for i in range(len(line) - 1):
+            a, b = line[i], line[i + 1]
+            da, db = dvec[i], dvec[i + 1]
+            reach = int(np.ceil(max(da, db) / 2.0)) + 1
+            r0 = max(int(np.floor(min(a[0], b[0]))) - reach, 0)
+            r1 = min(int(np.ceil(max(a[0], b[0]))) + reach, H - 1)
+            c0 = max(int(np.floor(min(a[1], b[1]))) - reach, 0)
+            c1 = min(int(np.ceil(max(a[1], b[1]))) + reach, W - 1)
+            if r1 < r0 or c1 < c0:
+                continue
+            rr, cc = np.mgrid[r0:r1 + 1, c0:c1 + 1]
+            t, dist = _segment_projection(rr.astype(float), cc.astype(float), a, b)
+            radius = (da + t * (db - da)) / 2.0
+            mask[r0:r1 + 1, c0:c1 + 1] |= dist <= radius
+    return mask
+
+
 def render_fields(polylines, diameters, shape, sigma=1.5):
     H, W = shape
     heat = np.zeros((H, W), np.float32)
