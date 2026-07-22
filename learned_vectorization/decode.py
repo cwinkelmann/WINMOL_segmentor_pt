@@ -56,6 +56,7 @@ def _walk(seed, pixset, degree, junctions, orient, visited_arm):
             inc = _unit(np.subtract(cur, came))          # momentum: keep going straight
             nxt = max(cand, key=lambda n: float(np.dot(_unit(np.subtract(n, cur)), inc)))
         path.append(nxt)
+        seen.add(nxt)                                    # per-walk: never revisit within a trace
         if nxt not in junctions:
             visited_arm.add(nxt)
         came, cur = cur, nxt
