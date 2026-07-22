@@ -38,14 +38,17 @@ def corrupt_mask(mask, rng, drop_p=0.15, blob_p=0.15, dilate_p=0.3):
 
     out = np.array(mask, bool, copy=True)
     H, W = out.shape
+    # densities are calibrated per 256x256 tile; scale by area so a whole plot/strip is degraded
+    # as heavily per-pixel as a tile is (>=1 event each, so small crops still get corrupted)
+    area = max(H * W / (256.0 * 256.0), 0.0)
     # erase random patches (simulates missed/occluded stem sections)
-    n_drop = rng.poisson(drop_p * 12)
+    n_drop = max(rng.poisson(drop_p * 12 * area), 1 if drop_p > 0 else 0)
     for _ in range(n_drop):
         h, w = rng.integers(4, 16), rng.integers(4, 16)
         r, c = rng.integers(0, max(H - h, 1)), rng.integers(0, max(W - w, 1))
         out[r:r + h, c:c + w] = False
     # spurious blobs (false positives)
-    n_blob = rng.poisson(blob_p * 12)
+    n_blob = max(rng.poisson(blob_p * 12 * area), 1 if blob_p > 0 else 0)
     for _ in range(n_blob):
         h, w = rng.integers(3, 10), rng.integers(3, 10)
         r, c = rng.integers(0, max(H - h, 1)), rng.integers(0, max(W - w, 1))

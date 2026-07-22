@@ -38,8 +38,8 @@ def _summary(stems):
     return n, tot_len, float(np.nanmean(diams)), vol
 
 
-def _decode_to_world(heat, orient, diam, grid, gsd, min_len_m=0.5):
-    dec = decode_fields(heat, orient, diam, heat_thresh=0.3, min_pixels=int(min_len_m / gsd))
+def _decode_to_world(heat, orient, diam, grid, gsd, min_len_m=0.5, heat_thresh=0.5):
+    dec = decode_fields(heat, orient, diam, heat_thresh=heat_thresh, min_pixels=int(min_len_m / gsd))
     return [{"xy": grid.px_to_world(s["line"]), "d": np.asarray(s["diam"]) * gsd} for s in dec]
 
 
@@ -50,6 +50,11 @@ def main():
     ap.add_argument("--gsd", type=float, default=0.1)
     ap.add_argument("--sigma", type=float, default=1.0)
     ap.add_argument("--tile", type=int, default=256)
+    ap.add_argument("--corrupt", action="store_true",
+                    help="degrade the input mask like a real UNet mask (labels stay the teacher's)")
+    ap.add_argument("--heat-thresh", type=float, default=0.5,
+                    help="ridge threshold for the decoder; low values turn a low-confidence "
+                         "halo into speckle stems (see README)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -69,12 +74,18 @@ def main():
     teacher = [s for s in stems if float(np.asarray(s["xy"])[:, 0].mean()) >= x_cut]
 
     sub_grid = Grid(grid.minx + c0 * grid.gsd, grid.maxy, grid.gsd, grid.H, grid.W - c0)
-    gt = _decode_to_world(heat[sl], orient[:, :, c0:], diam[sl], sub_grid, args.gsd)
+    gt = _decode_to_world(heat[sl], orient[:, :, c0:], diam[sl], sub_grid, args.gsd,
+                          heat_thresh=args.heat_thresh)
 
     ck = torch.load(args.ckpt, map_location="cpu")
     net = FieldNet(in_channels=1, base=ck["args"].get("base", 32))
     net.load_state_dict(ck["model"]); net.eval().to(args.device)
-    m = np.asarray(mask[sl], np.float32)
+    m = mask[sl]
+    if args.corrupt:
+        from dataset import corrupt_mask
+        m = corrupt_mask(m, np.random.default_rng(7))
+        print("input mask corrupted (drops / blobs / dilation)")
+    m = np.asarray(m, np.float32)
     # the encoder halves 3x, so pad to a multiple of 8 and crop the predictions back
     mult = 8
     ph, pw = (-m.shape[0]) % mult, (-m.shape[1]) % mult
@@ -85,7 +96,7 @@ def main():
     p_heat = torch.sigmoid(out["heat"])[0, 0].cpu().numpy()[:H0, :W0]
     p_or = out["orient"][0].cpu().numpy()[:, :H0, :W0]
     p_d = out["diam"][0, 0].cpu().numpy()[:H0, :W0]
-    pred = _decode_to_world(p_heat, p_or, p_d, sub_grid, args.gsd)
+    pred = _decode_to_world(p_heat, p_or, p_d, sub_grid, args.gsd, heat_thresh=args.heat_thresh)
 
     rows = [("heuristic (teacher)", _summary(teacher)),
             ("GT-fields round-trip", _summary(gt)),
