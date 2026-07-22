@@ -63,20 +63,46 @@ split (left 75% train / right 25% val, 256 px gap → no shared pixels): 104 tra
 40 epochs, FieldNet base=32. Best val loss 0.239 (heat 0.125, orient 0.019, diam 0.095) — the
 orientation head is essentially solved; diameter carries the residual.
 
-`eval.py` on the held-out strip (cols 1536–1907), decoding *predicted* fields with the same
-decoder:
+A second model was trained identically but with `--corrupt` (input mask degraded with random
+erasures, spurious blobs and dilation/erosion, to mimic a real UNet mask rather than a mask
+rendered from the labels). `eval.py` on the held-out strip (cols 1536–1907), decoding *predicted*
+fields with the same decoder, `heat_thresh=0.5`:
 
-| source | stems | length (m) | mean diam (m) | volume (m³) |
-|---|--:|--:|--:|--:|
-| heuristic (teacher) | 28 | 156.3 | 0.224 | 6.81 |
-| GT-fields round-trip | 28 | 151.3 | 0.229 | 6.72 |
-| model prediction | 35 | 168.1 | 0.217 | 6.82 |
+| trained on | eval input | stems | length (m) | mean diam (m) | volume (m³) |
+|---|---|--:|--:|--:|--:|
+| — | *heuristic (teacher)* | **28** | **156.3** | **0.224** | **6.81** |
+| — | *GT-fields round-trip* | 28 | 152.6 | 0.228 | 6.73 |
+| clean masks | clean | 31 | 159.6 | 0.226 | 6.88 |
+| clean masks | corrupted | 39 | 165.1 | 0.232 | 7.57 |
+| corrupted masks | clean | 29 | 165.9 | 0.229 | 7.15 |
+| corrupted masks | corrupted | 41 | 174.1 | 0.232 | 7.69 |
 
-**Reading it.** Aggregate quantities the forester actually reports land on the teacher: volume
-6.82 vs 6.81 m³ (+0.2%), mean diameter 0.217 vs 0.224 m (−3%), length +7.5%. The one clear
-*deviation* is stem count — 35 vs 28, i.e. the net **over-segments**: where its predicted ridge
-dips below threshold mid-stem, the tracer emits two stems instead of one. That is error measured
-against the teacher, not an improvement: every deviation from 28 is, by construction, a mistake.
+**Reading it.** On a clean mask the net lands on the teacher: 29–31 stems vs 28, volume within
+1–5%, mean diameter within 1%. Every row is *at or just off* the teacher and **none exceeds it** —
+the deviations are over-segmentation (a predicted ridge dipping below threshold mid-stem makes the
+tracer emit two stems) plus decoder staircasing in length. Both are error against the label, not
+improvement: by construction any departure from 28 is a mistake.
+
+**Corruption training did not buy robustness.** Training on corrupted masks helps slightly on clean
+input (29 vs 31 stems) but the corrupted-input rows are no better than the clean-trained model's
+(41 vs 39). Degrading the mask costs ~10 spurious stems and ~10% volume regardless. Caveat: the
+corrupted eval is a *single* noise draw (seed 7) on one strip, so the 39-vs-41 gap is within noise —
+this says corruption-robustness is *unproven*, not that it is impossible.
+
+**Decoder threshold is a real confound, worth recording.** At `heat_thresh=0.3` the corrupt-trained
+model decodes into **164** stems while its heat loss is *better* than the clean model's. Component
+counts of the thresholded skeleton explain it — training on noise makes the net less confident, so
+a low threshold turns its low-probability halo into speckle:
+
+| heat source | t=0.3 | t=0.5 | t=0.7 |
+|---|--:|--:|--:|
+| ground truth | 28 | 28 | 28 |
+| clean-trained | 31 | 27 | 28 |
+| corrupt-trained | **491** | 28 | 28 |
+
+Its topology is exactly right at 0.5/0.7. So pixel-wise loss does **not** track the metric anyone
+cares about, and a decode threshold tuned on one model silently misreports another. Anything built
+on this needs the threshold calibrated per model, or a decoder that doesn't have one.
 
 **The point.** Both the representation (row 2) and the trained model (row 3) sit *at or just off*
 the teacher and never above it. There is no signal in the training data that could push the model
