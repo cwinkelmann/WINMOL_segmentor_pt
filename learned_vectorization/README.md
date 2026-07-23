@@ -1,0 +1,268 @@
+# Learned stem vectorization — a distillation study
+
+**Self-contained mini-project** (branch `feat/learned-vectorization`). It does not touch the
+`winmol_unet` package or the training pipeline; it only *reuses* the UNet backbone as an option.
+
+## The point being proved
+
+The WINMOL Analyzer turns a UNet stem-**mask** into vector **stems** (centerline polylines +
+per-node **diameter** profile → length, volume) with a hand-tuned heuristic (skeletonize → graph
+→ angle-vote connect → measure diameter off the mask). We ask: **can a neural network learn that
+mask→graph step, trained only on the heuristic's own output?**
+
+**Thesis:** it can *reproduce* the heuristic, but it **cannot exceed** it — because the training
+labels *are* the heuristic. This is a self-distillation ceiling. The value of the learned form is
+therefore not accuracy but: no tuned thresholds, differentiability, single forward pass, and
+graceful behaviour where the heuristic is brittle (crossings, tile seams). The study's job is to
+**demonstrate the ceiling honestly**, not to beat the teacher.
+
+## Approach A — dense fields + light trace
+
+Predict, per pixel, from the mask (optionally + RGB):
+- **centerline heatmap** — Gaussian ridge along each stem centerline,
+- **orientation field** — tangent as (sin 2θ, cos 2θ) (undirected),
+- **diameter map** — stem width in metres at the centerline.
+
+Then a minimal decoder traces polylines along the ridge following the orientation field, sampling
+the diameter map. Orientation disambiguates crossings; the learned ridge bridges skeleton gaps.
+
+## Build order (each stage gates the next)
+
+0. **Representation round-trip (NO training, do first):** `gpkg → fields → decode → polylines`,
+   compared to the original `gpkg` (stem count, endpoint distance, length/diameter/volume error).
+   This bounds the *whole approach* independent of the network. If the GT fields don't round-trip,
+   stop and fix the representation/decoder.
+1. **Target generation** (`targets.py`): gpkg + raster grid → the three field rasters. Pure
+   rasterization math is numpy-testable; geo-IO (gpkg read + geotransform) is integration-tested.
+2. **Model** (`model.py`): shared backbone + 3 heads (heatmap / orientation / diameter).
+3. **Decoder** (`decode.py`): fields → polylines + diameters.
+4. **Train + eval** (`train.py`, `eval.py`): distill on (mask→fields) pairs; eval = model-vs-heuristic
+   (expected: approaches, does not exceed) and, if any field data exists, both-vs-field-truth.
+
+## Results
+
+**Step 0 — representation round-trip (DONE, no training).** `round_trip.py` on the real 215-stem
+Barnekow gpkg (grid 0.1 m/px, sigma 1.0): decode 0.6 s.
+
+| metric | heuristic (in) | round-trip (out) | ratio |
+|--------|---------------:|-----------------:|------:|
+| stems | 215 | 218 | 1.01 |
+| total length (m) | 1715 | 1806 | 1.05 |
+| mean diameter (m) | 0.228 | 0.229 | 1.00 |
+| total volume (m³) | 75.9 | 80.0 | 1.05 |
+
+The dense-field representation recovers stem count + diameter to ~1% and length/volume to ~5%
+(the +5% is decoder staircasing — tightenable with polyline simplification). **So the
+representation is not the ceiling** — a model that predicts these fields well would reproduce the
+heuristic to a few percent. That *is* the point: the ceiling is the heuristic labels, not the
+architecture. (The momentum tracer also passes crossings straight through — `test_decode_crossing`
+— the heuristic's worst case.)
+
+**Step 1 — distillation PoC (DONE).** `train.py` on the same plot, mask→fields, **spatial**
+split (left 75% train / right 25% val, 256 px gap → no shared pixels): 104 train / 26 val tiles,
+40 epochs, FieldNet base=32. Best val loss 0.239 (heat 0.125, orient 0.019, diam 0.095) — the
+orientation head is essentially solved; diameter carries the residual.
+
+A second model was trained identically but with `--corrupt` (input mask degraded with random
+erasures, spurious blobs and dilation/erosion, to mimic a real UNet mask rather than a mask
+rendered from the labels). `eval.py` on the held-out strip (cols 1536–1907), decoding *predicted*
+fields with the same decoder, `heat_thresh=0.5`:
+
+| trained on | eval input | stems | length (m) | mean diam (m) | volume (m³) |
+|---|---|--:|--:|--:|--:|
+| — | *heuristic (teacher)* | **28** | **156.3** | **0.224** | **6.81** |
+| — | *GT-fields round-trip* | 28 | 152.6 | 0.228 | 6.73 |
+| clean masks | clean | 31 | 159.6 | 0.226 | 6.88 |
+| clean masks | corrupted | 39 | 165.1 | 0.232 | 7.57 |
+| corrupted masks | clean | 29 | 165.9 | 0.229 | 7.15 |
+| corrupted masks | corrupted | 41 | 174.1 | 0.232 | 7.69 |
+
+**Reading it.** On a clean mask the net lands on the teacher: 29–31 stems vs 28, volume within
+1–5%, mean diameter within 1%. Every row is *at or just off* the teacher and **none exceeds it** —
+the deviations are over-segmentation (a predicted ridge dipping below threshold mid-stem makes the
+tracer emit two stems) plus decoder staircasing in length. Both are error against the label, not
+improvement: by construction any departure from 28 is a mistake.
+
+**Corruption training did not buy robustness.** Training on corrupted masks helps slightly on clean
+input (29 vs 31 stems) but the corrupted-input rows are no better than the clean-trained model's
+(41 vs 39). Degrading the mask costs ~10 spurious stems and ~10% volume regardless. Caveat: the
+corrupted eval is a *single* noise draw (seed 7) on one strip, so the 39-vs-41 gap is within noise —
+this says corruption-robustness is *unproven*, not that it is impossible.
+
+**Decoder threshold is a real confound, worth recording.** At `heat_thresh=0.3` the corrupt-trained
+model decodes into **164** stems while its heat loss is *better* than the clean model's. Component
+counts of the thresholded skeleton explain it — training on noise makes the net less confident, so
+a low threshold turns its low-probability halo into speckle:
+
+| heat source | t=0.3 | t=0.5 | t=0.7 |
+|---|--:|--:|--:|
+| ground truth | 28 | 28 | 28 |
+| clean-trained | 31 | 27 | 28 |
+| corrupt-trained | **491** | 28 | 28 |
+
+Its topology is exactly right at 0.5/0.7. So pixel-wise loss does **not** track the metric anyone
+cares about, and a decode threshold tuned on one model silently misreports another. Anything built
+on this needs the threshold calibrated per model, or a decoder that doesn't have one.
+
+**The point.** Both the representation (row 2) and the trained model (row 3) sit *at or just off*
+the teacher and never above it. There is no signal in the training data that could push the model
+past the heuristic, because the heuristic **is** the label. Distillation buys speed, differentiability
+and end-to-end composability — not accuracy. To exceed the heuristic you need labels the heuristic
+did not produce: field-surveyed stems (DBH tape / TLS), or human-corrected vectorizations. Until
+those exist, "learned vectorization" can only be a faster reimplementation of what we already have.
+
+## Step 2 — real teacher labels at scale
+
+The step-1 study had two weaknesses: one plot, and an input mask *rendered from the labels* then
+hand-corrupted, so the net could partly read its targets out of its own input. Both are fixed by
+running the **real analyzer heuristic** over the segmentor's own training tiles — no orthophoto
+required, because `WINMOL_Analyzer/utils/VectorTilePipeline.process_prediction_array_to_gpkg()`
+drives skeletonization + vectorization + quantification straight from a mask array.
+
+`build_teacher_dataset.py` does this in two resumable phases: batched UNet prediction → mask PNG,
+then a CPU pool → one `.gpkg` per tile. `teacher_tiles.py` turns those into `(mask → fields)`
+training pairs; `train_teacher.py` / `eval_teacher.py` train and score on them.
+
+**The GSD is load-bearing.** Tiles are 512 px at the analyzer's own
+`Config.tile_size / img_width = 15/512 = 0.0293 m/px`, and every threshold in the heuristic
+(`min_length` 2.0 m, `max_distance` 8 m, `measuring_point_spacing` 0.5 m) is in **metres**. A wrong
+GSD yields plausible-looking garbage rather than an error, so it is pinned by a test.
+
+All four arms, stems normalised per **attempted** tile so the arms are comparable:
+
+| sweep | tiles | vectorized | teacher stems | stems/tile |
+|---|--:|--:|--:|--:|
+| SpecDS_ready, **predicted** masks | 3230 | 3142 | **12069** | 3.74 |
+| SpecDS_ready, **ground-truth** masks | 3230 | 3225 | **24625** | 7.62 |
+| GenDS10, predicted masks | 4540 | 3108 | 3584 | 0.79 |
+| GenDS10, ground-truth masks | 4540 | 4531 | 6265 | 1.38 |
+
+~5–7 s/tile. The SpecDS predicted-mask sweep alone is ~56× the labels of the single uploaded plot,
+and is what the model trains on.
+
+**Mask quality dominates the teacher's output — not the vectorizer.** Rows 1 and 2 are the *same
+3230 tiles* through the *same heuristic*, differing only in whether the mask came from the UNet or
+from the dataset's ground truth: **24625 vs 12069 stems, a factor of 2.04** (a 24-tile spot check
+gave 155 vs 86, the same ratio). GenDS10 shows the same effect at 1.75×.
+
+So the heuristic loses **half its stems to segmentation error** before any vectorizer, learned or
+not, gets a say. A learned vectorizer inherits the segmentation's errors first and the heuristic's
+second — putting the entire model-vs-teacher gap (+8% stems) an order of magnitude below the gap
+that mask quality alone opens up.
+
+**Correction — GenDS10 is not sparse because the model is beech-tuned.** An earlier reading of this
+table blamed `twostage_lrfix`'s beech fine-tuning for GenDS10's low yield. The ground-truth arm
+refutes that: GenDS10 GT masks give only **1.38** stems/tile against SpecDS's **7.62**, so those
+scenes simply contain far fewer stems. Measured as the fraction of GT stems recovered, the model
+does slightly **better** on GenDS10 (57%) than on SpecDS (49%). Domain shift is not the story;
+stem density is.
+
+### Where the model and teacher actually disagree
+
+Greedy midpoint matching (<3 m) over 200 held-out tiles, 736 teacher vs 799 model stems:
+
+| | count | median length | <3 m | <4 m |
+|---|--:|--:|--:|--:|
+| model **extra** (unmatched) | 110 | 2.89 m | 55% | 82% |
+| teacher **missed** (unmatched) | 47 | 2.85 m | 53% | 70% |
+| **matched** | 689 (94% of teacher) | model traces +0.66 m longer (median), 60% within ±1 m | | |
+
+The model matches **94%** of the teacher's stems. The disagreement is short stems clustered just
+above the 2 m `min_length` cutoff, in both directions — and none of the extras is under 2 m, so the
+filter is being applied. The two effects are linked: tracing ~0.6 m long (decoder staircasing plus
+running further into tapering ends) pushes borderline fragments over the 2 m line that the teacher
+kept under it. This is boundary churn in the **decoder**, not a failure of the network to find
+stems, and it is fixable without retraining.
+
+### Result — distilled from 12k real teacher stems
+
+FieldNet (base 32), 20 epochs on 2514 tiles, scored on the **628 held-out tiles** recorded in the
+checkpoint. Input is the UNet's own mask; labels are the analyzer's output on that same mask; both
+sides get the analyzer's 2 m minimum stem length.
+
+| source | stems | length (m) | mean diam (m) | volume (m³) |
+|---|--:|--:|--:|--:|
+| heuristic (teacher) | **2356** | **12615.7** | **0.230** | **566.86** |
+| GT-fields round-trip | 2161 | 12916.4 | 0.233 | 582.08 |
+| model prediction | 2553 | 14530.8 | 0.230 | 638.64 |
+
+**per-tile stem count: exact match 50.6% | MAE 0.64 stems/tile | teacher 3.75 vs model 4.07/tile**
+
+Pooled, the model looks close: mean diameter is *identical* to the teacher's (0.230 m), stem count
++8%, volume +13%. That is the same "approaches but does not exceed" picture as the single-plot
+study, now on 56× the data with a mask the net never saw the labels for.
+
+**But the per-tile number is the one to quote.** The model reproduces the teacher's stem count
+exactly on only **half** the tiles, and is off by 0.64 stems per tile on average. Pooled totals
+hide this: over- and under-counts on different tiles partially cancel, which is exactly why
+`eval_teacher.py` reports both. A distilled vectorizer that agrees with its teacher on half the
+tiles is not a replacement for it — and it *cannot* become better than it, because the only signal
+it has is the teacher's own output.
+
+Note the middle row: the GT-fields round-trip recovers 2161 of 2356 stems (−8%) at this 0.029 m/px
+GSD with `sigma=2.0`. The representation itself is now lossy — worse than the +1% it achieved on
+the 0.1 m/px plot — so part of the model's error is inherited from the encoding, not learned. That
+is a tuning knob (sigma/GSD), not a refutation, but it means these numbers are a *loose* upper
+bound on how well Approach A could do here.
+
+### How arbitrary is the teacher? A parameter-sensitivity sweep
+
+Same 600 tiles, **same cached masks**, only the analyzer's own `Config` varied — so every
+difference below is the heuristic's parameter sensitivity, nothing else
+(`build_teacher_dataset.py --config-json ... --mask-dir ...`).
+
+| config | stems (600 tiles) | vs base |
+|---|--:|--:|
+| base (`tolerance_angle` 7, `max_distance` 8, `min_length` 2) | 2104 | — |
+| `tolerance_angle` 5 | 2095 | −0.4% |
+| `tolerance_angle` 10 | 2138 | +1.6% |
+| `max_distance` 4 | 2099 | −0.2% |
+| `max_distance` 12 | 2117 | +0.6% |
+| **`min_length` 1.0** | **2976** | **+41.4%** |
+| **`min_length` 3.0** | **1535** | **−27.0%** |
+
+**The hypothesis that started this sweep was wrong, and the refutation is useful.** The idea was
+that the heuristic's knobs would move its output by more than the model-teacher gap, making
+"the teacher" an ill-defined target. For the *algorithmic* parameters that is simply false:
+`tolerance_angle` across 5–10° and `max_distance` across 4–12 m move the stem count by **under 2%**,
+well below the 8% model-teacher gap. The angle-voting grouping logic is stable, so the heuristic
+**is** a well-defined distillation target. Good news for distillation, and it means the residual
+model error is genuinely the model's, not label noise.
+
+**But one knob dominates everything: `min_length`.** Sweeping the definition of "a stem" from 1 m to
+3 m spans 1535 → 2976 stems, a factor of **1.94** — almost exactly the 2.04× that separates
+ground-truth masks from predicted ones. And this lands precisely where the model's disagreements
+already live: unmatched stems on both sides had median length ~2.9 m, i.e. the model's "errors" are
+concentrated in exactly the regime where the teacher's answer is a **convention rather than a fact**.
+
+### Error budget — what actually determines the stem count
+
+| source of variation | effect on stem count |
+|---|--:|
+| `min_length` definition (1 m → 3 m) | **1.94×** |
+| mask quality (predicted → ground truth) | **2.04×** |
+| model vs its teacher | 1.08× |
+| vectorizer grouping params (`tolerance_angle`, `max_distance`) | <1.02× |
+
+The two things that decide how many stems you report are **how good the segmentation is** and
+**what you choose to call a stem**. The learned-vs-heuristic vectorizer question — the one this
+mini-project set out to answer — is an order of magnitude smaller than either, and the heuristic's
+own geometric tuning is smaller still. That is the sharpest form of the original point: the
+vectorizer was never the bottleneck.
+
+## Data status / what's needed
+
+- **Have:** one heuristic output — `…/uploads/…_Barnekow_4_…_detected_stems.gpkg` (3 layers:
+  `stems` 215 lines + start/stop/length/volume/d_json/l_json/v_json, `nodes` pts w/ diameter `d`,
+  `vectors` segments). CRS ETRS89/UTM-33N, extent ~189×169 m.
+- **Needed to train:** the paired input raster per plot — the **orthophoto tiff** (+ regenerate the
+  UNet **mask**), and ideally **many plots** ("heuristic output at scale"). Not on this host yet
+  (`/data/mnt/storage/hnee` has only models). The Barnekow tiff was mentioned but hasn't landed.
+- **Minimal PoC without the fleet:** one plot, train on part / test on a held-out region — proves
+  the mechanism + shows the ceiling, though not statistically strong.
+
+## Heuristic reference (what we distil)
+
+`WINMOL_Analyzer/utils/Vectorization.py` (skeleton→graph, `connect_stems` angle-voting,
+`tolerance_angle`, dedup) + `Quantification.py` (diameter via `contour` or EDT, outlier-clean,
+length+volume). Per-stem outputs match the gpkg schema above.

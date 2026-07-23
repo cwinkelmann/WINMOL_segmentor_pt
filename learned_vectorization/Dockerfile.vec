@@ -1,0 +1,11 @@
+# Geo image for the learned-vectorization mini-project: winmol-test (torch+numpy+skimage+pytest)
+# + the geospatial stack (read gpkg, rasterize, georeference) for the target-generation and the
+# representation round-trip.
+#   docker build -f learned_vectorization/Dockerfile.vec -t winmol-vec .
+#
+# Also carries the deps the WINMOL_Analyzer heuristic itself needs (fiona/pyogrio/psutil/
+# onnxruntime), so the teacher vectorizer can be run in-process over the segmentor's tiles to
+# generate distillation labels -- see build_teacher_dataset.py.
+FROM winmol-test
+RUN pip install --no-cache-dir "shapely>=2.0" "rasterio>=1.3" "geopandas>=0.14" "pyproj>=3.5" \
+    "fiona>=1.9" "pyogrio>=0.9" "psutil>=5.9" "onnxruntime>=1.17" matplotlib
