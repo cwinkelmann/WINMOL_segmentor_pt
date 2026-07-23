@@ -94,9 +94,14 @@ epochs/stage cap). The R U-Net trains at 256×256 (its native size); the PyTorch
 | DeepLabV3+ (PyTorch, 512) | 22.4M | 0.7593 | 0.7263 | **0.7424** | 0.590 | 82 |
 | HRNet (PyTorch, 512) | 16.1M | 0.7606 | 0.7678 | **0.7642** | 0.618 | 106 |
 
-†IoU (mIoU on the single stem class) is not logged separately — for binary masks at a fixed 0.5
-threshold it is an exact function of F1/Dice: `IoU = F1 / (2 − F1)`. It is shown for completeness
-and adds no information beyond F1; the ranking is identical.
+†IoU here is the **stem-class** IoU. It is not logged during training, but for binary masks at a
+fixed 0.5 threshold it is an exact algebraic function of F1/Dice: `IoU = F1 / (2 − F1)` (both come
+from the same TP/FP/FN). This was **verified by direct measurement** — re-running the 256×256
+PyTorch U-Net over TestDS gives measured stem-IoU 0.5956, matching `F1/(2−F1)` to four decimals (and
+reproducing the reported P/R/F1 exactly). So the column is measured-equivalent, not a guess; it adds
+no ranking information beyond F1. The *multi-class* mIoU (mean of stem + background IoU) is **0.786**
+for the PyTorch U-Net at 256 — but background IoU (0.977) dominates it and it barely separates
+models, which is why stem-IoU/F1 is the figure everyone reports for this task.
 
 The table above reflects each model **as deployed** — R ships at 256×256, this port at 512×512 (the
 ONNX contract) — so it mixes an architecture difference with a resolution difference. For a verdict
