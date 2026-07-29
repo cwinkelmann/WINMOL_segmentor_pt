@@ -90,15 +90,15 @@ def _mask_ids(mask_dir):
 
 
 def _load_mask(path):
-    im = Image.open(path)
-    im.seek(0)
-    return np.asarray(im.convert("L")) >= 128       # same binarization as the loader
+    with Image.open(path) as im:
+        im.seek(0)
+        return np.asarray(im.convert("L")) >= 128       # same binarization as the loader
 
 
 def _save_uint16(depth, path):
     lo, hi = float(depth.min()), float(depth.max())
     scaled = np.zeros_like(depth) if hi <= lo else (depth - lo) / (hi - lo)
-    Image.fromarray((scaled * 65535).astype(np.uint16), mode="I;16").save(path)
+    Image.fromarray((scaled * 65535).astype(np.uint16)).save(path)
 
 
 def main(argv=None):
