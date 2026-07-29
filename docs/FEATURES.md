@@ -38,6 +38,8 @@ Currently the implemetatnion works using a weird Skelektonisation technique. Ins
 
 
 ### Training data simulator
+**Depth simulation: IMPLEMENTED** (`scripts/simulate_depth.py`, spec `docs/superpowers/specs/2026-07-29-depth-simulator-design.md`). RGB tile simulation remains open.
+
 training data should be generated, create low contrast greenish backgrounds and past blurry cylinders on it. It does not have to be that realistic, but it should be good enough to train a model. The simulator should allow the user to specify parameters such as the number of stems, their size, orientation, and occlusion level. The generated dataset should be saved in a format compatible with the training pipeline. For mask, each mask should have metadata
 
 

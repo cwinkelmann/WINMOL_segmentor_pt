@@ -30,6 +30,7 @@ python -m training.run_train --data-dir <DS> --out-dir output/run --arch deeplab
 # two-stage (GenDS -> SpecDS fine-tune)
 python -m training.run_train --gen-data-dir <GEN> --spec-data-dir <SPEC> --arch deeplabv3plus ...
 python scripts/build_dataset.py --src <raw> --dst <ready>          # convert to loader format
+python scripts/simulate_depth.py --dataset <DS>    # synth depth{N}.png from masks (RGBD)
 python scripts/benchmark_architectures.py --gen-data-dir <GEN> --spec-data-dir <SPEC> --out-dir results
 ```
 
