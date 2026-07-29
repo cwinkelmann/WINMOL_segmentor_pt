@@ -2,6 +2,7 @@
 
 IMG_SIZE = 512
 IN_CHANNELS = 3
+RGBD_IN_CHANNELS = 4
 OUT_CHANNELS = 1
 OPSET = 17
 
@@ -40,15 +41,16 @@ def _check_shape(got, channels, label):
         raise ValueError(f"{label} spatial dims must be {IMG_SIZE} or dynamic, got {got}")
 
 
-def validate_onnx_model(onnx_model):
+def validate_onnx_model(onnx_model, in_channels=IN_CHANNELS):
     """Raise ValueError if the model graph violates the contract.
 
-    Batch axis must be dynamic; channels fixed (3 in / 1 out); spatial dims either
-    fixed 512 or dynamic (see _spatial_ok).
+    Batch axis must be dynamic; channels fixed (`in_channels` in — default 3,
+    pass RGBD_IN_CHANNELS for RGBD models — 1 out); spatial dims either fixed
+    512 or dynamic (see _spatial_ok).
     """
     graph = onnx_model.graph
     if len(graph.input) != 1 or len(graph.output) != 1:
         raise ValueError("Contract requires exactly one input and one output")
 
-    _check_shape(_dim_values(graph.input[0].type.tensor_type), IN_CHANNELS, "Input")
+    _check_shape(_dim_values(graph.input[0].type.tensor_type), in_channels, "Input")
     _check_shape(_dim_values(graph.output[0].type.tensor_type), OUT_CHANNELS, "Output")
