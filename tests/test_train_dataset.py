@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 from PIL import Image
@@ -69,3 +71,43 @@ def test_split_disjoint_and_val_has_no_transform(tmp_path):
     assert len(tr) == 8 and len(va) == 2
     assert set(tr.ids).isdisjoint(set(va.ids))
     assert tr.transform is tf and va.transform is None
+
+
+def _write_depth(depth_dir, n, size=(32, 32)):
+    os.makedirs(depth_dir, exist_ok=True)
+    h, w = size
+    arr = (np.arange(h * w, dtype=np.uint16).reshape(h, w) * 17) % 5000
+    Image.fromarray(arr, mode="I;16").save(os.path.join(depth_dir, f"depth{n}.png"))
+
+
+def test_stem_dataset_rgbd_shapes(tmp_path):
+    img_dir, mask_dir = tmp_path / "train", tmp_path / "mask"
+    for n in (1, 2):
+        _make_pair(img_dir, mask_dir, n)
+    depth_dir = str(tmp_path / "depth")
+    for n in (1, 2):
+        _write_depth(depth_dir, n)
+    ds = StemDataset(str(img_dir), str(mask_dir), img_size=64, depth_dir=depth_dir)
+    img, mask = ds[0]
+    assert img.shape == (4, 64, 64)
+    assert mask.shape == (1, 64, 64)
+    assert 0.0 <= float(img[3].min()) and float(img[3].max()) <= 1.0
+
+
+def test_paired_ids_require_depth_when_depth_dir_given(tmp_path):
+    img_dir, mask_dir = tmp_path / "train", tmp_path / "mask"
+    for n in (1, 2, 3):
+        _make_pair(img_dir, mask_dir, n)
+    depth_dir = str(tmp_path / "depth")
+    _write_depth(depth_dir, 1)
+    _write_depth(depth_dir, 3)
+    ds = StemDataset(str(img_dir), str(mask_dir), img_size=64, depth_dir=depth_dir)
+    assert ds.ids == [1, 3]
+
+
+def test_stem_dataset_without_depth_unchanged(tmp_path):
+    img_dir, mask_dir = tmp_path / "train", tmp_path / "mask"
+    _make_pair(img_dir, mask_dir, 1)
+    ds = StemDataset(str(img_dir), str(mask_dir), img_size=64)
+    img, _ = ds[0]
+    assert img.shape == (3, 64, 64)
