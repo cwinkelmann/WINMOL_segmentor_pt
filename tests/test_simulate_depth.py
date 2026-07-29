@@ -67,3 +67,65 @@ def test_distractors_add_offmask_bulges():
     # same rng seed consumes identical draws up to the distractor stage, so any
     # difference off-mask comes from distractor bulges
     assert (with_d - flat).max() > 1.0
+
+
+# ---- CLI tests ----
+
+from simulate_depth import main
+
+
+def _write_mask(mask_dir, n, size=96):
+    os.makedirs(mask_dir, exist_ok=True)
+    arr = np.zeros((size, size), np.uint8)
+    arr[20 + n: 36 + n, 8: size - 8] = 255          # position varies with n
+    Image.fromarray(arr).convert("P").save(os.path.join(mask_dir, f"mask{n}.gif"))
+
+
+def _read_depth(ds, n):
+    return np.asarray(Image.open(os.path.join(ds, "depth", f"depth{n}.png")))
+
+
+def test_cli_writes_one_depth_per_mask(tmp_path):
+    ds = str(tmp_path)
+    for n in (1, 2, 7):
+        _write_mask(os.path.join(ds, "mask"), n)
+    assert main(["--dataset", ds, "--seed", "1"]) == 0
+    for n in (1, 2, 7):
+        arr = _read_depth(ds, n)
+        assert arr.shape == (96, 96)
+        assert arr.dtype in (np.uint16, np.int32)   # PIL I;16 may decode as int32
+        assert arr.max() > arr.min()                # min-max scaled to uint16 range
+
+
+def test_cli_deterministic_and_order_independent(tmp_path):
+    ds1, ds2 = str(tmp_path / "a"), str(tmp_path / "b")
+    for ds, ns in ((ds1, (1, 2)), (ds2, (2,))):     # ds2 lacks mask1
+        for n in ns:
+            _write_mask(os.path.join(ds, "mask"), n)
+    main(["--dataset", ds1, "--seed", "5"])
+    main(["--dataset", ds2, "--seed", "5"])
+    # per-image seed depends on (seed, N) only, not on which other ids exist
+    np.testing.assert_array_equal(_read_depth(ds1, 2), _read_depth(ds2, 2))
+
+
+def test_cli_overwrite_guard(tmp_path):
+    ds = str(tmp_path)
+    _write_mask(os.path.join(ds, "mask"), 1)
+    assert main(["--dataset", ds]) == 0
+    assert main(["--dataset", ds]) == 2             # refuses without --overwrite
+    assert main(["--dataset", ds, "--overwrite"]) == 0
+
+
+def test_cli_missing_mask_dir_errors(tmp_path):
+    assert main(["--dataset", str(tmp_path / "nope")]) == 2
+
+
+def test_cli_mismatch_pairs_depth_with_other_mask(tmp_path):
+    ds_m, ds_f = str(tmp_path / "mm"), str(tmp_path / "faith")
+    for ds in (ds_m, ds_f):
+        for n in (1, 2):
+            _write_mask(os.path.join(ds, "mask"), n)
+    main(["--dataset", ds_f, "--seed", "3"])
+    main(["--dataset", ds_m, "--seed", "3", "--mismatch"])
+    # mismatch: depth1 is generated from mask2 (ids rotated), under depth1's seed
+    assert not np.array_equal(_read_depth(ds_m, 1), _read_depth(ds_f, 1))

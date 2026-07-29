@@ -75,3 +75,72 @@ def simulate_depth_map(mask, rng, stem_drop_p=0.2, distractors=3):
 
     depth += rng.standard_normal(mask.shape).astype(np.float32) * 0.05 * amp
     return ndi.gaussian_filter(depth, 1.0).astype(np.float32)
+
+
+# ---- CLI ----
+
+
+def _mask_ids(mask_dir):
+    out = {}
+    for name in os.listdir(mask_dir):
+        stem, ext = os.path.splitext(name)
+        if ext == ".gif" and stem.startswith("mask") and stem[len("mask"):].isdigit():
+            out[int(stem[len("mask"):])] = name
+    return out
+
+
+def _load_mask(path):
+    im = Image.open(path)
+    im.seek(0)
+    return np.asarray(im.convert("L")) >= 128       # same binarization as the loader
+
+
+def _save_uint16(depth, path):
+    lo, hi = float(depth.min()), float(depth.max())
+    scaled = np.zeros_like(depth) if hi <= lo else (depth - lo) / (hi - lo)
+    Image.fromarray((scaled * 65535).astype(np.uint16), mode="I;16").save(path)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--dataset", required=True, help="dataset dir containing mask/mask{N}.gif")
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--stem-drop-p", type=float, default=0.2)
+    p.add_argument("--distractors", type=int, default=3)
+    p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--mismatch", action="store_true",
+                   help="leakage control: generate depth{N} from a DIFFERENT image's "
+                        "mask (ids rotated by one)")
+    a = p.parse_args(argv)
+
+    mask_dir = os.path.join(a.dataset, "mask")
+    depth_dir = os.path.join(a.dataset, "depth")
+    if not os.path.isdir(mask_dir):
+        print(f"error: {mask_dir} not found (expected <DS>/mask/mask{{N}}.gif)",
+              file=sys.stderr)
+        return 2
+    if os.path.isdir(depth_dir) and os.listdir(depth_dir) and not a.overwrite:
+        print(f"error: {depth_dir} exists; pass --overwrite to regenerate",
+              file=sys.stderr)
+        return 2
+    ids = _mask_ids(mask_dir)
+    if not ids:
+        print(f"error: no mask{{N}}.gif files in {mask_dir}", file=sys.stderr)
+        return 2
+
+    os.makedirs(depth_dir, exist_ok=True)
+    ordered = sorted(ids)
+    # mismatch: depth{N} uses the NEXT id's mask (rotation = a derangement for >1 id)
+    source = {n: ordered[(i + 1) % len(ordered)] if a.mismatch else n
+              for i, n in enumerate(ordered)}
+    for n in ordered:
+        mask = _load_mask(os.path.join(mask_dir, ids[source[n]]))
+        rng = np.random.default_rng(np.random.SeedSequence([a.seed, n]))
+        depth = simulate_depth_map(mask, rng, a.stem_drop_p, a.distractors)
+        _save_uint16(depth, os.path.join(depth_dir, f"depth{n}.png"))
+    print(f"wrote {len(ordered)} depth maps to {depth_dir}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
