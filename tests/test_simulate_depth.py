@@ -114,6 +114,16 @@ def test_cli_overwrite_guard(tmp_path):
     assert main(["--dataset", ds]) == 0
     assert main(["--dataset", ds]) == 2             # refuses without --overwrite
     assert main(["--dataset", ds, "--overwrite"]) == 0
+    # verify --overwrite removes stale files: create masks {1,2}, delete mask2, re-run
+    mask_dir = os.path.join(ds, "mask")
+    _write_mask(mask_dir, 2)
+    assert main(["--dataset", ds, "--overwrite"]) == 0  # now have depth{1,2}
+    assert os.path.exists(os.path.join(ds, "depth", "depth1.png"))
+    assert os.path.exists(os.path.join(ds, "depth", "depth2.png"))
+    os.remove(os.path.join(mask_dir, "mask2.gif"))       # delete one mask
+    assert main(["--dataset", ds, "--overwrite"]) == 0  # regenerate (only mask1 now)
+    assert os.path.exists(os.path.join(ds, "depth", "depth1.png"))  # kept
+    assert not os.path.exists(os.path.join(ds, "depth", "depth2.png"))  # stale file removed
 
 
 def test_cli_missing_mask_dir_errors(tmp_path):

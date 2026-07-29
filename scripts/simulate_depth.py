@@ -129,6 +129,11 @@ def main(argv=None):
         return 2
 
     os.makedirs(depth_dir, exist_ok=True)
+    # on --overwrite, delete stale depth*.png files from previous runs
+    if a.overwrite and os.path.isdir(depth_dir):
+        for name in os.listdir(depth_dir):
+            if name.startswith("depth") and name.endswith(".png"):
+                os.remove(os.path.join(depth_dir, name))
     ordered = sorted(ids)
     # mismatch: depth{N} uses the NEXT id's mask (rotation = a derangement for >1 id)
     source = {n: ordered[(i + 1) % len(ordered)] if a.mismatch else n
