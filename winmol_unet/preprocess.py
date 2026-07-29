@@ -27,3 +27,18 @@ def resize_batch(batch_nhwc, size=IMG_SIZE, mode="bicubic"):
             mode="edge", anti_aliasing=False, preserve_range=True,
         ).astype(np.float32)
     return out
+
+
+def normalize_depth(arr, vmin=None, vmax=None):
+    """Depth array (any numeric dtype, any shape) -> float32 in [0, 1].
+
+    Defaults to per-image min-max (robust to unknown sensor units); pass
+    vmin/vmax for a fixed physical range shared across a dataset. A constant
+    image (vmax <= vmin) maps to zeros rather than dividing by zero.
+    """
+    arr = np.asarray(arr, dtype=np.float32)
+    lo = float(arr.min()) if vmin is None else float(vmin)
+    hi = float(arr.max()) if vmax is None else float(vmax)
+    if hi <= lo:
+        return np.zeros_like(arr)
+    return np.clip((arr - lo) / (hi - lo), 0.0, 1.0).astype(np.float32, copy=False)
