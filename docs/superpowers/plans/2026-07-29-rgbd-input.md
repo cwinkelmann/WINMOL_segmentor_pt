@@ -20,8 +20,9 @@
 
 **Out of scope (explicit follow-ups, do NOT implement here):**
 - `scripts/build_dataset.py` depth conversion (raw depth sources — GeoTIFF DSM/CHM, sensor exports — vary too much; users place `depth{N}` files themselves for now).
-- `TilingStemDataset` depth support (RGBD + `--eval-tiling` fails fast in Task 7).
 - Keras mirror for 4 channels.
+
+**Base note (2026-07-29 rebase):** this plan now targets `main` (branch `feat/depth-simulator`), which has NO `multiscale`, `eval_tiling`, `TilingStemDataset`, `split_ids`, or `StemDataset(resize=...)` — those exist only on `feat/bamforests-benchmark`. The tasks below are written against main's code.
 
 ---
 
@@ -370,7 +371,7 @@ git commit -m "feat(onnx): 4-channel export + channel-inferring OnnxSegmenter"
 
 **Interfaces:**
 - Consumes: `normalize_depth` from Task 2; existing `resize_batch`, `to_float01`, `_index_by_n`.
-- Produces: `StemDataset(image_dir, mask_dir, ..., depth_dir=None)` yielding image tensors `[4, S, S]` when `depth_dir` is set; `_paired_ids(image_dir, mask_dir, depth_dir=None)`; `split_ids(image_dir, mask_dir, val_fraction, seed, depth_dir=None)`; `train_val_split(..., depth_dir=None)`. Depth files: `depth{N}.png` (8/16-bit) or `depth{N}.tif`/`.tiff` (float), paired by integer N. Task 6 adds the augmentation path; Task 7 wires the CLI.
+- Produces: `StemDataset(image_dir, mask_dir, ..., depth_dir=None)` yielding image tensors `[4, S, S]` when `depth_dir` is set; `_paired_ids(image_dir, mask_dir, depth_dir=None)`; `train_val_split(image_dir, mask_dir, val_fraction, seed, img_size=512, transform=None, cache=True, depth_dir=None)`. Depth files: `depth{N}.png` (8/16-bit) or `depth{N}.tif`/`.tiff` (float), paired by integer N. Task 6 adds the augmentation path; Task 7 wires the CLI.
 
 - [ ] **Step 1: Write the failing tests** (append to `tests/test_train_dataset.py`; reuse the file's existing helpers for writing `train{N}.jpeg`/`mask{N}.gif` fixtures)
 
@@ -446,11 +447,11 @@ def _paired_ids(image_dir, mask_dir, depth_dir=None):
     return sorted(ids)
 ```
 
-`StemDataset.__init__` gains `depth_dir=None` (after `mask_dir`? No — append after `resize` to keep positional args stable):
+`StemDataset.__init__` gains `depth_dir=None` (appended after `cache` to keep positional args stable):
 
 ```python
     def __init__(self, image_dir, mask_dir, img_size=512, transform=None, ids=None, cache=True,
-                 resize=True, depth_dir=None):
+                 depth_dir=None):
         ...existing body unchanged, plus:
         self.depth_dir = depth_dir
         self._depth_names = _depth_index(depth_dir) if depth_dir is not None else None
@@ -463,11 +464,11 @@ New loader, next to `_load_mask`:
 
 ```python
     def _load_depth(self, n):
-        im = Image.open(os.path.join(self.depth_dir, self._depth_names[n]))
+        with Image.open(os.path.join(self.depth_dir, self._depth_names[n])) as im:
+            raw = np.asarray(im)
         # per-image min-max to [0,1]; nearest resize to match image/mask handling
-        arr = normalize_depth(np.asarray(im))[..., None]                    # HW1
-        if self.resize:
-            arr = resize_batch(arr[None], size=self.img_size, mode="nearest")[0]
+        arr = normalize_depth(raw)[..., None]                               # HW1
+        arr = resize_batch(arr[None], size=self.img_size, mode="nearest")[0]
         return np.ascontiguousarray(arr, dtype=np.float32)                  # HW1
 ```
 
@@ -501,17 +502,13 @@ New loader, next to `_load_mask`:
         ...existing tensor-conversion + return lines, unchanged...
 ```
 
-`split_ids` and `train_val_split` pass-through:
+`train_val_split` pass-through (main has no `split_ids` — the split logic lives inline; only the first line and the two `StemDataset(...)` calls change):
 
 ```python
-def split_ids(image_dir, mask_dir, val_fraction, seed, depth_dir=None):
-    ids = _paired_ids(image_dir, mask_dir, depth_dir)
-    ...rest unchanged...
-
-
 def train_val_split(image_dir, mask_dir, val_fraction, seed, img_size=512, transform=None,
                     cache=True, depth_dir=None):
-    train_ids, val_ids = split_ids(image_dir, mask_dir, val_fraction, seed, depth_dir=depth_dir)
+    ids = _paired_ids(image_dir, mask_dir, depth_dir)
+    ...existing shuffle/split logic unchanged...
     train_ds = StemDataset(image_dir, mask_dir, img_size, transform=transform, ids=train_ids,
                            cache=cache, depth_dir=depth_dir)
     val_ds = StemDataset(image_dir, mask_dir, img_size, transform=None, ids=val_ids, cache=cache,
@@ -666,16 +663,9 @@ def test_rgbd_rejects_export_keras(tmp_path):
         run_training(cfg)
 
 
-def test_rgbd_rejects_eval_tiling(tmp_path):
-    cfg = TrainConfig(
-        data_dir=str(tmp_path), checkpoint_dir=str(tmp_path), log_dir=str(tmp_path),
-        hdf5_out="x.hdf5", onnx_out="x.onnx", rgbd=True, eval_tiling=True,
-    )
-    with pytest.raises(ValueError, match="rgbd"):
-        run_training(cfg)
 ```
 
-Adjust the two reject-tests to whatever `run_training` actually validates first (they must fail *before* touching the filesystem — that is the point of fail-fast). If `run_training`'s signature differs (e.g. it takes no return), match the real call shape from `tests/test_train_e2e.py`.
+Adjust the reject-test to whatever `run_training` actually validates first (it must fail *before* touching the filesystem — that is the point of fail-fast). If `run_training`'s signature differs (e.g. it takes no return), match the real call shape from `tests/test_train_e2e.py`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -729,26 +719,18 @@ Add properties (next to the existing `*_dir` properties):
 ```python
     if cfg.rgbd and cfg.export_keras:
         raise ValueError("--export-keras is RGB-only (rgbd=True); drop one of the two")
-    if cfg.rgbd and cfg.eval_tiling:
-        raise ValueError("--eval-tiling does not support rgbd yet; drop one of the two")
 ```
 
-2. Thread `depth_dir` through the loader builders — signatures become:
+2. Thread `depth_dir` through `_build_loaders` — signature becomes:
 
 ```python
-def _eval_dataset(image_dir, mask_dir, cfg, ids=None, depth_dir=None):
-    ...
-    return StemDataset(image_dir, mask_dir, cfg.img_size, transform=None, ids=ids,
-                       cache=cfg.cache_dataset, depth_dir=depth_dir)
-
-
 def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_mask_dir=None,
                    depth_dir=None, val_depth_dir=None):
 ```
 
-Inside `_build_loaders`, pass `depth_dir=depth_dir` to every `StemDataset(...)` for training, `depth_dir=depth_dir` to `split_ids(...)`, and `depth_dir=val_depth_dir` (fixed-split branch) or `depth_dir=depth_dir` (same-dir split branch) to `_eval_dataset(...)`.
+Inside `_build_loaders`: the fixed-split branch passes `depth_dir=depth_dir` to the train `StemDataset(...)` and `depth_dir=val_depth_dir` to the val `StemDataset(...)`; the else-branch passes `depth_dir=depth_dir` to `train_val_split(...)`.
 
-3. Call sites (lines ~107, ~133, ~162, ~169 in the current file):
+3. Call sites:
 
 ```python
     # single-stage (run_training):
@@ -760,10 +742,11 @@ Inside `_build_loaders`, pass `depth_dir=depth_dir` to every `StemDataset(...)` 
                       depth_dir=cfg.gen_depth_dir)
     ..._build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform,
                       depth_dir=cfg.spec_depth_dir)
-    # test stage:
-    test_ds = _eval_dataset(os.path.join(cfg.test_data_dir, "train"),
-                            os.path.join(cfg.test_data_dir, "mask"), cfg,
-                            depth_dir=cfg.test_depth_dir)
+    # test stage (_run_test builds its StemDataset directly — add the kwarg):
+    test_ds = StemDataset(os.path.join(cfg.test_data_dir, "train"),
+                          os.path.join(cfg.test_data_dir, "mask"), cfg.img_size,
+                          transform=None, cache=cfg.cache_dataset,
+                          depth_dir=cfg.test_depth_dir)
 ```
 
 4. Model build + export — wherever `build_model(...)` and `export_to_onnx(...)` are called, add `in_channels=cfg.in_channels`.
@@ -784,7 +767,7 @@ Run: `pytest tests/test_train_e2e.py tests/test_two_stage.py tests/test_val_data
 
 - [ ] **Step 6: Update docs**
 
-- `CLAUDE.md` → "Dataset convention + scale" paragraph: add one sentence — `--rgbd` adds an optional `depth/depth{N}.png|.tif` channel (per-image min-max normalized, geometric-aug only), producing 4-channel models; Keras export and `--eval-tiling` are RGB-only.
+- `CLAUDE.md` → "Dataset convention + scale" paragraph: add one sentence — `--rgbd` adds an optional `depth/depth{N}.png|.tif` channel (per-image min-max normalized, geometric-aug only), producing 4-channel models; Keras export is RGB-only.
 - `docs/FEATURES.md` → move "### 4 D input data" out of Backlog (or annotate it "implemented — see `docs/superpowers/plans/2026-07-29-rgbd-input.md`"), noting the analyzer must feed 4-channel NHWC to consume RGBD models.
 
 - [ ] **Step 7: Run the full suite**
