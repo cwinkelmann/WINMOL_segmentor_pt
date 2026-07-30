@@ -70,7 +70,8 @@ It pairs by shared key, renames to sequential `train{i}`/`mask{i}`, and binarize
 (any pixel > 0 → foreground). Source is never mutated.
 
 **Fixed train/val split** — by default training does a deterministic 80/20 split of
-`--data-dir` (`--val-fraction`/`--seed`). To pin an explicit, shareable held-out set (e.g.
+`--data-dir` (controlled by `TrainConfig.val_fraction`/`seed`, defaults 0.2/1 — not
+exposed as CLI flags). To pin an explicit, shareable held-out set (e.g.
 so PyTorch and R evaluate on the same tiles), materialize it once and train against it:
 
 ```bash
