@@ -2,6 +2,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from build_teacher_dataset import ANALYZER_GSD
@@ -17,6 +18,7 @@ def test_tile_grid_round_trips_pixels_through_world_coords():
 
 
 def test_tile_grid_matches_the_profile_used_to_write_the_gpkg():
+    pytest.importorskip("rasterio")   # tile_profile needs the geo stack
     from build_teacher_dataset import tile_profile
     prof, grid = tile_profile(512, 512), tile_grid(512, 512)
     assert abs(grid.gsd - prof["transform"].a) < 1e-12

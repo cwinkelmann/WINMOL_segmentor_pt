@@ -2,6 +2,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -41,6 +42,7 @@ def test_load_binary_mask_binarizes(tmp_path):
 
 
 def test_profile_uses_the_analyzers_own_resolution(tmp_path):
+    pytest.importorskip("rasterio")   # tile_profile needs the geo stack
     # the vectorizer's thresholds are in metres, so a wrong GSD silently ruins every output
     assert abs(ANALYZER_GSD - 15.0 / 512.0) < 1e-12
     from build_teacher_dataset import tile_profile
