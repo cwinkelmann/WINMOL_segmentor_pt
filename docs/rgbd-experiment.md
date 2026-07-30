@@ -10,14 +10,14 @@ Prereqs: `scripts/simulate_depth.py` (this plan) and `--rgbd`
     cp -R <DS> <DS>-mismatch && rm -rf <DS>-mismatch/depth
     python scripts/simulate_depth.py --dataset <DS>-mismatch --seed 1 --mismatch
 
-## Runs (identical seed => identical train/val split; only the input differs)
+## Runs (TrainConfig seed defaults to 1 -- identical train/val split across runs; only the input differs. NOTE: no --seed CLI flag exists on main)
 
     python -m training.run_train --data-dir <DS> --out-dir output/exp-rgb \
-        --arch deeplabv3plus --encoder resnet34 --seed 1 --epochs 50 --device mps
+        --arch deeplabv3plus --encoder resnet34 --epochs 50 --device mps
     python -m training.run_train --data-dir <DS> --out-dir output/exp-rgbd --rgbd \
-        --arch deeplabv3plus --encoder resnet34 --seed 1 --epochs 50 --device mps
+        --arch deeplabv3plus --encoder resnet34 --epochs 50 --device mps
     python -m training.run_train --data-dir <DS>-mismatch --out-dir output/exp-rgbd-mismatch \
-        --rgbd --arch deeplabv3plus --encoder resnet34 --seed 1 --epochs 50 --device mps
+        --rgbd --arch deeplabv3plus --encoder resnet34 --epochs 50 --device mps
 
 ## Reading the result
 
