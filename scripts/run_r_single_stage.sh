@@ -14,7 +14,7 @@ EPOCHS="${3:-100}"
 IMG="${4:-512}"
 TRAIN_NAME="${R_TRAIN_NAME:-train}"
 TEST_NAME="${R_TEST_NAME:-test}"
-R_REPO="/home/christian/hnee/WINMOL_segmentor"
+R_REPO="${R_REPO:-$HOME/hnee/WINMOL_segmentor}"   # sibling R repo; override via env
 PT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 mkdir -p "$OUT_DIR"
