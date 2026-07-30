@@ -30,6 +30,8 @@ for training it would be great to work directly on an orthomosaic and the tiling
 ## Backlog Features
 
 ### 4 D input data
+**IMPLEMENTED** (`--rgbd`, plan `docs/superpowers/plans/2026-07-29-rgbd-input.md`): an optional `depth/depth{N}.png|.tif` per dataset dir is loaded, per-image min-max normalized, and concatenated as a 4th channel; `TrainConfig.in_channels`/`build_model`/`export_to_onnx` thread the 4-channel shape end-to-end, producing a 4-channel ONNX model (contract's `RGBD_IN_CHANNELS`). Keras export remains RGB-only. The analyzer must feed 4-channel NHWC (RGB + normalized depth) to consume RGBD models.
+
 instead of RGB there should RGBD input data. The depth channel can be used to improve segmentation performance, especially in cases where color information alone is insufficient. The model architecture should be modified to accept 4-channel input, and the preprocessing pipeline should be updated to handle depth data appropriately.
 
 

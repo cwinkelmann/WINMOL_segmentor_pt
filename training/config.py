@@ -50,6 +50,35 @@ class TrainConfig:
     patience_stage2: int = 5                 # early-stop patience, stage 2 (R value)
     val_data_dir: Optional[str] = None       # single-stage: fixed val set (else 80/20 split of data_dir)
     test_data_dir: Optional[str] = None      # held-out test set evaluated after training (R cost_eval)
+    rgbd: bool = False                       # 4-channel RGBD input; needs depth/ in each dataset dir
+
+    def _depth_for(self, data_dir):
+        return os.path.join(data_dir, "depth") if (self.rgbd and data_dir) else None
+
+    @property
+    def in_channels(self) -> int:
+        from winmol_unet.contract import IN_CHANNELS, RGBD_IN_CHANNELS
+        return RGBD_IN_CHANNELS if self.rgbd else IN_CHANNELS
+
+    @property
+    def depth_dir(self) -> Optional[str]:
+        return self._depth_for(self.data_dir)
+
+    @property
+    def val_depth_dir(self) -> Optional[str]:
+        return self._depth_for(self.val_data_dir)
+
+    @property
+    def gen_depth_dir(self) -> Optional[str]:
+        return self._depth_for(self.gen_data_dir)
+
+    @property
+    def spec_depth_dir(self) -> Optional[str]:
+        return self._depth_for(self.spec_data_dir)
+
+    @property
+    def test_depth_dir(self) -> Optional[str]:
+        return self._depth_for(self.test_data_dir)
 
     @property
     def image_dir(self) -> str:
