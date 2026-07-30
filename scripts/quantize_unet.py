@@ -42,7 +42,10 @@ def quantize_dynamic_int8(src, dst):
     with tempfile.TemporaryDirectory() as td:
         pre = os.path.join(td, "pre.onnx")
         _preprocess(src, pre)
-        quantize_dynamic(pre, dst, weight_type=QuantType.QInt8)
+        # QUInt8, not QInt8: dynamic conv quantization emits ConvInteger nodes,
+        # and onnxruntime's CPU EP only implements ConvInteger for u8 weights —
+        # s8 weights fail with NOT_IMPLEMENTED at session load (ort >= 1.19).
+        quantize_dynamic(pre, dst, weight_type=QuantType.QUInt8)
     return dst
 
 
