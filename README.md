@@ -105,3 +105,35 @@ flags to use the defaults (flips + brightness/contrast + hue/saturation at `p=0.
 **Logging** — metrics always go to TensorBoard (`<out-dir>/logs/`). Add `--wandb`
 (with `--wandb-project` / `--wandb-run-name`) to also log to Weights & Biases; put your
 `WANDB_API_KEY` in a `.env` file at the repo root (loaded automatically).
+
+## RGBD input: pure RGB model vs RGBD
+
+The trainer optionally consumes a **fourth (depth) channel**: with `--rgbd`, each dataset
+dir additionally needs `depth/depth{N}.png|.tif` (paired by the same integer `N`; per-image
+min-max normalized, carried through geometric augmentation only), and the model, ONNX
+export, and `OnnxSegmenter` all become 4-channel. Until real depth data exists,
+`scripts/simulate_depth.py` synthesizes plausible terrain depth from the masks (fractal
+terrain + cylindrical stem bulges, degraded with bulge dropout, off-mask distractors, and
+sensor noise so depth is a helpful-but-unreliable cue):
+
+```bash
+python scripts/simulate_depth.py --dataset /path/to/DS        # writes DS/depth/depth{N}.png
+python -m training.run_train --data-dir /path/to/DS --rgbd --arch deeplabv3plus ...
+```
+
+Benchmark (deeplabv3plus/resnet34, SpecDS 454 pairs, held-out beech TestDS, synthetic
+depth — see [`docs/rgbd-experiment.md`](docs/rgbd-experiment.md) for the full protocol):
+
+![TestDS F1: RGB vs RGBD vs mismatch control](docs/assets/rgbd-vs-rgb-f1.png)
+
+| input | TestDS F1 | precision | recall |
+|---|---|---|---|
+| RGB (pure model) | 0.7381 | 0.7468 | 0.7296 |
+| RGBD, matched depth | **0.8915** | 0.9047 | 0.8787 |
+| RGBD, mismatched depth (control) | 0.7546 | 0.7746 | 0.7356 |
+
+The mismatch control (depth generated from the *wrong* image's mask) lands at the RGB
+baseline, while matched depth gains **+0.15 F1** — i.e. the network genuinely fuses the
+depth channel rather than exploiting a mask-derived shortcut. Because the synthetic test
+depth is itself derived from the masks, the absolute RGBD number is an optimistic ceiling;
+gains on real photogrammetry depth remain to be measured.
