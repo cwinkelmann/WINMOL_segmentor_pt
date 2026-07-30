@@ -37,3 +37,14 @@ def test_width_channels_are_multiples_of_eight():
     first_conv = m.enc1.c1[0]  # Conv2d
     assert first_conv.out_channels % 8 == 0
     assert first_conv.out_channels == 32  # round(0.5*64/8)*8
+
+
+def test_arbitrary_width_mult_builds_and_forwards():
+    # Non-power-of-two multipliers: independently rounded widths break the
+    # coincidental w5 == 2*w4 (etc.) identities, so the decoder must declare
+    # its input channels from the actual skip+upsample concat, not the ladder.
+    for m in (0.3, 0.6, 0.75):
+        net = UNet(width_mult=m).eval()
+        with torch.no_grad():
+            y = net(torch.randn(1, 3, 64, 64))
+        assert y.shape == (1, 1, 64, 64), f"width_mult={m}"

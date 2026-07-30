@@ -1,5 +1,4 @@
 # WINMOL Segmentor (PyTorch)
-TODO: document where to get some sample data from. 
 
 PyTorch re-implementation of the WINMOL tree-stem segmentation U-Net, with model
 export to ONNX and Keras (`.hdf5` / native `.keras`) for use in the WINMOL Analyzer.
@@ -59,9 +58,8 @@ The data directory must contain `train/` (jpeg images named `trainN.jpeg`) and
 `mask/` (gif masks named `maskN.gif`), paired by the integer `N`.
 
 ```bash
-##  TODO this looks wrong. --data-dir TestDS is wrong, that would be the testing dataset
 python -m training.run_train \
-  --data-dir /path/to/TestDS \
+  --data-dir /path/to/SpecDS \
   --out-dir output/run1 \
   --epochs 20 --batch-size 4 --device mps \
   --aug-hflip-p 0.5 --aug-vflip-p 0.5 --aug-rotate-p 0.3 --aug-rotate-limit 20 \
@@ -82,7 +80,7 @@ the same way via `OnnxSegmenter`. The Keras `.hdf5`/`.keras` mirror is UNet-spec
 opt-in with `--export-keras` (for the unmodified-analyzer drop-in). Example:
 
 ```bash
-python -m training.run_train --data-dir /path/to/TestDS --out-dir output/deeplab \
+python -m training.run_train --data-dir /path/to/SpecDS --out-dir output/deeplab \
   --arch deeplabv3plus --encoder resnet34 --encoder-weights imagenet \
   --epochs 20 --device mps
 ```
@@ -149,6 +147,7 @@ flags to use the defaults (flips + brightness/contrast + hue/saturation at `p=0.
 **Logging** — metrics always go to TensorBoard (`<out-dir>/logs/`). Add `--wandb`
 (with `--wandb-project` / `--wandb-run-name`) to also log to Weights & Biases; put your
 `WANDB_API_KEY` in a `.env` file at the repo root (loaded automatically).
+
 ## Model optimization — faster CPU/GPU inference
 
 Two independent levers speed up UNet inference while keeping the ONNX contract. Full study +

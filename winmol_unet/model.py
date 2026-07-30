@@ -74,14 +74,19 @@ class UNet(nn.Module):
         self.bottleneck = _DoubleConv(w4, w5, dropout)
         self.pool = nn.MaxPool2d(2)
 
+        # Decoder input channels come from the actual forward-time concat
+        # (skip + upsample output, each w_k -> 2*w_k), NOT the next ladder width:
+        # with independent rounding in _scale_width, w5 == 2*w4 etc. only holds
+        # for multipliers like 1.0/0.5/0.25. At those points 2*w_k equals the
+        # historical ladder value, so width_mult=1.0 stays byte-identical.
         self.up4 = nn.ConvTranspose2d(w5, w4, kernel_size=2, stride=2, bias=False)
-        self.dec4 = _DoubleConv(w5, w4, dropout)
+        self.dec4 = _DoubleConv(2 * w4, w4, dropout)
         self.up3 = nn.ConvTranspose2d(w4, w3, kernel_size=2, stride=2, bias=False)
-        self.dec3 = _DoubleConv(w4, w3, dropout)
+        self.dec3 = _DoubleConv(2 * w3, w3, dropout)
         self.up2 = nn.ConvTranspose2d(w3, w2, kernel_size=2, stride=2, bias=False)
-        self.dec2 = _DoubleConv(w3, w2, dropout)
+        self.dec2 = _DoubleConv(2 * w2, w2, dropout)
         self.up1 = nn.ConvTranspose2d(w2, w1, kernel_size=2, stride=2, bias=False)
-        self.dec1 = _DoubleConv(w2, w1, dropout)
+        self.dec1 = _DoubleConv(2 * w1, w1, dropout)
 
         self.head = nn.Conv2d(w1, out_channels, kernel_size=1)
 
