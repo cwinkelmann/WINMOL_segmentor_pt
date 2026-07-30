@@ -138,3 +138,10 @@ baseline, while matched depth gains **+0.15 F1** — i.e. the network genuinely 
 depth channel rather than exploiting a mask-derived shortcut. Because the synthetic test
 depth is itself derived from the masks, the absolute RGBD number is an optimistic ceiling;
 gains on real photogrammetry depth remain to be measured.
+
+**Where depth helps** — the TestDS tiles with the largest per-tile RGB→RGBD F1 gain
+(both models, same tiles). The pure-RGB model fragments stems lying in shadow (rows 1, 3)
+and mistakes unlabeled thin branches for stems (row 2); the simulated depth ridges make
+the true stems unambiguous in both cases:
+
+![Qualitative comparison: image, simulated depth, ground truth, RGB vs RGBD predictions](docs/assets/rgbd-qualitative.png)
