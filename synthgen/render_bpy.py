@@ -17,6 +17,7 @@ import sys
 import bpy
 
 STEM_INDEX = 1
+_GSD_HINT = [0.02]        # scene GSD, set per render so relief can be sized in pixels
 _DEPTH_MARGIN_M = 3.0        # window half-width around the camera altitude
 
 
@@ -26,6 +27,7 @@ def _reset_scene():
 
 
 def _configure_render(scene, spec, samples=48):
+    _GSD_HINT[0] = spec["gsd_m_per_px"]
     scene.render.engine = "CYCLES"
     scene.render.resolution_x = scene.render.resolution_y = spec["tile_px"]
     scene.render.resolution_percentage = 100
@@ -134,11 +136,57 @@ def _build_stem(stem):
     obj.location = (stem["center_xy_m"][0], stem["center_xy_m"][1], z + r)
     obj.rotation_euler = (0.0, 0.0, math.radians(stem["azimuth_deg"]))
 
+    obj = _add_bark_relief(obj, stem)
     for k in range(stem["branch_stubs"]):
         _add_branch_stub(obj, stem, k)
     if stem["root_plate"]:
         _add_root_plate(obj, stem)
     return obj
+
+
+
+def _add_bark_relief(obj, stem):
+    """Displace the stem surface with noise so bark relief is geometry, not a
+    shading trick.
+
+    A bump map fakes relief in the RGB pass only — the depth pass still sees a
+    perfect cylinder, and a model trained on RGBD would learn that stems are
+    unnaturally smooth in depth. Displacing real vertices puts the same height
+    profile into both passes (and into the silhouette, so the mask follows it).
+
+    Scale matters more than realism here: true bark texture is ~1 cm, which is
+    sub-pixel at a 2 cm/px GSD and measurably changes nothing. What a UAV tile
+    actually resolves is coarser irregularity — knots, swellings, out-of-round
+    cross-sections at 10-30 cm — so the noise is tuned to span several pixels
+    rather than to imitate bark. Fine bark stays a shading-only bump map.
+    """
+    gsd = _GSD_HINT[0]
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.convert(target="MESH")      # curves cannot carry a Displace
+    mesh = bpy.context.active_object
+
+    # enough vertices for the noise to have somewhere to go
+    sub = mesh.modifiers.new("subdiv", "SUBSURF")
+    sub.subdivision_type = "SIMPLE"
+    sub.levels = sub.render_levels = 1
+
+    tex = bpy.data.textures.new(f"bark_{mesh.name}", type="CLOUDS")
+    # features ~8x the pixel size so displacement survives rasterization
+    tex.noise_scale = max(8.0 * gsd, stem["diameter_m"] * 0.9)
+    tex.noise_depth = 4
+    tex.intensity = 1.0
+
+    disp = mesh.modifiers.new("bark_relief", "DISPLACE")
+    disp.texture = tex
+    disp.texture_coords = "LOCAL"
+    disp.mid_level = 0.5
+    # amplitude floor of ~2 px so the relief is visible in depth, capped at a
+    # quarter diameter so a stem stays a stem
+    amp = stem["diameter_m"] * (0.10 + 0.14 * stem["bark_darkness"])
+    disp.strength = float(min(max(amp, 4.0 * gsd), stem["diameter_m"] * 0.25))
+    mesh.select_set(False)
+    return mesh
 
 
 def _add_branch_stub(parent, stem, k):
@@ -296,7 +344,7 @@ def _depth_material(spec):
     return mat
 
 
-def _render_to(scene, path, samples, denoise, raw=False):
+def _render_to(scene, path, samples, denoise, raw=False, mode="RGB", depth_bits="8"):
     """`raw=True` renders data, not a picture: no tone mapping and a near-delta
     pixel filter, so an emitted 1.0 lands as 255 and edges stay hard. Without it
     AgX maps white to ~196 and the filter smears mask edges into grey."""
@@ -310,7 +358,11 @@ def _render_to(scene, path, samples, denoise, raw=False):
         scene.render.dither_intensity = 0.0     # default 1.0 adds +/-1 noise to 8-bit
     try:
         scene.render.filepath = path
-        scene.render.image_settings.file_format = "PNG"
+        im = scene.render.image_settings
+        im.file_format = "PNG"
+        # order matters: file_format resets colour settings, so set them after
+        im.color_mode = mode
+        im.color_depth = depth_bits
         bpy.ops.render.render(write_still=True)
     finally:
         scene.view_settings.view_transform = saved_view
@@ -336,7 +388,7 @@ def _render_mask(scene, out_dir):
             obj.data.materials.clear()
             obj.data.materials.append(white if obj.pass_index == STEM_INDEX else black)
         _render_to(scene, os.path.join(out_dir, "mask"), samples=1, denoise=False,
-                   raw=True)
+                   raw=True, mode="BW")
     finally:
         for obj, mats in saved.items():
             obj.data.materials.clear()
@@ -351,13 +403,11 @@ def _render_depth(scene, spec, out_dir):
     scene.world = None
     try:
         layer.material_override = _depth_material(spec)
-        scene.render.image_settings.color_depth = "16"
         _render_to(scene, os.path.join(out_dir, "depth"), samples=1, denoise=False,
-                   raw=True)
+                   raw=True, mode="BW", depth_bits="16")
     finally:
         layer.material_override = saved
         scene.world = world_saved
-        scene.render.image_settings.color_depth = "8"
 
 
 def render_spec(spec, out_dir, samples=48):
