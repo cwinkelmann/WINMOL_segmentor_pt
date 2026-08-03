@@ -9,12 +9,12 @@ second black-and-white render: one render, so the mask cannot drift out of
 registration with the image. Depth comes from the Z pass, mapped through a known
 altitude window so every tile shares one physical scale.
 """
+import colorsys
 import math
 import os
 import sys
 
 import bpy
-import mathutils
 
 STEM_INDEX = 1
 _DEPTH_MARGIN_M = 3.0        # window half-width around the camera altitude
@@ -54,10 +54,11 @@ def _bark_material(stem):
     nt = mat.node_tree
     bsdf = nt.nodes["Principled BSDF"]
     # brown bark, jittered per stem for decay/moisture/species variety
-    hue = 0.06 + 0.04 * stem["bark_hue_shift"]
-    val = 0.22 * (1.0 - 0.6 * stem["bark_darkness"]) + 0.05
-    bsdf.inputs["Base Color"].default_value = (*mathutils.Color((hue, 0.55, val)).from_hsv(
-        hue % 1.0, 0.55, val), 1.0)
+    hue = (0.075 + 0.025 * stem["bark_hue_shift"]) % 1.0
+    sat = 0.18 + 0.14 * (1.0 - stem["bark_darkness"])     # weathered bark is grey-brown
+    val = 0.16 * (1.0 - 0.55 * stem["bark_darkness"]) + 0.04
+    r, g, b = colorsys.hsv_to_rgb(hue, sat, val)
+    bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
     bsdf.inputs["Roughness"].default_value = 0.75 + 0.2 * stem["bark_darkness"]
     # bark relief: noise -> bump, so grazing light produces the streaked texture
     noise = nt.nodes.new("ShaderNodeTexNoise")
@@ -235,8 +236,11 @@ def _build_canopy_proxies(spec, shadow):
         bpy.ops.mesh.primitive_plane_add(size=half * rng.uniform(0.3, 1.1))
         blocker = bpy.context.active_object
         blocker.pass_index = 0
+        # invisible to camera rays but still casting shadows: a blocker between
+        # camera and ground would otherwise render as a giant pale slab
+        blocker.visible_camera = False
         blocker.location = (rng.uniform(-half, half), rng.uniform(-half, half),
-                            rng.uniform(4.0, 12.0))
+                            spec["camera"]["altitude_m"] + rng.uniform(3.0, 12.0))
         blocker.rotation_euler = (rng.uniform(0, 0.5), rng.uniform(0, 0.5),
                                   rng.uniform(0, math.tau))
 
@@ -253,49 +257,107 @@ def _build_camera(scene, spec):
     return cam
 
 
-def _wire_outputs(scene, spec, out_dir):
-    """Compositor: beauty -> rgb.png, object index -> mask.png, Z -> depth.png."""
-    scene.use_nodes = True
-    nt = scene.node_tree
+def _flat_emission(color, name):
+    """Unlit constant-colour shader: what a pixel shows does not depend on lights,
+    so mask/depth passes need one sample and no denoising."""
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
     nt.nodes.clear()
-    rl = nt.nodes.new("CompositorNodeRLayers")
+    em = nt.nodes.new("ShaderNodeEmission")
+    em.inputs["Color"].default_value = (*color, 1.0)
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    nt.links.new(em.outputs["Emission"], out.inputs["Surface"])
+    return mat
 
-    rgb = nt.nodes.new("CompositorNodeOutputFile")
-    rgb.base_path = out_dir
-    rgb.file_slots[0].path = "rgb"
-    rgb.format.file_format = "PNG"
-    rgb.format.color_mode = "RGB"
-    nt.links.new(rl.outputs["Image"], rgb.inputs[0])
 
-    # IndexOB is a discrete id map: >0.5 isolates the stems, no anti-aliased edge
-    # to threshold ambiguously
-    step = nt.nodes.new("CompositorNodeMath")
-    step.operation = "GREATER_THAN"
-    step.inputs[1].default_value = 0.5
-    nt.links.new(rl.outputs["IndexOB"], step.inputs[0])
-    mask = nt.nodes.new("CompositorNodeOutputFile")
-    mask.base_path = out_dir
-    mask.file_slots[0].path = "mask"
-    mask.format.file_format = "PNG"
-    mask.format.color_mode = "BW"
-    nt.links.new(step.outputs[0], mask.inputs[0])
+def _depth_material(spec):
+    """Camera distance mapped through a fixed altitude window -> greyscale.
 
-    # map a fixed altitude window to [0,1] so depth shares one physical scale
-    # across tiles instead of being per-tile normalized
+    The window is anchored to the camera altitude rather than per-tile min/max, so
+    a given grey level means the same height in every tile of a dataset.
+    """
     alt = spec["camera"]["altitude_m"]
-    rng_node = nt.nodes.new("CompositorNodeMapRange")
-    rng_node.inputs[1].default_value = alt - _DEPTH_MARGIN_M
-    rng_node.inputs[2].default_value = alt + 0.5
-    rng_node.inputs[3].default_value = 1.0               # near = bright
-    rng_node.inputs[4].default_value = 0.0
-    nt.links.new(rl.outputs["Depth"], rng_node.inputs[0])
-    depth = nt.nodes.new("CompositorNodeOutputFile")
-    depth.base_path = out_dir
-    depth.file_slots[0].path = "depth"
-    depth.format.file_format = "PNG"
-    depth.format.color_mode = "BW"
-    depth.format.color_depth = "16"
-    nt.links.new(rng_node.outputs[0], depth.inputs[0])
+    mat = bpy.data.materials.new("depth")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    cam = nt.nodes.new("ShaderNodeCameraData")
+    rng = nt.nodes.new("ShaderNodeMapRange")
+    rng.inputs["From Min"].default_value = alt - _DEPTH_MARGIN_M
+    rng.inputs["From Max"].default_value = alt + 0.5
+    rng.inputs["To Min"].default_value = 1.0            # near the camera = bright
+    rng.inputs["To Max"].default_value = 0.0
+    nt.links.new(cam.outputs["View Z Depth"], rng.inputs["Value"])
+    em = nt.nodes.new("ShaderNodeEmission")
+    nt.links.new(rng.outputs["Result"], em.inputs["Color"])
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    nt.links.new(em.outputs["Emission"], out.inputs["Surface"])
+    return mat
+
+
+def _render_to(scene, path, samples, denoise, raw=False):
+    """`raw=True` renders data, not a picture: no tone mapping and a near-delta
+    pixel filter, so an emitted 1.0 lands as 255 and edges stay hard. Without it
+    AgX maps white to ~196 and the filter smears mask edges into grey."""
+    scene.cycles.samples = samples
+    scene.cycles.use_denoising = denoise
+    saved_view, saved_filter = scene.view_settings.view_transform, scene.render.filter_size
+    saved_dither = scene.render.dither_intensity
+    if raw:
+        scene.view_settings.view_transform = "Standard"
+        scene.render.filter_size = 0.01
+        scene.render.dither_intensity = 0.0     # default 1.0 adds +/-1 noise to 8-bit
+    try:
+        scene.render.filepath = path
+        scene.render.image_settings.file_format = "PNG"
+        bpy.ops.render.render(write_still=True)
+    finally:
+        scene.view_settings.view_transform = saved_view
+        scene.render.filter_size = saved_filter
+        scene.render.dither_intensity = saved_dither
+
+
+def _geometry(scene):
+    return [o for o in scene.objects if o.type in ("MESH", "CURVE") and o.data]
+
+
+def _render_mask(scene, out_dir):
+    """Stems white, everything else black — the same guarantee the object-index
+    pass gives (one geometry state, so registration is exact) without depending on
+    the compositor API, which moved between Blender 4 and 5."""
+    white = _flat_emission((1.0, 1.0, 1.0), "mask_fg")
+    black = _flat_emission((0.0, 0.0, 0.0), "mask_bg")
+    saved = {o: list(o.data.materials) for o in _geometry(scene)}
+    world_saved = scene.world
+    scene.world = None                                   # no sky light bleeding in
+    try:
+        for obj in saved:
+            obj.data.materials.clear()
+            obj.data.materials.append(white if obj.pass_index == STEM_INDEX else black)
+        _render_to(scene, os.path.join(out_dir, "mask"), samples=1, denoise=False,
+                   raw=True)
+    finally:
+        for obj, mats in saved.items():
+            obj.data.materials.clear()
+            for m in mats:
+                obj.data.materials.append(m)
+        scene.world = world_saved
+
+
+def _render_depth(scene, spec, out_dir):
+    layer = scene.view_layers[0]
+    saved, world_saved = layer.material_override, scene.world
+    scene.world = None
+    try:
+        layer.material_override = _depth_material(spec)
+        scene.render.image_settings.color_depth = "16"
+        _render_to(scene, os.path.join(out_dir, "depth"), samples=1, denoise=False,
+                   raw=True)
+    finally:
+        layer.material_override = saved
+        scene.world = world_saved
+        scene.render.image_settings.color_depth = "8"
 
 
 def render_spec(spec, out_dir, samples=48):
@@ -309,8 +371,9 @@ def render_spec(spec, out_dir, samples=48):
     _build_clutter(spec, spec["seed"])
     _build_sun(spec)
     _build_camera(scene, spec)
-    _wire_outputs(scene, spec, out_dir)
-    bpy.ops.render.render(write_still=False)             # File Output nodes do the writing
+    _render_to(scene, os.path.join(out_dir, "rgb"), samples=samples, denoise=True)
+    _render_mask(scene, out_dir)
+    _render_depth(scene, spec, out_dir)
     return out_dir
 
 
