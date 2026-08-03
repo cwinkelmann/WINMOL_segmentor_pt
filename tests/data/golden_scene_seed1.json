@@ -1,0 +1,140 @@
+{
+ "camera": {
+  "altitude_m": 6.826666666666666,
+  "focal_mm": 24.0,
+  "footprint_m": 10.24,
+  "sensor_mm": 36.0
+ },
+ "clutter": {
+  "branch_density": 0.3297562126038357,
+  "leaf_density": 0.4091991363691613,
+  "over_stem_fraction": 0.2637295880361823,
+  "stone_density": 0.008267733972920509
+ },
+ "ground": {
+  "brightness": 0.7864957676317802,
+  "flip": false,
+  "rotation_deg": 184.2557848920924,
+  "texture_key": "procedural"
+ },
+ "gsd_m_per_px": 0.02,
+ "schema_version": 1,
+ "seed": 1,
+ "stems": [
+  {
+   "azimuth_deg": 24.127505504489655,
+   "bark_darkness": 0.9807371998012386,
+   "bark_hue_shift": -0.029618051136729884,
+   "bend_m": 0.2346345731458283,
+   "branch_stubs": 3,
+   "broken_end": true,
+   "burial": 0.11804100319883228,
+   "center_xy_m": [
+    -2.0152849480535555,
+    -0.47618161171812856
+   ],
+   "diameter_m": 0.49421435171420214,
+   "elevation_m": 0.0,
+   "length_m": 7.275707463985475,
+   "root_plate": false,
+   "taper": 0.5517276203380748
+  },
+  {
+   "azimuth_deg": 174.58657437890386,
+   "bark_darkness": 0.5285892632600216,
+   "bark_hue_shift": -0.9208142466715943,
+   "bend_m": 0.7178107403641572,
+   "branch_stubs": 4,
+   "broken_end": false,
+   "burial": 0.0,
+   "center_xy_m": [
+    0.4221630008057264,
+    -2.284634070575403
+   ],
+   "diameter_m": 0.4623949703867668,
+   "elevation_m": 0.3579371043836357,
+   "length_m": 17.38651509862059,
+   "root_plate": false,
+   "taper": 0.5079328062353852
+  },
+  {
+   "azimuth_deg": 46.817540592700176,
+   "bark_darkness": 0.6832869060032571,
+   "bark_hue_shift": 0.639253438238554,
+   "bend_m": 0.6281893249421108,
+   "branch_stubs": 5,
+   "broken_end": true,
+   "burial": 0.22989999800993988,
+   "center_xy_m": [
+    1.4472004519871997,
+    3.610960266041925
+   ],
+   "diameter_m": 0.1311747895749378,
+   "elevation_m": 0.0,
+   "length_m": 9.34937412616646,
+   "root_plate": false,
+   "taper": 0.7047479407607546
+  },
+  {
+   "azimuth_deg": 153.94085537167263,
+   "bark_darkness": 0.8355692165002742,
+   "bark_hue_shift": 0.4398187670173861,
+   "bend_m": 1.0055347746243553,
+   "branch_stubs": 5,
+   "broken_end": true,
+   "burial": 0.0,
+   "center_xy_m": [
+    3.0962090100175876,
+    -3.160842997174269
+   ],
+   "diameter_m": 0.19580812951006762,
+   "elevation_m": 0.13376550747118646,
+   "length_m": 14.593551064876817,
+   "root_plate": false,
+   "taper": 0.8882685482082903
+  },
+  {
+   "azimuth_deg": 27.094469475811948,
+   "bark_darkness": 0.9190886196338225,
+   "bark_hue_shift": 0.34691977430587784,
+   "bend_m": 0.25113795691368096,
+   "branch_stubs": 3,
+   "broken_end": true,
+   "burial": 0.19022260812544678,
+   "center_xy_m": [
+    1.4267533318818597,
+    3.1237614914048994
+   ],
+   "diameter_m": 0.2076090835814868,
+   "elevation_m": 0.0,
+   "length_m": 6.510045237832674,
+   "root_plate": false,
+   "taper": 0.8973579310980867
+  },
+  {
+   "azimuth_deg": 38.10145366935189,
+   "bark_darkness": 0.17857187817437192,
+   "bark_hue_shift": 0.3826740705554825,
+   "bend_m": 1.0127724076245883,
+   "branch_stubs": 4,
+   "broken_end": true,
+   "burial": 0.3714695160271001,
+   "center_xy_m": [
+    1.642039096530159,
+    -2.6055447834298615
+   ],
+   "diameter_m": 0.5427601333549734,
+   "elevation_m": 0.0,
+   "length_m": 15.229205272907537,
+   "root_plate": true,
+   "taper": 0.48135896128538413
+  }
+ ],
+ "sun": {
+  "azimuth_deg": 112.25932272377476,
+  "canopy_shadow": 0.7449323344383976,
+  "elevation_deg": 71.91896682823463,
+  "strength": 3.6933057958903026
+ },
+ "tile_px": 512
+}
