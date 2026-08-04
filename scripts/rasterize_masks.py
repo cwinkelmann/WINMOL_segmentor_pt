@@ -49,20 +49,33 @@ def _stem_polyline(stem, cfg, size):
     return pts
 
 
-def rasterize(spec, cfg, size):
-    """Binary mask of one scene. Width tapers along the stem, as in the render."""
+def rasterize(spec, cfg, size, instances=False):
+    """Mask of one scene. Width tapers along the stem, as in the render.
+
+    `instances=False` paints every stem 255 (the binary label real annotation
+    provides, and what the ControlNet expects as conditioning). `instances=True`
+    paints stem *k* with value *k+1*, so touching and crossing stems stay
+    separable — a label real data cannot supply cheaply, because separating
+    overlapping stems by hand is the expensive part of annotation.
+
+    Stems are drawn far-to-near, so where two cross the nearer one owns the
+    overlap. That matches what a segmenter can actually see.
+    """
     img = Image.new("L", (size, size), 0)
     d = ImageDraw.Draw(img)
-    # far stems first so nearer ones overwrite: elevation orders the pile
-    for stem in sorted(spec.stems, key=lambda s: s.elevation_m):
+    ordered = sorted(spec.stems, key=lambda s: s.elevation_m)
+    if instances and len(ordered) > 255:
+        raise ValueError(f"{len(ordered)} stems exceeds the 255 ids an 8-bit mask holds")
+    for k, stem in enumerate(ordered):
+        value = (k + 1) if instances else 255
         pts = _stem_polyline(stem, cfg, size)
         butt_px = stem.diameter_m / cfg.gsd_m_per_px
         for (x0, y0, t0), (x1, y1, _) in zip(pts, pts[1:]):
             frac = 1.0 + (stem.taper - 1.0) * (t0 + 0.5)      # butt -> tip
             w = max(1.0, butt_px * frac)
-            d.line([(x0, y0), (x1, y1)], fill=255, width=int(round(w)))
+            d.line([(x0, y0), (x1, y1)], fill=value, width=int(round(w)))
             r = w / 2.0
-            d.ellipse([x0 - r, y0 - r, x0 + r, y0 + r], fill=255)   # round the joint
+            d.ellipse([x0 - r, y0 - r, x0 + r, y0 + r], fill=value)   # round the joint
     return img
 
 
@@ -118,6 +131,8 @@ def main(argv=None):
     p.add_argument("--max-stem-fraction", type=float, default=0.35)
     p.add_argument("--depth", action="store_true",
                    help="also write depth{N}.png (16-bit) from the same scene")
+    p.add_argument("--instances", action="store_true",
+                   help="also write inst{N}.png with one id per stem (0 = background)")
     a = p.parse_args(argv)
 
     os.makedirs(a.out, exist_ok=True)
@@ -132,6 +147,11 @@ def main(argv=None):
             continue
         written += 1
         m.save(os.path.join(a.out, f"mask{written}.png"))
+        if a.instances:
+            # same geometry, per-stem ids: the binary mask above stays the
+            # ControlNet conditioning, this is the richer label
+            rasterize(spec, cfg, a.size, instances=True).save(
+                os.path.join(a.out, f"inst{written}.png"))
         if a.depth:
             rasterize_depth(spec, cfg, a.size).save(
                 os.path.join(a.out, f"depth{written}.png"))
