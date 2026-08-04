@@ -70,7 +70,8 @@ It pairs by shared key, renames to sequential `train{i}`/`mask{i}`, and binarize
 (any pixel > 0 → foreground). Source is never mutated.
 
 **Fixed train/val split** — by default training does a deterministic 80/20 split of
-`--data-dir` (`--val-fraction`/`--seed`). To pin an explicit, shareable held-out set (e.g.
+`--data-dir` (controlled by `TrainConfig.val_fraction`/`seed`, defaults 0.2/1 — not
+exposed as CLI flags). To pin an explicit, shareable held-out set (e.g.
 so PyTorch and R evaluate on the same tiles), materialize it once and train against it:
 
 ```bash
@@ -105,3 +106,42 @@ flags to use the defaults (flips + brightness/contrast + hue/saturation at `p=0.
 **Logging** — metrics always go to TensorBoard (`<out-dir>/logs/`). Add `--wandb`
 (with `--wandb-project` / `--wandb-run-name`) to also log to Weights & Biases; put your
 `WANDB_API_KEY` in a `.env` file at the repo root (loaded automatically).
+
+## RGBD input: pure RGB model vs RGBD
+
+The trainer optionally consumes a **fourth (depth) channel**: with `--rgbd`, each dataset
+dir additionally needs `depth/depth{N}.png|.tif` (paired by the same integer `N`; per-image
+min-max normalized, carried through geometric augmentation only), and the model, ONNX
+export, and `OnnxSegmenter` all become 4-channel. Until real depth data exists,
+`scripts/simulate_depth.py` synthesizes plausible terrain depth from the masks (fractal
+terrain + cylindrical stem bulges, degraded with bulge dropout, off-mask distractors, and
+sensor noise so depth is a helpful-but-unreliable cue):
+
+```bash
+python scripts/simulate_depth.py --dataset /path/to/DS        # writes DS/depth/depth{N}.png
+python -m training.run_train --data-dir /path/to/DS --rgbd --arch deeplabv3plus ...
+```
+
+Benchmark (deeplabv3plus/resnet34, SpecDS 454 pairs, held-out beech TestDS, synthetic
+depth — see [`docs/rgbd-experiment.md`](docs/rgbd-experiment.md) for the full protocol):
+
+![TestDS F1: RGB vs RGBD vs mismatch control](docs/assets/rgbd-vs-rgb-f1.png)
+
+| input | TestDS F1 | precision | recall |
+|---|---|---|---|
+| RGB (pure model) | 0.7381 | 0.7468 | 0.7296 |
+| RGBD, matched depth | **0.8915** | 0.9047 | 0.8787 |
+| RGBD, mismatched depth (control) | 0.7546 | 0.7746 | 0.7356 |
+
+The mismatch control (depth generated from the *wrong* image's mask) lands at the RGB
+baseline, while matched depth gains **+0.15 F1** — i.e. the network genuinely fuses the
+depth channel rather than exploiting a mask-derived shortcut. Because the synthetic test
+depth is itself derived from the masks, the absolute RGBD number is an optimistic ceiling;
+gains on real photogrammetry depth remain to be measured.
+
+**Where depth helps** — the TestDS tiles with the largest per-tile RGB→RGBD F1 gain
+(both models, same tiles). The pure-RGB model fragments stems lying in shadow (rows 1, 3)
+and mistakes unlabeled thin branches for stems (row 2); the simulated depth ridges make
+the true stems unambiguous in both cases:
+
+![Qualitative comparison: image, simulated depth, ground truth, RGB vs RGBD predictions](docs/assets/rgbd-qualitative.png)

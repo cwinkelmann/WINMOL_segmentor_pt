@@ -64,3 +64,22 @@ def test_rotate_keeps_mask_binary():
                aug_bc_p=0.0, aug_hsv_p=0.0)
     out = build_augmentation(cfg)(image=img, mask=mask)
     assert set(np.unique(out["mask"]).tolist()) <= {0.0, 1.0}
+
+
+def test_depth_follows_geometric_but_not_photometric():
+    cfg = _cfg(aug_hflip_p=1.0, aug_vflip_p=0.0, aug_rotate_p=0.0,
+               aug_bc_p=1.0, aug_hsv_p=1.0)
+    tf = build_augmentation(cfg)
+    img = np.random.default_rng(0).random((16, 16, 3)).astype(np.float32)
+    mask = np.zeros((16, 16), dtype=np.float32)
+    depth = np.linspace(0, 1, 256, dtype=np.float32).reshape(16, 16, 1)
+    out = tf(image=img, mask=mask, depth=depth)
+    # hflip (p=1) applies to depth; brightness/HSV (p=1) must NOT touch it
+    np.testing.assert_allclose(out["depth"], depth[:, ::-1, :])
+
+
+def test_compose_without_depth_still_works():
+    cfg = _cfg(aug_hflip_p=1.0)
+    tf = build_augmentation(cfg)
+    out = tf(image=np.zeros((16, 16, 3), np.float32), mask=np.zeros((16, 16), np.float32))
+    assert out["image"].shape == (16, 16, 3)

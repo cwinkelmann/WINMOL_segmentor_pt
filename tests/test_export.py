@@ -27,3 +27,13 @@ def test_export_parity_torch_vs_onnx(tmp_path):
 
     assert onnx_out.shape == (2, 1, 512, 512)
     assert np.allclose(torch_out, onnx_out, rtol=0.0, atol=1e-4)
+
+
+def test_export_rgbd_unet(tmp_path):
+    from winmol_unet.model import UNet
+    path = str(tmp_path / "rgbd.onnx")
+    export_to_onnx(UNet(in_channels=4), path, in_channels=4)
+    model = onnx.load(path)
+    dims = [d.dim_param or d.dim_value
+            for d in model.graph.input[0].type.tensor_type.shape.dim]
+    assert dims[1] == 4
