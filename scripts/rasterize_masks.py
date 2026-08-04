@@ -11,6 +11,9 @@ these masks interchangeable with rendered ones.
 Masks are drawn from fresh seeds, so they are unseen by any model trained on
 real masks: generated tiles cannot be mistaken for memorized training pairs.
 
+With --amodal each stem additionally gets its complete extent, overlapping
+where stems cross, so a stem hidden under another is still labelled whole.
+
 With --depth the same SceneSpec also yields a 16-bit height field: terrain
 noise plus each stem's half-cylinder profile, ordered by elevation so crossing
 stems stack correctly. Mask and depth therefore describe one geometry and stay
@@ -79,6 +82,49 @@ def rasterize(spec, cfg, size, instances=False):
     return img
 
 
+def rasterize_amodal(spec, cfg, size):
+    """One full-extent mask per stem, overlapping where stems cross.
+
+    The single-channel instance mask is *modal*: a crossing hides whatever is
+    beneath, so the lower stem's label stops at the overlap. Amodal masks keep
+    each stem whole, which is what a model needs if it should reason about a
+    stem continuing under another — and what a vectorizer needs to trace one
+    stem across a junction instead of splitting it into two fragments.
+
+    Overlapping regions cannot be expressed one-value-per-pixel, so this
+    returns a (K, H, W) boolean stack, ordered far-to-near like the modal mask.
+    """
+    ordered = sorted(spec.stems, key=lambda s: s.elevation_m)
+    stack = np.zeros((len(ordered), size, size), bool)
+    for k, stem in enumerate(ordered):
+        one = Image.new("L", (size, size), 0)
+        d = ImageDraw.Draw(one)
+        pts = _stem_polyline(stem, cfg, size)
+        butt_px = stem.diameter_m / cfg.gsd_m_per_px
+        for (x0, y0, t0), (x1, y1, _) in zip(pts, pts[1:]):
+            frac = 1.0 + (stem.taper - 1.0) * (t0 + 0.5)
+            w = max(1.0, butt_px * frac)
+            d.line([(x0, y0), (x1, y1)], fill=255, width=int(round(w)))
+            r = w / 2.0
+            d.ellipse([x0 - r, y0 - r, x0 + r, y0 + r], fill=255)
+        stack[k] = np.asarray(one) >= 128
+    return stack
+
+
+def visibility(stack):
+    """Fraction of each stem still visible once nearer stems occlude it.
+
+    1.0 means unoccluded; a low value marks a stem a modal label barely
+    represents, which is exactly the case amodal supervision exists for.
+    """
+    out = []
+    for k in range(len(stack)):
+        occluded = np.any(stack[k + 1:], axis=0) if k + 1 < len(stack) else False
+        total = stack[k].sum()
+        out.append(float((stack[k] & ~occluded).sum() / total) if total else 0.0)
+    return out
+
+
 def _terrain(size, seed, amp):
     """Low-frequency ground undulation, mirroring the depth simulator's octaves."""
     rng = np.random.default_rng(seed)
@@ -133,6 +179,9 @@ def main(argv=None):
                    help="also write depth{N}.png (16-bit) from the same scene")
     p.add_argument("--instances", action="store_true",
                    help="also write inst{N}.png with one id per stem (0 = background)")
+    p.add_argument("--amodal", action="store_true",
+                   help="also write amodal{N}.npz: per-stem FULL extents that overlap "
+                        "where stems cross, plus each stem's visible fraction")
     a = p.parse_args(argv)
 
     os.makedirs(a.out, exist_ok=True)
@@ -147,6 +196,12 @@ def main(argv=None):
             continue
         written += 1
         m.save(os.path.join(a.out, f"mask{written}.png"))
+        if a.amodal:
+            stack = rasterize_amodal(spec, cfg, a.size)
+            np.savez_compressed(os.path.join(a.out, f"amodal{written}.npz"),
+                                masks=np.packbits(stack, axis=-1),
+                                shape=np.array(stack.shape),
+                                visibility=np.array(visibility(stack), np.float32))
         if a.instances:
             # same geometry, per-stem ids: the binary mask above stays the
             # ControlNet conditioning, this is the richer label
