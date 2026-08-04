@@ -57,12 +57,16 @@ class StemDataset(Dataset):
     """
 
     def __init__(self, image_dir, mask_dir, img_size=512, transform=None, ids=None, cache=True,
-                 depth_dir=None):
+                 depth_dir=None, depth_vmin=None, depth_vmax=None, depth_nodata=None):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.img_size = img_size
         self.transform = transform   # albumentations Compose (seeded via cfg.seed) or None
         self.depth_dir = depth_dir
+        # a fixed physical range keeps tiles comparable; per-image min-max (the
+        # default) rescales each tile alone and discards absolute height
+        self.depth_vmin, self.depth_vmax = depth_vmin, depth_vmax
+        self.depth_nodata = depth_nodata
         self._depth_names = _depth_index(depth_dir) if depth_dir is not None else None
         self.ids = ids if ids is not None else _paired_ids(image_dir, mask_dir, depth_dir)
         # In-memory resize cache (~4 MB/pair) — fast for small sets but unbounded, so
@@ -94,7 +98,8 @@ class StemDataset(Dataset):
         with Image.open(os.path.join(self.depth_dir, self._depth_names[n])) as im:
             raw = np.asarray(im)
         # per-image min-max to [0,1]; nearest resize to match image/mask handling
-        arr = normalize_depth(raw)[..., None]                               # HW1
+        arr = normalize_depth(raw, vmin=self.depth_vmin, vmax=self.depth_vmax,
+                              nodata=self.depth_nodata)[..., None]                               # HW1
         arr = resize_batch(arr[None], size=self.img_size, mode="nearest")[0]
         return np.ascontiguousarray(arr, dtype=np.float32)                  # HW1
 

@@ -50,7 +50,10 @@ class TrainConfig:
     patience_stage2: int = 5                 # early-stop patience, stage 2 (R value)
     val_data_dir: Optional[str] = None       # single-stage: fixed val set (else 80/20 split of data_dir)
     test_data_dir: Optional[str] = None      # held-out test set evaluated after training (R cost_eval)
-    rgbd: bool = False                       # 4-channel RGBD input; needs depth/ in each dataset dir
+    rgbd: bool = False
+    depth_vmin: Optional[float] = None   # fixed physical range for real depth;
+    depth_vmax: Optional[float] = None   # None = per-image min-max (synthetic)
+    depth_nodata: Optional[float] = None # sentinel treated as missing (e.g. -9999)                       # 4-channel RGBD input; needs depth/ in each dataset dir
 
     def _depth_for(self, data_dir):
         return os.path.join(data_dir, "depth") if (self.rgbd and data_dir) else None

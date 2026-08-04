@@ -42,13 +42,16 @@ def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_
     if val_image_dir is not None:
         # pre-materialized fixed split: train on all of image_dir, validate on the given dir
         train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
-                               cache=cfg.cache_dataset, depth_dir=depth_dir)
+                               cache=cfg.cache_dataset, depth_dir=depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
         val_ds = StemDataset(val_image_dir, val_mask_dir, cfg.img_size, transform=None,
-                             cache=cfg.cache_dataset, depth_dir=val_depth_dir)
+                             cache=cfg.cache_dataset, depth_dir=val_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     else:
         train_ds, val_ds = train_val_split(
             image_dir, mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
-            transform=transform, cache=cfg.cache_dataset, depth_dir=depth_dir)
+            transform=transform, cache=cfg.cache_dataset, depth_dir=depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     # drop_last avoids a trailing batch of 1 (breaks BatchNorm in DeepLabV3+ ASPP
     # [N,C,1,1]) — only when there is more than one batch's worth, so a tiny set
     # isn't zeroed out. num_workers>0 is only safe with cache_dataset=False.
@@ -97,7 +100,8 @@ def _run_test(model, cfg):
     test_ds = StemDataset(os.path.join(cfg.test_data_dir, "train"),
                           os.path.join(cfg.test_data_dir, "mask"),
                           cfg.img_size, transform=None, cache=cfg.cache_dataset,
-                          depth_dir=cfg.test_depth_dir)
+                          depth_dir=cfg.test_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
     m = evaluate(model, test_loader)             # model on its current device (no aug)
     writer = SummaryWriter(os.path.join(cfg.log_dir, "test"))
@@ -124,7 +128,8 @@ def run_training(cfg):
     train_loader, val_loader = _build_loaders(
         cfg.image_dir, cfg.mask_dir, cfg, transform,
         val_image_dir=cfg.val_image_dir, val_mask_dir=cfg.val_mask_dir,
-        depth_dir=cfg.depth_dir, val_depth_dir=cfg.val_depth_dir)
+        depth_dir=cfg.depth_dir, val_depth_dir=cfg.val_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
                         encoder_weights=cfg.encoder_weights, in_channels=cfg.in_channels)
     train_one_run(model, train_loader, val_loader, cfg)
@@ -153,7 +158,8 @@ def run_two_stage(cfg):
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
 
     gen_train, gen_val = _build_loaders(cfg.gen_image_dir, cfg.gen_mask_dir, cfg, transform,
-                                       depth_dir=cfg.gen_depth_dir)
+                                       depth_dir=cfg.gen_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     train_one_run(model, gen_train, gen_val, cfg, patience=cfg.patience_stage1,
                   ckpt_name="best_stage1.pt", log_dir=os.path.join(cfg.log_dir, "stage1"),
                   optimizer=opt)
@@ -161,7 +167,8 @@ def run_two_stage(cfg):
     for g in opt.param_groups:                   # reset LR for stage 2 (mirrors R's k_set_value)
         g["lr"] = cfg.lr
     spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform,
-                                         depth_dir=cfg.spec_depth_dir)
+                                         depth_dir=cfg.spec_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     train_one_run(model, spec_train, spec_val, cfg, patience=cfg.patience_stage2,
                   ckpt_name="best_stage2.pt", log_dir=os.path.join(cfg.log_dir, "stage2"),
                   optimizer=opt)
@@ -206,6 +213,12 @@ def config_from_args(argv=None):
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     p.add_argument("--export-keras", action="store_true",
                    help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
+    p.add_argument("--depth-vmin", type=float, default=None,
+                   help="fixed depth range low end (metres); use for REAL depth so "
+                        "tiles stay comparable")
+    p.add_argument("--depth-vmax", type=float, default=None)
+    p.add_argument("--depth-nodata", type=float, default=None,
+                   help="sentinel value in the depth raster treated as missing")
     p.add_argument("--rgbd", action="store_true",
                    help="4-channel RGBD input; each dataset dir needs depth/depth{N}.png|.tif")
     a = p.parse_args(argv)
