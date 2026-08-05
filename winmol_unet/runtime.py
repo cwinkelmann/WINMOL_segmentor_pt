@@ -1,4 +1,6 @@
 """Runtime adapter that makes an ONNX model duck-type the Keras model object."""
+import os
+
 import numpy as np
 import onnxruntime as ort
 
@@ -9,10 +11,36 @@ class OnnxOutOfMemoryError(RuntimeError):
     """Raised on ONNX runtime OOM; caught by the analyzer's batch-backoff loop."""
 
 
+def _truthy(val):
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
 def _default_providers():
-    avail = ort.get_available_providers()
+    """Select execution providers, preferring an available accelerator.
+
+    Precedence:
+      1. ``WINMOL_ONNX_PROVIDERS`` - explicit comma-separated provider list
+         (highest priority; lets a caller pin an exact configuration).
+      2. ``WINMOL_ONNX_FORCE_CPU`` - force CPU only, for exact fp32 parity with
+         the PyTorch/Keras reference (CoreML/CUDA may compute in fp16).
+      3. ``CUDAExecutionProvider`` when available (NVIDIA GPUs).
+      4. ``CoreMLExecutionProvider`` when available (Apple GPU + Neural Engine
+         on macOS). Unsupported subgraphs fall back to CPU automatically.
+      5. ``CPUExecutionProvider``.
+
+    CPU is always appended as a fallback so any op an accelerator cannot run
+    still executes.
+    """
+    override = os.environ.get("WINMOL_ONNX_PROVIDERS")
+    if override:
+        return [p.strip() for p in override.split(",") if p.strip()]
+    if _truthy(os.environ.get("WINMOL_ONNX_FORCE_CPU", "")):
+        return ["CPUExecutionProvider"]
+    avail = set(ort.get_available_providers())
     if "CUDAExecutionProvider" in avail:
         return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if "CoreMLExecutionProvider" in avail:
+        return ["CoreMLExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
 
 

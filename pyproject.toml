@@ -7,9 +7,12 @@ name = "winmol_unet"
 version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = [
+    # onnxruntime >=1.19 is the first release that supports numpy 2.x; with the older
+    # >=1.16 floor pip could pair numpy 2.x (allowed below) with an onnxruntime that
+    # requires numpy <2 and fail to resolve. Keeping numpy unbounded is then safe.
     "numpy>=1.21",
-    "onnx>=1.14",
-    "onnxruntime>=1.16",
+    "onnx>=1.16",
+    "onnxruntime>=1.19",
     "scikit-image>=0.19",
 ]
 

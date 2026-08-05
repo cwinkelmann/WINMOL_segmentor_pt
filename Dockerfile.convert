@@ -1,0 +1,18 @@
+# Keras-HDF5 -> ONNX conversion image. The upstream WINMOL analyzer models are Keras-2
+# HDF5 (saved 2023-2024), so pin TF 2.15 (last Keras-2 TF) for reliable load, plus tf2onnx.
+# Also carries onnx/onnxruntime/onnxconverter-common for contract validation + fp16 PTQ.
+#
+# Build:  docker build -f Dockerfile.convert -t winmol-convert .
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends libglib2.0-0 && \
+    rm -rf /var/lib/apt/lists/*
+
+# tensorflow 2.15 = Keras 2 (loads the legacy HDF5); tf2onnx 1.16 converts it.
+# onnxruntime (CPU) + onnxconverter-common for static-int8 / fp16 PTQ and contract checks.
+RUN pip install "tensorflow-cpu==2.15.1" "tf2onnx==1.16.1" "onnx>=1.16" \
+        "onnxruntime>=1.18" onnxconverter-common "numpy<2" "scikit-image" pillow
+
+WORKDIR /app
+ENTRYPOINT ["python"]
