@@ -1,4 +1,6 @@
 import os
+
+import pytest
 import numpy as np
 import torch
 from PIL import Image
@@ -19,6 +21,9 @@ def _make_ds(tmp_path, n=6):
 
 
 def test_end_to_end_train_export_hdf5_dropin(tmp_path):
+    # the Keras HDF5 drop-in is opt-in (--export-keras); TensorFlow is not
+    # installed in CI
+    pytest.importorskip("tensorflow")
     _make_ds(tmp_path)
     out = tmp_path / "out"
     cfg = TrainConfig(
