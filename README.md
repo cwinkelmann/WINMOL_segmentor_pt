@@ -6,8 +6,15 @@ export to ONNX and Keras (`.hdf5` / native `.keras`) for use in the WINMOL Analy
 ## Install
 
 ```bash
-pip install -e ".[train,wandb]"   # training deps + optional Weights & Biases
+pip install -e ".[train]"           # training: torch, smp, albumentations, tensorboard
+pip install -e ".[train,keras]"     # + TensorFlow, for the legacy-analyzer HDF5 export
+pip install -e ".[train,wandb]"     # + Weights & Biases logging
+pip install -e "."                  # serve ONNX only: onnxruntime + numpy, no torch/TF
 ```
+
+The last line is what the WINMOL Analyzer installs: `winmol_unet` serves exported ONNX
+through `OnnxSegmenter` **without** torch or TensorFlow. Only add `[keras]` if you need
+the HDF5 drop-in described under [Legacy analyzer](#legacy-analyzer-hdf5-drop-in).
 
 ## Pretrained models
 
@@ -68,8 +75,10 @@ python -m training.run_train \
 ```
 
 This trains the U-Net (single stage, deterministic 80/20 train/val split) with online
-[albumentations](https://albumentations.ai/) augmentation, and writes `model.pt`,
-`model.hdf5`, `model.keras`, and `model.onnx` to `--out-dir`.
+[albumentations](https://albumentations.ai/) augmentation, and writes `model.pt` and
+`model.onnx` to `--out-dir`. The Keras `model.hdf5` / `model.keras` are **not** written
+unless you pass `--export-keras` (see below) — that path additionally requires the
+`[keras]` extra.
 
 **Architecture** — `--arch {unet,deeplabv3plus,hrnet}` (default `unet`). `deeplabv3plus`
 and `hrnet` use [segmentation-models-pytorch](https://github.com/qubvel-org/segmentation_models.pytorch);
@@ -112,7 +121,8 @@ It pairs by shared key, renames to sequential `train{i}`/`mask{i}`, and binarize
 (any pixel > 0 → foreground). Source is never mutated.
 
 **Fixed train/val split** — by default training does a deterministic 80/20 split of
-`--data-dir` (`--val-fraction`/`--seed`). To pin an explicit, shareable held-out set (e.g.
+`--data-dir` (controlled by `TrainConfig.val_fraction`/`seed`, defaults 0.2/1 — not
+exposed as CLI flags). To pin an explicit, shareable held-out set (e.g.
 so PyTorch and R evaluate on the same tiles), materialize it once and train against it:
 
 ```bash
@@ -206,3 +216,31 @@ docker run --rm -e PYTHONPATH=/app -v "$PWD":/app -w /app -v <models>:/models:ro
 fp16 + domain-calibrated int8 → verify F1). Publish artifacts to a GitHub Release with
 `scripts/deploy_models_to_release.py` (`--dry-run` first).
 
+## Legacy analyzer (HDF5 drop-in)
+
+The original WINMOL Analyzer loads a Keras `.hdf5` U-Net. To produce one, install the
+`[keras]` extra and pass `--export-keras`:
+
+```bash
+pip install -e ".[train,keras]"
+
+python -m training.run_train --data-dir /path/to/SpecDS --out-dir output/legacy \
+  --arch unet --export-keras --epochs 20 --device mps
+```
+
+That writes `model.hdf5` and `model.keras` alongside `model.pt`/`model.onnx`. Drop the
+`.hdf5` into the unmodified analyzer in place of its shipped model — the layer topology
+mirrors `winmol_unet/model.py` and weights are transferred layer by layer, so no analyzer
+change is needed.
+
+Two constraints, both enforced rather than documented-and-hoped:
+
+- **UNet only.** `--export-keras` with `--arch deeplabv3plus` or `hrnet` raises before
+  training starts, rather than training for an hour and then failing at export. The Keras
+  mirror is a hand-built copy of this repo's UNet and has no counterpart for other
+  architectures.
+- **TensorFlow is imported lazily**, only when `--export-keras` is set, so a TF-less
+  environment can still train and export ONNX.
+
+For anything other than the legacy analyzer, prefer ONNX: every architecture exports a
+contract-conformant `.onnx`, and `OnnxSegmenter` serves it without torch or TensorFlow.
