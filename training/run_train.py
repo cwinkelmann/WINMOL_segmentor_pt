@@ -34,20 +34,24 @@ def _worker_init(_):
         tf.set_random_seed(info.seed % (2 ** 31 - 1))
 
 
-def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_mask_dir=None):
+def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_mask_dir=None,
+                   depth_dir=None, val_depth_dir=None):
     if cfg.num_workers > 0 and cfg.cache_dataset:
         warnings.warn("num_workers>0 with cache_dataset=True caches per-worker and discards "
                       "it each epoch; use --no-cache-dataset for large datasets.", stacklevel=2)
     if val_image_dir is not None:
         # pre-materialized fixed split: train on all of image_dir, validate on the given dir
         train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
-                               cache=cfg.cache_dataset)
+                               cache=cfg.cache_dataset, depth_dir=depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
         val_ds = StemDataset(val_image_dir, val_mask_dir, cfg.img_size, transform=None,
-                             cache=cfg.cache_dataset)
+                             cache=cfg.cache_dataset, depth_dir=val_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     else:
         train_ds, val_ds = train_val_split(
             image_dir, mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
-            transform=transform, cache=cfg.cache_dataset)
+            transform=transform, cache=cfg.cache_dataset, depth_dir=depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     # drop_last avoids a trailing batch of 1 (breaks BatchNorm in DeepLabV3+ ASPP
     # [N,C,1,1]) — only when there is more than one batch's worth, so a tiny set
     # isn't zeroed out. num_workers>0 is only safe with cache_dataset=False.
@@ -66,6 +70,8 @@ def _validate_export(cfg):
         raise ValueError(
             f"--export-keras is UNet-only (the Keras mirror is UNet-specific); "
             f"arch={cfg.arch!r} exports ONNX + .pt")
+    if cfg.rgbd and cfg.export_keras:
+        raise ValueError("--export-keras is RGB-only (rgbd=True); drop one of the two")
 
 
 def _export(model, cfg):
@@ -82,7 +88,7 @@ def _export(model, cfg):
         export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
         if cfg.keras_out:
             export_to_keras(model, cfg.keras_out, dropout=cfg.dropout)
-    export_to_onnx(model, cfg.onnx_out)
+    export_to_onnx(model, cfg.onnx_out, in_channels=cfg.in_channels)
 
 
 def _run_test(model, cfg):
@@ -93,7 +99,9 @@ def _run_test(model, cfg):
     from torch.utils.tensorboard import SummaryWriter
     test_ds = StemDataset(os.path.join(cfg.test_data_dir, "train"),
                           os.path.join(cfg.test_data_dir, "mask"),
-                          cfg.img_size, transform=None, cache=cfg.cache_dataset)
+                          cfg.img_size, transform=None, cache=cfg.cache_dataset,
+                          depth_dir=cfg.test_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
     m = evaluate(model, test_loader)             # model on its current device (no aug)
     writer = SummaryWriter(os.path.join(cfg.log_dir, "test"))
@@ -119,9 +127,11 @@ def run_training(cfg):
     transform = build_augmentation(cfg)         # seeded internally via cfg.seed
     train_loader, val_loader = _build_loaders(
         cfg.image_dir, cfg.mask_dir, cfg, transform,
-        val_image_dir=cfg.val_image_dir, val_mask_dir=cfg.val_mask_dir)
+        val_image_dir=cfg.val_image_dir, val_mask_dir=cfg.val_mask_dir,
+        depth_dir=cfg.depth_dir, val_depth_dir=cfg.val_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
-                        encoder_weights=cfg.encoder_weights)
+                        encoder_weights=cfg.encoder_weights, in_channels=cfg.in_channels)
     train_one_run(model, train_loader, val_loader, cfg)
     val_metrics = evaluate(model, val_loader)   # on training device
     _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
@@ -136,7 +146,7 @@ def run_two_stage(cfg):
     torch.manual_seed(cfg.seed)
     transform = build_augmentation(cfg)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
-                        encoder_weights=cfg.encoder_weights)
+                        encoder_weights=cfg.encoder_weights, in_channels=cfg.in_channels)
     # ONE optimizer shared across both stages (Adam moment estimates carry over, as they do in
     # the R pipeline's single compiled optimizer), BUT the learning rate is reset to cfg.lr at
     # the start of stage 2 — mirroring the R fix `k_set_value(optimizer$lr, BASE_LR)`. Without
@@ -147,14 +157,18 @@ def run_two_stage(cfg):
     model.to(resolve_device(cfg.device))
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
 
-    gen_train, gen_val = _build_loaders(cfg.gen_image_dir, cfg.gen_mask_dir, cfg, transform)
+    gen_train, gen_val = _build_loaders(cfg.gen_image_dir, cfg.gen_mask_dir, cfg, transform,
+                                       depth_dir=cfg.gen_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     train_one_run(model, gen_train, gen_val, cfg, patience=cfg.patience_stage1,
                   ckpt_name="best_stage1.pt", log_dir=os.path.join(cfg.log_dir, "stage1"),
                   optimizer=opt)
 
     for g in opt.param_groups:                   # reset LR for stage 2 (mirrors R's k_set_value)
         g["lr"] = cfg.lr
-    spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform)
+    spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform,
+                                         depth_dir=cfg.spec_depth_dir, depth_vmin=cfg.depth_vmin, depth_vmax=cfg.depth_vmax,
+                       depth_nodata=cfg.depth_nodata)
     train_one_run(model, spec_train, spec_val, cfg, patience=cfg.patience_stage2,
                   ckpt_name="best_stage2.pt", log_dir=os.path.join(cfg.log_dir, "stage2"),
                   optimizer=opt)
@@ -199,6 +213,14 @@ def config_from_args(argv=None):
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     p.add_argument("--export-keras", action="store_true",
                    help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
+    p.add_argument("--depth-vmin", type=float, default=None,
+                   help="fixed depth range low end (metres); use for REAL depth so "
+                        "tiles stay comparable")
+    p.add_argument("--depth-vmax", type=float, default=None)
+    p.add_argument("--depth-nodata", type=float, default=None,
+                   help="sentinel value in the depth raster treated as missing")
+    p.add_argument("--rgbd", action="store_true",
+                   help="4-channel RGBD input; each dataset dir needs depth/depth{N}.png|.tif")
     a = p.parse_args(argv)
     two_stage = a.gen_data_dir and a.spec_data_dir
     if not a.data_dir and not two_stage:
@@ -222,7 +244,7 @@ def config_from_args(argv=None):
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
         arch=a.arch, encoder=a.encoder, encoder_weights=a.encoder_weights,
-        export_keras=a.export_keras,
+        export_keras=a.export_keras, rgbd=a.rgbd,
     )
 
 

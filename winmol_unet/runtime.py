@@ -21,6 +21,9 @@ class OnnxSegmenter:
         self.model_path = model_path
         self.providers = providers or _default_providers()
         self.session = ort.InferenceSession(model_path, providers=self.providers)
+        # Channel count comes from the loaded graph (3 = RGB, 4 = RGBD), so one
+        # adapter serves both model families without a mode switch.
+        self.in_channels = int(self.session.get_inputs()[0].shape[1])
 
     @staticmethod
     def _as_numpy(x):
@@ -30,6 +33,9 @@ class OnnxSegmenter:
 
     def predict_on_batch(self, x):
         x = self._as_numpy(x)          # NHWC [N,512,512,3]
+        if x.shape[3] != self.in_channels:
+            raise ValueError(
+                f"model expects NHWC with C={self.in_channels}, got {x.shape}")
         nchw = np.ascontiguousarray(np.transpose(x, (0, 3, 1, 2)))
         try:
             out = self.session.run([OUTPUT_NAME], {INPUT_NAME: nchw})[0]
@@ -43,5 +49,5 @@ class OnnxSegmenter:
     def summary(self):
         print(
             f"OnnxSegmenter(providers={self.providers}) "
-            f"input=[N,{IMG_SIZE},{IMG_SIZE},3] -> output=[N,{IMG_SIZE},{IMG_SIZE},1] (NHWC)"
+            f"input=[N,{IMG_SIZE},{IMG_SIZE},{self.in_channels}] -> output=[N,{IMG_SIZE},{IMG_SIZE},1] (NHWC)"
         )

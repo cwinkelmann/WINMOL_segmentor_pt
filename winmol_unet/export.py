@@ -21,17 +21,17 @@ class _WithSigmoid(nn.Module):
         return self.act(self.model(x))
 
 
-def export_to_onnx(model, path):
+def export_to_onnx(model, path, in_channels=IN_CHANNELS):
     model = model.eval()
     wrapped = _WithSigmoid(model).eval()
-    dummy = torch.zeros(1, IN_CHANNELS, IMG_SIZE, IMG_SIZE)
+    dummy = torch.zeros(1, in_channels, IMG_SIZE, IMG_SIZE)
     torch.onnx.export(
         wrapped, dummy, path,
         input_names=[INPUT_NAME], output_names=[OUTPUT_NAME],
         dynamic_axes=DYNAMIC_AXES, opset_version=OPSET,
         do_constant_folding=True,
     )
-    validate_onnx_model(onnx.load(path))
+    validate_onnx_model(onnx.load(path), in_channels=in_channels)
     return path
 
 

@@ -19,3 +19,12 @@ def test_smp_arch_returns_contract_shaped_logits(arch):
 def test_unknown_arch_raises():
     with pytest.raises(ValueError):
         build_model("frobnicate")
+
+
+@pytest.mark.parametrize("arch", ["unet", "deeplabv3plus", "hrnet"])
+def test_build_model_rgbd_forward(arch):
+    model = build_model(arch=arch, encoder_weights=None, in_channels=4).eval()
+    x = torch.randn(1, 4, 64, 64)   # 64: divisible by 32 (smp) and by 16 (UNet pools)
+    with torch.no_grad():
+        y = model(x)
+    assert y.shape == (1, 1, 64, 64)

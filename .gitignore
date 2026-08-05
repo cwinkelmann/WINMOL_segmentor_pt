@@ -7,3 +7,8 @@ dist/
 *.egg-info/
 output/
 results/
+
+# local test/tooling artefacts
+pytest-of-christian/
+tmp*/
+.claude/

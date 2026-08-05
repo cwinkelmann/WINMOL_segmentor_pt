@@ -42,3 +42,18 @@ def test_non_oom_error_propagates_unchanged(tmp_path):
             seg.predict_on_batch(x)
         assert not isinstance(exc_info.value, winmol_unet.runtime.OnnxOutOfMemoryError)
         assert "some unrelated failure" in str(exc_info.value)
+
+
+def test_onnx_segmenter_serves_rgbd(tmp_path, monkeypatch):
+    monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
+    from winmol_unet.export import export_to_onnx
+    from winmol_unet.model import UNet
+    path = str(tmp_path / "rgbd.onnx")
+    export_to_onnx(UNet(in_channels=4), path, in_channels=4)
+
+    seg = OnnxSegmenter(path)
+    assert seg.in_channels == 4
+    out = seg.predict_on_batch(np.zeros((1, 512, 512, 4), dtype=np.float32))
+    assert out.shape == (1, 512, 512, 1)
+    with pytest.raises(ValueError):
+        seg.predict_on_batch(np.zeros((1, 512, 512, 3), dtype=np.float32))
