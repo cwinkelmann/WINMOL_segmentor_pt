@@ -169,4 +169,9 @@ at it does not rescue the CPU case.
 > int8 quantization (≈3×, lossless), width scaling (≈4× at full accuracy), and the two combined
 > (**width-0.5 + int8 = ~10× faster / 249 ms / F1 0.760 / 8 MB**, lossless; width-0.25 + int8 = ~29×
 > for −0.006 F1). Those numbers and the GPU fp16 analogue live in
-> `results/cpu_speedup/RESULTS.md` and are intentionally out of scope for this baseline chapter.
+> [`docs/2026-07-21-cpu-inference-speedup-results.md`](2026-07-21-cpu-inference-speedup-results.md)
+> on that branch (PR #12) and are intentionally out of scope for this baseline chapter.
+
+> **On sources.** The `results/…` paths cited in this document are local raw-run
+> artifacts: `results/` is gitignored, so these numbers cannot be re-derived from the
+> repository alone. They are recorded here as the durable form of those runs.
