@@ -246,3 +246,43 @@ def test_self_intersecting_polygons_are_repaired_not_fatal(site, tmp_path):
     stats = sample_tiles(site["ortho"], str(bad), site["aoi"], str(tmp_path / "ds"),
                          min_stem_frac=0.0005, limit=4, seed=1, quiet=True)
     assert stats["written"] > 0
+
+
+def test_spatial_blocks_partition_the_site_without_overlap(site, tmp_path):
+    """Blocks assigned to different splits must not share a single pixel.
+
+    With three beech sites, holding one out removes a whole acquisition — its
+    phenology, colour cast and GSD — so the score measures domain transfer instead of
+    segmentation. Block splitting keeps every split spanning the site; it is only
+    honest if the blocks are genuinely disjoint after the intra-block buffer.
+    """
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+
+    from scripts.sample_training_tiles import _spatial_blocks
+
+    cx, cy = ORIGIN[0] + 30.0, ORIGIN[1] - 30.0
+    # 120 m of AOI at 30 m blocks -> 16 cells, enough for all three splits to be
+    # non-empty; 30 m clears the 21.2 m the buffer needs on both sides
+    area = box(cx - 60, cy - 60, cx + 60, cy + 60)
+    buf = 15.0 * np.sqrt(2) / 2
+    fr = {"train": 0.6, "val": 0.2, "test": 0.2}
+
+    regions = {s: _spatial_blocks(area, 30.0, s, fr, 7, buf, quiet=True)
+               for s in ("train", "val", "test")}
+    for a in ("train", "val", "test"):
+        for b in ("train", "val", "test"):
+            if a < b:
+                shared = regions[a].intersection(regions[b]).area
+                assert shared == 0, f"{a} and {b} share {shared:.3f} m²"
+
+    # and the same seed must reproduce the same assignment, or the three separate
+    # invocations that build train/val/test would disagree about who owns a block
+    again = _spatial_blocks(area, 30.0, "train", fr, 7, buf, quiet=True)
+    assert again.equals(regions["train"])
+
+
+def test_block_size_must_exceed_the_buffer(site, tmp_path):
+    with pytest.raises(SystemExit, match="leaves nothing after"):
+        sample_tiles(site["ortho"], site["stems"], site["aoi"], str(tmp_path / "ds"),
+                     block_size_m=10.0, split="train", limit=2, quiet=True)

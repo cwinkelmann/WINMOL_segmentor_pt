@@ -126,10 +126,68 @@ def _footprint(cx, cy, extent, angle_deg):
     return rotate(box(cx - h, cy - h, cx + h, cy + h), angle_deg, origin=(cx, cy))
 
 
+def _spatial_blocks(area, block_size_m, split, fractions, split_seed, buf, quiet=False):
+    """Restrict sampling to the blocks of one split — leak-free without a second site.
+
+    A site-level split is the honest default, but the beech corpus has three usable
+    sites and holding one out removes an entire acquisition (its phenology, its colour
+    cast, its GSD) from training. What comes back is a measure of domain transfer, not
+    of stem segmentation.
+
+    So instead cut the AOI into `block_size_m` cells, assign whole cells to
+    train/val/test, and shrink each by the footprint's half-diagonal. A tile drawn
+    inside a shrunk cell cannot reach across the boundary at any rotation, so no pixel
+    is ever shared between splits — while every split still spans the whole site.
+
+    Assignment is deterministic in `split_seed`, so the three invocations that build
+    train, val and test agree on which cell went where.
+    """
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+
+    minx, miny, maxx, maxy = area.bounds
+    cells = []
+    y = miny
+    while y < maxy:
+        x = minx
+        while x < maxx:
+            c = box(x, y, x + block_size_m, y + block_size_m).intersection(area)
+            if not c.is_empty and c.area > 0:
+                cells.append(((round(x, 3), round(y, 3)), c))
+            x += block_size_m
+        y += block_size_m
+    if not cells:
+        raise SystemExit(f"no blocks of {block_size_m} m fit inside the AOI")
+
+    cells.sort(key=lambda kv: kv[0])                 # stable order before shuffling
+    order = np.random.default_rng(split_seed).permutation(len(cells))
+    names = list(fractions)
+    cum = np.cumsum([fractions[n] for n in names], dtype=float)
+    cum = cum / cum[-1]
+    assign = {}
+    for rank, idx in enumerate(order):
+        # rank/len puts each cell at a fixed point on [0,1) -> the same cell lands in
+        # the same split for every invocation with this seed
+        assign[idx] = names[int(np.searchsorted(cum, (rank + 0.5) / len(cells)))]
+
+    keep = [c for i, (_, c) in enumerate(cells) if assign[i] == split]
+    if not keep:
+        raise SystemExit(f"split {split!r} got none of the {len(cells)} blocks; "
+                         f"use a smaller --block-size")
+    inner = unary_union([c.buffer(-buf) for c in keep])
+    if not quiet:
+        counts = {n: sum(1 for v in assign.values() if v == n) for n in names}
+        print(f"spatial blocks: {len(cells)} cells of {block_size_m:g} m -> {counts}; "
+              f"'{split}' keeps {len(keep)} cells, {inner.area:.0f} m² after the "
+              f"{buf:.2f} m intra-block buffer")
+    return inner
+
+
 def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
                  oversample=100.0, inward_buffer_m=None, min_stem_frac=1 / 200.0,
                  max_nodata_frac=0.02, seed=1, species=None, limit=None,
-                 start_index=1, rotate=True, quiet=False):
+                 start_index=1, rotate=True, quiet=False,
+                 block_size_m=None, split=None, split_fractions=None, split_seed=1):
     import rasterio
     from affine import Affine
     from PIL import Image
@@ -153,7 +211,16 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
     # half the diagonal: the smallest inward buffer for which a footprint at ANY
     # rotation is still inside the annotated area
     buf = extent_m * math.sqrt(2) / 2 if inward_buffer_m is None else inward_buffer_m
-    inner = area.buffer(-buf)
+    if block_size_m and split:
+        if block_size_m <= 2 * buf:
+            raise SystemExit(
+                f"--block-size {block_size_m:g} m leaves nothing after the {buf:.2f} m "
+                f"buffer each side; it must exceed {2 * buf:.2f} m for this --extent")
+        inner = _spatial_blocks(area, block_size_m, split,
+                                split_fractions or {"train": 0.7, "val": 0.15, "test": 0.15},
+                                split_seed, buf, quiet)
+    else:
+        inner = area.buffer(-buf)
     if inner.is_empty:
         raise SystemExit(
             f"the AOI shrinks to nothing under a {buf:.2f} m inward buffer "
@@ -292,14 +359,30 @@ def main(argv=None):
     p.add_argument("--start-index", type=int, default=1,
                    help="first N in train{N}.jpeg; use to append sites into one dataset")
     p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--block-size", type=float, default=None,
+                   help="metres; cut the AOI into blocks of this size and sample only "
+                        "the ones belonging to --split. Gives a leak-free split within "
+                        "a single site, for corpora with too few sites to hold one out")
+    p.add_argument("--split", default=None,
+                   help="which block split to sample: train / val / test")
+    p.add_argument("--split-fractions", nargs=3, type=float, default=(0.7, 0.15, 0.15),
+                   metavar=("TRAIN", "VAL", "TEST"))
+    p.add_argument("--split-seed", type=int, default=1,
+                   help="block assignment seed; must match across the train/val/test runs")
     p.add_argument("--stats-json", default=None)
     a = p.parse_args(argv)
 
     species = {s.strip().upper() for s in a.species} if a.species else None
+    if bool(a.block_size) != bool(a.split):
+        p.error("--block-size and --split must be given together")
+    fr = dict(zip(("train", "val", "test"), a.split_fractions))
+    if a.split and a.split not in fr:
+        p.error(f"--split must be one of {sorted(fr)}")
     stats = sample_tiles(a.ortho, a.stems, a.aoi, a.out, a.extent, a.tile_px,
                          a.oversample, a.inward_buffer, a.min_stem_frac,
                          a.max_nodata_frac, a.seed, species, a.limit, a.start_index,
-                         not a.no_rotate)
+                         not a.no_rotate, quiet=False, block_size_m=a.block_size,
+                         split=a.split, split_fractions=fr, split_seed=a.split_seed)
     if a.stats_json:
         with open(a.stats_json, "w") as f:
             json.dump(stats, f, indent=1)
