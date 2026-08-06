@@ -147,3 +147,9 @@ assigning splits rather than spreading them across train and test.
 
 Overlay masks on imagery for a handful of tiles and look at them. Georeferencing
 bugs are silent — a mask offset by a metre still trains, just badly.
+
+![Sampled Kaufland tiles with the rasterized stem mask overlaid](assets/kaufland-tile-mask-overlay.jpg)
+
+Sixteen tiles sampled from Kaufland, eight shown, mask in orange. Each tile is a
+different random position and rotation; the masks sit on the stems, which is what
+confirms the reprojection, the rotation and the window transform together.
