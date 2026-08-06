@@ -69,6 +69,25 @@ python scripts/build_dataset.py --src /path/to/raw --dst /path/to/ready
 It pairs by shared key, renames to sequential `train{i}`/`mask{i}`, and binarizes masks
 (any pixel > 0 → foreground). Source is never mutated.
 
+**Building a dataset from orthomosaics + digitized stems** — if you are starting from
+the WINMOL GIS corpus (a `*_ortho.tif`, a stem-polygon shapefile and a `*_AOE.shp`
+windthrow area) rather than from image/mask folders, install `pip install -e ".[geo]"`
+and use:
+
+```bash
+python scripts/inventory_training_data.py --root /path/to/training_data   # what pairs, what is broken
+python scripts/sample_training_tiles.py --ortho <site>_ortho.tif \
+  --stems <site>.shp --aoi <site>_AOE.shp --out /path/to/ready
+```
+
+`sample_training_tiles.py` reproduces the sampling of the original R generator: random
+rotated 15 m footprints drawn **inside the digitized windthrow area**, heavily
+oversampled, and rejected unless stems cover at least 0.5% of the tile. Stems cover only
+about 1% of a site, so a regular grid yields near-empty tiles. See
+[docs/training-data-from-annotations.md](docs/training-data-from-annotations.md) for what
+the corpus contains, why the area polygon is not optional, and the CRS and species-code
+defects to expect.
+
 **Fixed train/val split** — by default training does a deterministic 80/20 split of
 `--data-dir` (`--val-fraction`/`--seed`). To pin an explicit, shareable held-out set (e.g.
 so PyTorch and R evaluate on the same tiles), materialize it once and train against it:
