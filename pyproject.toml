@@ -11,7 +11,14 @@ dependencies = [
     # >=1.16 floor pip could pair numpy 2.x (allowed below) with an onnxruntime that
     # requires numpy <2 and fail to resolve. Keeping numpy unbounded is then safe.
     "numpy>=1.21",
-    "onnx>=1.16",
+    # onnx >=1.18 is the first release built against protobuf 6, the version TensorFlow
+    # 2.20 requires (>=5.28). onnx 1.17 and earlier bundle their own older protobuf C++
+    # runtime; with both packages in one process, whichever loads second aborts
+    # ("mutex lock failed") or deadlocks ("RAW: Lock blocking"). Nothing in the declared
+    # ranges catches it — the clash is at the native ABI level, so pip resolves it
+    # happily. This bit --export-keras, which imports onnx then TensorFlow in a single
+    # process. See tests/test_onnx_tf_coexist.py.
+    "onnx>=1.18",
     "onnxruntime>=1.19",
     "scikit-image>=0.19",
 ]
