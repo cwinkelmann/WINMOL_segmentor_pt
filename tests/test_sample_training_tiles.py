@@ -106,6 +106,42 @@ def test_min_stem_frac_rejects_sparse_tiles(site, tmp_path):
     assert lax["mean_stem_coverage"] > 0
 
 
+def test_sparse_stems_never_yield_a_tile_below_the_floor(tmp_path):
+    """The floor must hold when stems are sparse enough that rotation decides the answer.
+
+    The dense fixture cannot catch a wrong rotation sign: every square contains stems
+    either way. With widely spaced stems the checked square and the cropped square
+    disagree, and measuring the world footprint instead of the finished mask let 3.2%
+    of real Campus tiles through below the floor -- 21 of them completely empty.
+    """
+    from PIL import Image
+    from shapely.geometry import box
+
+    ortho = tmp_path / "sparse_ortho.tif"
+    _write_ortho(str(ortho))
+    cx, cy = ORIGIN[0] + 30.0, ORIGIN[1] - 30.0
+    _write_polygons(str(tmp_path / "aoi.shp"), [box(cx - 20, cy - 20, cx + 20, cy + 20)])
+    # ~8 m apart: most rotated footprints catch one stem, many catch none
+    _write_polygons(str(tmp_path / "sparse.shp"),
+                    [_stem(cx + dx, cy + dy, angle=31 * (dx - dy))
+                     for dx in (-16, -8, 0, 8, 16) for dy in (-16, -8, 0, 8, 16)])
+
+    floor = 0.01
+    stats = sample_tiles(str(ortho), str(tmp_path / "sparse.shp"), str(tmp_path / "aoi.shp"),
+                         str(tmp_path / "ds"), min_stem_frac=floor, limit=40, seed=11,
+                         quiet=True)
+    assert stats["written"] > 5, "fixture produced too few tiles to be a real check"
+
+    bad = []
+    for n in range(1, stats["written"] + 1):
+        cov = (np.asarray(Image.open(tmp_path / "ds" / "mask" / f"mask{n}.gif").convert("L"))
+               > 0).mean()
+        if cov < floor:
+            bad.append((n, cov))
+    assert not bad, (f"{len(bad)} of {stats['written']} written tiles fall below the "
+                     f"{100*floor:.1f}% floor, e.g. {bad[:3]}")
+
+
 def test_every_written_tile_clears_the_stem_floor(site, tmp_path):
     from PIL import Image
 
@@ -187,3 +223,26 @@ def test_refuses_an_aoi_too_small_for_the_footprint(site, tmp_path):
     with pytest.raises(SystemExit, match="shrinks to nothing"):
         sample_tiles(site["ortho"], site["stems"], str(tiny), str(tmp_path / "ds"),
                      limit=2, quiet=True)
+
+
+def test_self_intersecting_polygons_are_repaired_not_fatal(site, tmp_path):
+    """Hand-traced stems self-intersect; GEOS aborts on the first intersection test.
+
+    The Campus shapefile contains such rings, and before the loader repaired them a
+    sampling run died with `TopologyException: side location conflict` partway through.
+    """
+    from shapely.geometry import Polygon
+
+    cx, cy = ORIGIN[0] + 30.0, ORIGIN[1] - 30.0
+    # a bowtie: the classic self-intersection a hand-drawn outline produces
+    bowties = [Polygon([(cx + dx, cy + dy), (cx + dx + 3, cy + dy + 1),
+                        (cx + dx, cy + dy + 1), (cx + dx + 3, cy + dy)])
+               for dx in range(-12, 13, 3) for dy in range(-12, 13, 3)]
+    assert not bowties[0].is_valid, "the fixture must actually be invalid"
+
+    bad = tmp_path / "bowtie.shp"
+    _write_polygons(str(bad), bowties)
+
+    stats = sample_tiles(site["ortho"], str(bad), site["aoi"], str(tmp_path / "ds"),
+                         min_stem_frac=0.0005, limit=4, seed=1, quiet=True)
+    assert stats["written"] > 0

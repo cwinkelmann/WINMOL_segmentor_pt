@@ -43,8 +43,39 @@ import sys
 import numpy as np
 
 
-def _load_geoms(path, dst_crs, species=None):
-    """Read a vector layer, reproject to `dst_crs`, return shapely geometries."""
+def _repair(geoms, label, quiet=False):
+    """Make hand-digitized polygons safe for GEOS set operations.
+
+    Tracing stems by hand produces self-intersecting rings — Campus has them. GEOS
+    raises `TopologyException: side location conflict` on the first intersection with
+    one, which would abort a sampling run tens of thousands of tiles in. make_valid
+    repairs the ring; it can return a collection, so keep only the polygonal parts.
+    """
+    from shapely import make_valid
+    from shapely.geometry import MultiPolygon, Polygon
+
+    out, fixed, dropped = [], 0, 0
+    for g in geoms:
+        if g.is_valid:
+            out.append(g)
+            continue
+        r = make_valid(g)
+        parts = [p for p in getattr(r, "geoms", [r]) if isinstance(p, (Polygon, MultiPolygon))]
+        parts = [p for p in parts if not p.is_empty and p.area > 0]
+        if parts:
+            out.append(parts[0] if len(parts) == 1 else MultiPolygon(
+                [q for p in parts for q in getattr(p, "geoms", [p])]))
+            fixed += 1
+        else:
+            dropped += 1
+    if (fixed or dropped) and not quiet:
+        print(f"{label}: repaired {fixed} invalid geometries"
+              + (f", dropped {dropped} with no area" if dropped else ""))
+    return out
+
+
+def _load_geoms(path, dst_crs, species=None, label="layer", quiet=False):
+    """Read a vector layer, reproject to `dst_crs`, return valid shapely geometries."""
     import fiona
     from rasterio.warp import transform_geom
     from shapely.geometry import shape
@@ -64,7 +95,8 @@ def _load_geoms(path, dst_crs, species=None):
             out.append(shape(g))
     if crs and dst_crs and str(crs) != str(dst_crs):
         out = [shape(transform_geom(crs, dst_crs, g.__geo_interface__)) for g in out]
-    return out, crs
+    # repair after reprojection: that step can itself produce invalid rings
+    return _repair(out, label, quiet), crs
 
 
 def _random_points(poly, n, rng):
@@ -103,6 +135,7 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
     from PIL import Image
     from rasterio.features import rasterize as rio_rasterize
     from rasterio.windows import from_bounds
+    from shapely.geometry import Point
     from shapely.ops import unary_union
     from shapely.strtree import STRtree
 
@@ -110,12 +143,12 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
     src = rasterio.open(ortho)
     gsd = abs(src.transform.a)
 
-    stem_geoms, _ = _load_geoms(stems, src.crs, species)
+    stem_geoms, _ = _load_geoms(stems, src.crs, species, "stems", quiet)
     if not stem_geoms:
         raise SystemExit(f"no stem polygons selected from {stems}")
     tree = STRtree(stem_geoms)
 
-    aoi_geoms, _ = _load_geoms(aoi, src.crs)
+    aoi_geoms, _ = _load_geoms(aoi, src.crs, None, "aoi", quiet)
     area = unary_union(aoi_geoms)
     # half the diagonal: the smallest inward buffer for which a footprint at ANY
     # rotation is still inside the annotated area
@@ -159,16 +192,14 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
         stats["attempts"] += 1
         if limit and stats["written"] >= limit:
             break
-        fp = _footprint(cx, cy, extent_m, angle)
-
-        hits = [stem_geoms[i] for i in tree.query(fp)]
-        hits = [g for g in hits if g.intersects(fp)]
+        # Cheap pre-filter only. Use the circle that circumscribes the footprint at any
+        # rotation, so this is a superset regardless of which way the crop turns — the
+        # real decision is made on the finished mask below.
+        disc = Point(cx, cy).buffer(half_diag)
+        hits = [stem_geoms[i] for i in tree.query(disc)]
+        hits = [g for g in hits if g.intersects(disc)]
         if not hits:
             stats["no_stem"] += 1
-            continue
-        stem_area = sum(g.intersection(fp).area for g in hits)
-        if stem_area < extent_m ** 2 * min_stem_frac:
-            stats["too_few_stems"] += 1
             continue
 
         win = from_bounds(cx - half_diag, cy - half_diag, cx + half_diag, cy + half_diag,
@@ -188,8 +219,7 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
         msk = Image.fromarray(mask_arr)
 
         if angle:
-            # image and mask rotate together, so the sign convention is shared; the
-            # angle is uniform over the circle, which makes the sign immaterial
+            # image and mask rotate together, so they stay registered to each other
             rgb = rgb.rotate(angle, resample=Image.BICUBIC)
             msk = msk.rotate(angle, resample=Image.NEAREST)
         off = (win_px - crop_px) // 2
@@ -200,6 +230,16 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
         if float((a.max(axis=2) == 0).mean()) > max_nodata_frac:
             # ortho collar / gap in coverage — black pixels are not forest
             stats["nodata"] += 1
+            continue
+
+        # Decide on the mask that will actually be written, not on a world-space
+        # prediction of it. PIL rotates the image counter-clockwise, which samples a
+        # world square rotated the *other* way; testing the world footprint instead let
+        # 3.2% of tiles through below the floor, 21 of them completely empty.
+        # Measuring the finished mask is exact by construction.
+        cov_tile = float((np.asarray(msk) > 0).mean())
+        if cov_tile < min_stem_frac:
+            stats["too_few_stems"] += 1
             continue
 
         rgb = rgb.resize((tile_px, tile_px), Image.BICUBIC)
