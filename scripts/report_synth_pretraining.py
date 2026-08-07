@@ -59,7 +59,7 @@ def page_headline(pdf, runs, dataset, corpus):
 
     fig = plt.figure(figsize=(8.27, 11.69))
     _title(fig, "Does synthetic pretraining help a beech stem segmenter?",
-           "Yes — but less the better the architecture. Leak-free block split, one run per arm.")
+           "The weaker the model, the more it helps. Leak-free block split, one run per arm.")
 
     seen, archs = set(), []
     for r in runs:                                   # first-appearance order
@@ -77,14 +77,16 @@ def page_headline(pdf, runs, dataset, corpus):
         bars = ax.bar(xs + (i - 0.5) * w, vals, w * 0.9, color=c, label=arm, zorder=3)
         for b, v in zip(bars, vals):
             if not np.isnan(v):
-                ax.text(b.get_x() + b.get_width() / 2, v + top * 0.012, f"{v:.4f}",
-                        ha="center", fontsize=8.5, color=C_INK)
+                # two bars of a pair sit at almost the same height; stagger the labels
+                # vertically or they overlap
+                ax.text(b.get_x() + b.get_width() / 2, v + top * (0.012 + 0.038 * i),
+                        f"{v:.4f}", ha="center", fontsize=7, color=C_INK)
     # delta above the pair, clear of both bars and of the value labels
     for j, a in enumerate(archs):
         base = next((r["f1"] for r in runs if r["arch"] == a and r["arm"] == "beech only"), None)
         syn = next((r["f1"] for r in runs if r["arch"] == a and r["arm"] == "synthetic pretrain"), None)
         if base and syn:
-            y = max(base, syn) + top * 0.075
+            y = max(base, syn) + top * 0.115
             ax.annotate("", xy=(j + w / 2, y), xytext=(j - w / 2, y),
                         arrowprops=dict(arrowstyle="<->", color=C_MUTE, lw=0.9))
             ax.text(j, y + top * 0.02, f"{100*(syn-base):+.1f} pts", ha="center",
@@ -115,36 +117,41 @@ def page_headline(pdf, runs, dataset, corpus):
             pairs.append((a, b, 100 * (s - b)))
 
     if len(pairs) >= 3:
-        ax2 = fig.add_axes([0.12, 0.365, 0.50, 0.165])
+        ax2 = fig.add_axes([0.12, 0.355, 0.50, 0.175])
+        pairs = sorted(pairs, key=lambda p: p[1])     # trend reads left to right
         bs = [p[1] for p in pairs]; gs = [p[2] for p in pairs]
         ax2.plot(bs, gs, "-", color=C_MUTE, lw=1, zorder=2)
-        ax2.scatter(bs, gs, s=55, color=C_SYNTH, zorder=3)
+        ax2.scatter(bs, gs, s=55,
+                    color=[C_BASE if g < 0 else C_SYNTH for g in gs], zorder=3)
+        ax2.axhline(0, color=C_MUTE, lw=0.8, ls=(0, (3, 3)), zorder=1)
         for a, b, g in pairs:
-            ax2.annotate(a, (b, g), textcoords="offset points", xytext=(0, 9),
-                         ha="center", fontsize=8.5, color=C_INK)
+            ax2.annotate(a, (b, g), textcoords="offset points",
+                         xytext=(0, -16 if g < 0 else 9), ha="center",
+                         fontsize=8, color=C_INK)
         ax2.set_xlabel("baseline F1 (no pretraining)", fontsize=8.5)
         ax2.set_ylabel("gain from\nsynthetic (pts)", fontsize=8.5)
         ax2.tick_params(labelsize=8)
-        ax2.set_ylim(min(gs) - 0.25, max(gs) + 0.55)
+        ax2.set_ylim(min(gs) - 1.1, max(gs) + 0.9)
+        ax2.set_xlim(min(bs) - 0.03, max(bs) + 0.04)
         ax2.grid(color=C_GRID, lw=0.8, zorder=0)
         ax2.set_title("The stronger the baseline, the less synthetic data adds",
                       fontsize=9, color=C_MUTE, loc="left", pad=6)
         body = (
-            "The gain is not a constant. It shrinks\n"
-            "monotonically as the architecture\n"
-            "strengthens — and HRNet's baseline,\n"
-            "with no pretraining at all, already beats\n"
-            "UNet's pretrained arm.\n\n"
-            "So synthetic data substitutes for model\n"
-            "capacity here rather than adding what a\n"
-            "stronger model lacks. On this corpus,\n"
-            "changing architecture buys more than\n"
-            "pretraining does, and the two do not\n"
-            "stack.\n\n"
-            "One run per arm: HRNet's +0.1 is\n"
-            "indistinguishable from seed noise. The\n"
-            "architecture ranking is a larger effect\n"
-            "and more likely real."
+            "The gain tracks how weak the model is.\n"
+            "DPT, which barely learns the task at all\n"
+            "from scratch, gains +4.4; HRNet, the\n"
+            "strongest, gains +0.1. Synthetic data is\n"
+            "compensating for a data-starved model\n"
+            "rather than adding what a good one lacks.\n\n"
+            "SegFormer b2 is the exception and the\n"
+            "only negative result: -2.2, with precision\n"
+            "falling to 0.728 against recall 0.793. At\n"
+            "24.7M parameters on 3,084 tiles that reads\n"
+            "as overfitting in the fine-tune stage, but\n"
+            "it is one run and could be noise.\n\n"
+            "None of these models had pretrained\n"
+            "weights. That, not architecture or\n"
+            "synthetic data, is the untested lever."
         )
         fig.text(0.665, 0.545, body, fontsize=8.5, va="top", linespacing=1.5)
     else:
@@ -181,17 +188,21 @@ def page_numbers(pdf, runs, dataset):
     _title(fig, "Results in full", "Every value read from the run's own test_results.md")
 
     n = len(runs)
-    ax = fig.add_axes([0.06, 0.855 - 0.045 * n, 0.88, 0.045 * (n + 1)]); ax.axis("off")
-    cols = ["architecture", "arm", "test F1", "precision", "recall", "test loss", "val F1"]
-    rows = [[r["arch"], "synth pretrain" if r["arm"].startswith("syn") else r["arm"],
-             f"{r['f1']:.4f}", f"{r['precision']:.4f}", f"{r['recall']:.4f}",
-             f"{r['loss']:.4f}",
-             # val F1 is only recorded where the run log was captured; an em dash beats
-             # a fabricated number
-             f"{r['val_f1']:.4f}" if r.get("val_f1") is not None else "—"]
+    h = min(0.055, 0.52 / (n + 1))
+    ax = fig.add_axes([0.06, 0.87 - h * (n + 1), 0.88, h * (n + 1)]); ax.axis("off")
+    # an em dash beats a fabricated number wherever a value was not captured
+    def cell(v):
+        return f"{v:.4f}" if isinstance(v, (int, float)) else "—"
+
+    params = dataset.get("_params", {})
+    cols = ["architecture", "params", "arm", "test F1", "precision", "recall", "val F1"]
+    rows = [[r["arch"],
+             f"{params[r['arch']]:.1f}M" if r["arch"] in params else "—",
+             "synth pretrain" if r["arm"].startswith("syn") else r["arm"],
+             cell(r["f1"]), cell(r["precision"]), cell(r["recall"]), cell(r.get("val_f1"))]
             for r in runs]
     t = ax.table(cellText=rows, colLabels=cols, loc="center", cellLoc="center",
-                 colWidths=[0.17, 0.19, 0.13, 0.13, 0.13, 0.13, 0.12])
+                 colWidths=[0.19, 0.11, 0.18, 0.13, 0.13, 0.13, 0.11])
     t.auto_set_font_size(False); t.set_fontsize(8.5); t.scale(1, 1.55)
     for (r, c), cell in t.get_celld().items():
         cell.set_edgecolor(C_GRID)
@@ -200,25 +211,11 @@ def page_numbers(pdf, runs, dataset):
         elif rows[r - 1][1] == "synth pretrain":
             cell.set_facecolor("#FBF4EE")
 
-    ax3 = fig.add_axes([0.12, 0.44, 0.76, 0.22])
-    labels, vals, cols_ = [], [], []
-    for r in runs:
-        labels.append(f"{r['arch']}\n{r['arm']}")
-        vals.append((r["precision"], r["recall"]))
-        cols_.append(C_SYNTH if r["arm"] == "synthetic pretrain" else C_BASE)
-    x = np.arange(len(labels))
-    ax3.bar(x - 0.18, [v[0] for v in vals], 0.34, color=cols_, zorder=3)
-    ax3.bar(x + 0.18, [v[1] for v in vals], 0.34, color=cols_, alpha=0.55, zorder=3)
-    ax3.set_xticks(x); ax3.set_xticklabels(labels, fontsize=7.5)
-    ax3.set_ylabel("precision (solid) / recall (faded)")
-    ax3.set_ylim(0, 1.0); ax3.grid(axis="y", color=C_GRID, lw=0.8, zorder=0)
-    ax3.set_title("Precision and recall move together — no threshold artefact",
-                  fontsize=9.5, color=C_MUTE, loc="left", pad=8)
-
     d = dataset
     txt = (
         "Setup\n\n"
-        "30 epochs, batch 16, fixed --val-data-dir and --test-data-dir so neither arm\n"
+        "30 epochs, batch 16 (DPT: 8, for memory — a confound, though far too small to\n"
+        "explain its 0.29 F1 gap), fixed --val-data-dir and --test-data-dir so neither arm\n"
         "re-splits. Two-stage resets the learning rate between stages, so stage 2 does not\n"
         "inherit stage 1's decayed rate. The smp architectures use encoder_weights=None:\n"
         "an ImageNet encoder would confound what the synthetic stage buys.\n\n"
@@ -228,7 +225,7 @@ def page_numbers(pdf, runs, dataset):
         f"train {d['train']:,} tiles ({d['train_note']})  ·  val {d['val']:,}  ·  "
         f"test {d['test']:,}  ·  stage 1: {d['synth']:,} synthetic tiles"
     )
-    fig.text(0.08, 0.355, txt, fontsize=9.5, va="top", linespacing=1.6)
+    fig.text(0.08, 0.32, txt, fontsize=9.5, va="top", linespacing=1.6)
     _footer(fig, 2, 4)
     pdf.savefig(fig); plt.close(fig)
 
@@ -352,7 +349,7 @@ def main(argv=None):
     d = json.load(open(a.results))
     with PdfPages(a.out) as pdf:
         page_headline(pdf, d["runs"], d["dataset"], d["corpus"])
-        page_numbers(pdf, d["runs"], d["dataset"])
+        page_numbers(pdf, d["runs"], {**d["dataset"], "_params": d.get("params_m", {})})
         page_pitfalls(pdf, d["colour"], a.overlay)
         page_caveats(pdf, d["synth_colour"])
         pdf.infodict()["Title"] = "WINMOL — synthetic pretraining for beech stem segmentation"

@@ -39,36 +39,53 @@ introduced a 1.5× scale gap for no reason.
 
 ## Result
 
-Three architectures, each with and without the synthetic stage, on the same leak-free split:
+Five architectures, each with and without the synthetic stage, on the same leak-free split:
 
 | architecture | params | beech only | synthetic pretrain | gain |
 |---|---:|---:|---:|---:|
-| UNet (in-repo) | ~31M | 0.7638 | 0.7748 | **+1.10** |
-| SegFormer (mit_b0) | 3.7M | 0.7788 | 0.7833 | +0.45 |
-| **HRNet (w18)** | 16.1M | **0.7856** | **0.7870** | +0.14 |
+| DPT (ViT-base) | 122.1M | 0.4917 | 0.5361 | **+4.44** |
+| UNet (in-repo) | ~31M | 0.7638 | 0.7748 | +1.10 |
+| SegFormer mit_b0 | 3.7M | 0.7788 | 0.7833 | +0.45 |
+| SegFormer mit_b2 | 24.7M | 0.7806 | 0.7588 | **−2.18** |
+| **HRNet w18** | 16.1M | **0.7856** | **0.7870** | +0.14 |
 
-Synthetic pretraining helps every architecture. But **the gain shrinks monotonically as the
-baseline strengthens** — +1.10 points for the weakest, +0.14 for the strongest.
+**The gain tracks how weak the model is.** DPT, which barely learns the task from scratch,
+gains +4.4. HRNet, the strongest, gains +0.1. Synthetic data is compensating for a
+data-starved model rather than adding something a good one lacks.
 
-Two consequences worth stating plainly:
+SegFormer b2 is the exception and the only negative result: −2.2, with precision falling to
+0.728 against recall 0.793. At 24.7M parameters on 3,084 tiles that reads as overfitting in
+the fine-tune stage — but it is one run and could be noise.
 
-- **HRNet with no pretraining at all (0.7856) beats UNet with it (0.7748).** On this corpus,
-  changing architecture buys more than synthetic pretraining does.
-- The two do not stack. Synthetic data appears to substitute for model capacity here rather
-  than supplying information a stronger model lacks.
+Three further things the sweep shows:
 
-SegFormer is notable separately: 0.7788 from **3.7M parameters**, above the ~31M UNet, on a
-corpus with under a hectare of label. The smallest model in the comparison beats the incumbent.
+- **Capacity is a liability without pretrained weights.** 3.7M works, 16.1M is the sweet
+  spot, 24.7M starts to overfit, and 122M fails outright. ViTs are the extreme case: almost
+  no convolutional prior, so with 3,084 tiles and no pretraining there is nothing to fall
+  back on. (DPT ran at batch 8 rather than 16 for memory — a real confound, but nowhere near
+  large enough to explain a 0.29 F1 gap.)
+- **Architecture buys more than synthetic data.** UNet → HRNet is +2.2 points; the best
+  synthetic gain on a working model is +1.1.
+- **SegFormer mit_b0 reaches 0.7788 from 3.7M parameters**, above the ~31M UNet.
 
-For reference, the published R model scores 0.760 on its own TestDS, so none of these are
-being flattered by a weak baseline.
+For reference the published R model scores 0.760 on its own TestDS, so these baselines are
+not weak.
 
-**One run per arm.** HRNet's +0.14 is indistinguishable from seed noise, and even +1.10 is
-suggestive rather than established. The architecture ranking spans a wider range and is more
-likely real. Replicating across seeds would settle both, and needs a `--seed` CLI flag on
-`run_train` first — it lives in `TrainConfig` and is not currently exposed.
+**None of these models had pretrained weights** — `encoder_weights=None` throughout, so the
+synthetic comparison stayed unconfounded. On this evidence that is the untested lever, and a
+larger one than either architecture or synthetic data.
 
-A four-page PDF of this study is at `docs/assets/synthetic-pretraining-study.pdf`, rendered by
+**One run per arm.** HRNet's +0.14 is indistinguishable from seed noise. The architecture
+ranking spans a wider range and is more likely real. Replicates need a `--seed` CLI flag on
+`run_train`, which currently lives in `TrainConfig` unexposed.
+
+DPT is **train-only**: it cannot export to the ONNX contract. Its ViT encoder is fixed at 384;
+`dynamic_img_size=True` lets it take 512 tiles by interpolating position embeddings, but timm
+does that with antialiased bicubic and `aten::_upsample_bicubic2d_aa` has no ONNX lowering at
+opset 17–20. At native 384 it exports, but with fixed 384 spatial dims the contract rejects,
+at ~485 MB. `test_dpt_cannot_yet_export_onnx` pins this.
+
+A four-page PDF is at `docs/assets/synthetic-pretraining-study.pdf`, rendered by
 `scripts/report_synth_pretraining.py` from `docs/assets/synth-pretraining-results.json`. Every
 number there is copied from a run's own `test_results.md`; the script computes no metrics, so
 the report cannot drift from what training reported.
