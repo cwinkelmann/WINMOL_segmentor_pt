@@ -1,0 +1,120 @@
+{
+  "_source": "Each run block is copied from that run's test_results.md and the final val line of its log, on carrot under /raid/cwinkelmann/winmol/runs/. Nothing here is recomputed.",
+  "runs": [
+    {
+      "arch": "UNet",
+      "arm": "beech only",
+      "f1": 0.7638,
+      "precision": 0.7626,
+      "recall": 0.765,
+      "loss": 0.3418,
+      "val_f1": 0.7527,
+      "run": "runs/blocks-20260807/A-beech-only"
+    },
+    {
+      "arch": "UNet",
+      "arm": "synthetic pretrain",
+      "f1": 0.7748,
+      "precision": 0.7785,
+      "recall": 0.7712,
+      "loss": 0.3276,
+      "val_f1": 0.8173,
+      "run": "runs/blocks-20260807/B-synth-pretrained"
+    },
+    {
+      "arch": "HRNet",
+      "arm": "beech only",
+      "f1": 0.7856,
+      "precision": 0.7852,
+      "recall": 0.786,
+      "loss": 0.3104,
+      "val_f1": null,
+      "run": "runs/hrnet-20260807/A-beech-only"
+    },
+    {
+      "arch": "HRNet",
+      "arm": "synthetic pretrain",
+      "f1": 0.787,
+      "precision": 0.7972,
+      "recall": 0.777,
+      "loss": 0.3124,
+      "val_f1": null,
+      "run": "runs/hrnet-20260807/B-synth-pretrained"
+    },
+    {
+      "arch": "SegFormer",
+      "arm": "beech only",
+      "f1": 0.7788,
+      "precision": 0.7883,
+      "recall": 0.7694,
+      "loss": 0.3217,
+      "val_f1": null,
+      "run": "runs/segformer-20260807/A-beech-only"
+    },
+    {
+      "arch": "SegFormer",
+      "arm": "synthetic pretrain",
+      "f1": 0.7833,
+      "precision": 0.7871,
+      "recall": 0.7796,
+      "loss": 0.3182,
+      "val_f1": null,
+      "run": "runs/segformer-20260807/B-synth-pretrained"
+    }
+  ],
+  "dataset": {
+    "train": 3084,
+    "val": 500,
+    "test": 570,
+    "synth": 3000,
+    "train_note": "Campus 2,500 + Kaufland 584"
+  },
+  "corpus": {
+    "stem_m2": 9802,
+    "polygons": 3842,
+    "trees": 1777,
+    "aoi_ha": 32.4,
+    "unlabelled_beech": 1
+  },
+  "colour": [
+    {
+      "set": "Campus (train)",
+      "rgb": "0.428 / 0.444 / 0.377",
+      "amber": "19.8%"
+    },
+    {
+      "set": "Kaufland (train)",
+      "rgb": "0.531 / 0.631 / 0.461",
+      "amber": "\u2014 (66% green)"
+    },
+    {
+      "set": "Bachsee_north (held-out site, test)",
+      "rgb": "0.478 / 0.279 / 0.126",
+      "amber": "100%"
+    },
+    {
+      "set": "Synthetic (stage 1)",
+      "rgb": "0.336 / 0.309 / 0.312",
+      "amber": "20.8%"
+    }
+  ],
+  "synth_colour": [
+    {
+      "name": "Kaufland (real, July)",
+      "green": 66.3
+    },
+    {
+      "name": "Campus (real, October)",
+      "green": 0.9
+    },
+    {
+      "name": "Synthetic (generator)",
+      "green": 0.0
+    }
+  ],
+  "params_m": {
+    "UNet": 31.0,
+    "HRNet": 16.1,
+    "SegFormer": 3.7
+  }
+}

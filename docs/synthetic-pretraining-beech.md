@@ -39,18 +39,39 @@ introduced a 1.5× scale gap for no reason.
 
 ## Result
 
-| arm | test F1 | precision | recall | test loss | val F1 |
-|---|---:|---:|---:|---:|---:|
-| A — beech only | 0.7638 | 0.7626 | 0.7650 | 0.3418 | 0.7527 |
-| **B — synthetic pretrain** | **0.7748** | 0.7785 | 0.7712 | 0.3276 | 0.8173 |
+Three architectures, each with and without the synthetic stage, on the same leak-free split:
 
-**+1.1 F1**, with both precision and recall up and loss down. For reference, the published
-R model scores 0.760 on its own TestDS, so arm A is a reasonable baseline rather than a
-weak one being flattered.
+| architecture | params | beech only | synthetic pretrain | gain |
+|---|---:|---:|---:|---:|
+| UNet (in-repo) | ~31M | 0.7638 | 0.7748 | **+1.10** |
+| SegFormer (mit_b0) | 3.7M | 0.7788 | 0.7833 | +0.45 |
+| **HRNet (w18)** | 16.1M | **0.7856** | **0.7870** | +0.14 |
 
-**Read this as a direction, not an effect size.** One run per arm; a 0.011 difference is
-within plausible seed-to-seed variation for this task. Repeating across seeds is the
-obvious next step and cheap on idle GPUs.
+Synthetic pretraining helps every architecture. But **the gain shrinks monotonically as the
+baseline strengthens** — +1.10 points for the weakest, +0.14 for the strongest.
+
+Two consequences worth stating plainly:
+
+- **HRNet with no pretraining at all (0.7856) beats UNet with it (0.7748).** On this corpus,
+  changing architecture buys more than synthetic pretraining does.
+- The two do not stack. Synthetic data appears to substitute for model capacity here rather
+  than supplying information a stronger model lacks.
+
+SegFormer is notable separately: 0.7788 from **3.7M parameters**, above the ~31M UNet, on a
+corpus with under a hectare of label. The smallest model in the comparison beats the incumbent.
+
+For reference, the published R model scores 0.760 on its own TestDS, so none of these are
+being flattered by a weak baseline.
+
+**One run per arm.** HRNet's +0.14 is indistinguishable from seed noise, and even +1.10 is
+suggestive rather than established. The architecture ranking spans a wider range and is more
+likely real. Replicating across seeds would settle both, and needs a `--seed` CLI flag on
+`run_train` first — it lives in `TrainConfig` and is not currently exposed.
+
+A four-page PDF of this study is at `docs/assets/synthetic-pretraining-study.pdf`, rendered by
+`scripts/report_synth_pretraining.py` from `docs/assets/synth-pretraining-results.json`. Every
+number there is copied from a run's own `test_results.md`; the script computes no metrics, so
+the report cannot drift from what training reported.
 
 ## Two earlier attempts that were wrong, and why
 
