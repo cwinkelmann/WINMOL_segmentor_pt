@@ -67,11 +67,26 @@ def test_refuses_a_gap_wider_than_max_gap():
 
 
 def test_refuses_fragments_that_are_not_collinear():
-    """Two ids that happen to collide should not be welded across open ground."""
-    frags = [_piece(0.0), translate(_piece(5.0), yoff=6.0)]
+    """Two ids that happen to collide should not be welded across open ground.
+
+    The offset is sideways while the gap stays inside --max-gap, so this exercises the
+    collinearity rule rather than tripping the distance limit first.
+    """
+    frags = [_piece(0.0), translate(_piece(3.5), yoff=3.0)]
+    assert frags[0].distance(frags[1]) < 5.0, "fixture must not trip the gap limit"
     geom, refused = bridge_tree(frags, max_offset=2.0)
 
     assert refused and refused[0]["reason"] == "not_collinear"
+    assert geom.geom_type == "MultiPolygon"
+
+
+def test_refuses_a_gap_that_is_wide_for_the_stem_even_if_short_in_metres():
+    """4 m across a 0.15 m sapling is not the same proposition as 4 m across a trunk."""
+    frags = [_piece(0.0, width=0.15), _piece(7.0, width=0.15)]
+    geom, refused = bridge_tree(frags, max_gap_m=5.0, max_gap_widths=12.0)
+
+    assert refused and refused[0]["reason"] == "gap_too_wide_for_stem"
+    assert refused[0]["widths"] > 12
     assert geom.geom_type == "MultiPolygon"
 
 

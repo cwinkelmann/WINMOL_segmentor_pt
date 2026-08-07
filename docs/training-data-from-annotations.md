@@ -173,9 +173,19 @@ stays tapered.
 
 | site | fragments | trees | bridges | stem area | reconstructed | refused |
 |---|---:|---:|---:|---:|---:|---:|
-| Kaufland | 125 | 60 | 64 | 250 → 289 m² | +15.5% | 1 |
-| Barnekow_5 | 1012 | 332 | 673 | 1826 → 2078 m² | +13.8% | 7 |
-| Campus | 822 | 600 | 213 | 2908 → 3096 m² | +6.5% | 9 |
+| Kaufland | 125 | 60 | 58 | 250 → 270 m² | +7.8% | 7 |
+| Barnekow_5 | 1012 | 332 | 612 | 1826 → 1981 m² | +8.5% | 68 |
+| Campus | 822 | 600 | 181 | 2908 → 3007 m² | +3.4% | 41 |
+
+**The limits are derived, not guessed.** Across 941 real gaps the distribution is median
+**0.67 m**, p90 3.95 m, p99 10.3 m, max 35.4 m. The defaults — 5 m absolute *and* 12 stem
+widths, both of which must pass — bridge about 93% of gaps and refuse the tail.
+
+An earlier 20 m default bridged **99.9%** of gaps including a 35 m span, longer than a whole
+median stem. That reconstructed +15.5% / +13.8% / +6.5% of stem area, roughly double what
+the conservative rule adds, and the difference was invention rather than reconstruction.
+The relative limit matters independently of the absolute one: 5 m across a 0.15 m sapling
+is a different proposition from 5 m across a 0.8 m trunk.
 
 ![Modal fragments versus reconstructed amodal trunks](assets/amodal-bridging.jpg)
 

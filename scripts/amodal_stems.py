@@ -34,8 +34,11 @@ on Barnekow_5), so:
 
 A shared `id` is not proof of a single trunk, so a bridge is refused and reported when
 
-  * the gap exceeds `--max-gap` (default 20 m) — beyond that a shared id is more likely
-    a digitizing slip than one stem;
+  * the gap exceeds `--max-gap` (default 5 m), or `--max-gap-widths` times the stem's own
+    width (default 12). Both are derived from the measured distribution of 941 real gaps:
+    median 0.67 m, p90 3.95 m, p99 10.3 m. The defaults bridge ~93% of them and refuse the
+    tail. An earlier 20 m default bridged 99.9% including a 35 m span — longer than a whole
+    median stem, which is invention rather than reconstruction;
   * the bridge would run more than `--max-offset` half-widths off the fitted axis, which
     means the fragments are not actually collinear.
 
@@ -86,7 +89,7 @@ def _closest_points(a, b):
     return (p.x, p.y), (q.x, q.y)
 
 
-def bridge_tree(fragments, max_gap_m=20.0, max_offset=2.0):
+def bridge_tree(fragments, max_gap_m=5.0, max_gap_widths=12.0, max_offset=2.0):
     """Return (amodal geometry, list of refusals) for one tree's fragments."""
     from shapely.geometry import LineString
     from shapely.ops import unary_union
@@ -106,8 +109,18 @@ def bridge_tree(fragments, max_gap_m=20.0, max_offset=2.0):
         gap = a.distance(b)
         if gap <= 0:
             continue                      # already touching: nothing to bridge
+        # Two independent limits, both derived from the measured distribution of real
+        # occlusion gaps (941 of them: median 0.67 m, p90 3.95, p99 10.3, max 35.4).
+        # An absolute cap alone is not enough -- 5 m across a 0.15 m sapling is a
+        # different proposition from 5 m across a 0.8 m trunk -- so the gap must also be
+        # plausible relative to the stem's own width.
         if gap > max_gap_m:
             refusals.append({"reason": "gap_too_wide", "gap_m": round(gap, 2)})
+            continue
+        rel = gap / max(0.5 * (widths[i] + widths[i + 1]), 1e-6)
+        if rel > max_gap_widths:
+            refusals.append({"reason": "gap_too_wide_for_stem", "gap_m": round(gap, 2),
+                             "widths": round(rel, 1)})
             continue
         pa, pb = _closest_points(a, b)
         # half-width interpolated across the gap keeps a tapering trunk tapered
@@ -131,7 +144,7 @@ def bridge_tree(fragments, max_gap_m=20.0, max_offset=2.0):
 
 
 def build(stems_path, ortho_path, out_path, instances_path=None, report_path=None,
-          max_gap_m=20.0, max_offset=2.0, quiet=False):
+          max_gap_m=5.0, max_gap_widths=12.0, max_offset=2.0, quiet=False):
     import fiona
     import rasterio
     from rasterio.features import rasterize as rio_rasterize
@@ -157,7 +170,7 @@ def build(stems_path, ortho_path, out_path, instances_path=None, report_path=Non
              "modal_area_m2": 0.0, "amodal_area_m2": 0.0}
     amodal = {}
     for key, frags in by_id.items():
-        geom, refused = bridge_tree(frags, max_gap_m, max_offset)
+        geom, refused = bridge_tree(frags, max_gap_m, max_gap_widths, max_offset)
         amodal[key] = geom
         stats["modal_area_m2"] += sum(g.area for g in frags)
         stats["amodal_area_m2"] += geom.area
@@ -214,14 +227,20 @@ def main(argv=None):
     p.add_argument("--out", required=True, help="binary amodal stem mask GeoTIFF")
     p.add_argument("--instances", default=None, help="uint16 amodal instance raster")
     p.add_argument("--report", default=None, help="JSON stats, including refused bridges")
-    p.add_argument("--max-gap", type=float, default=20.0,
-                   help="metres; refuse to bridge a wider gap (a shared id that far apart "
-                        "is more likely a digitizing slip than one stem)")
+    p.add_argument("--max-gap", type=float, default=5.0,
+                   help="metres; refuse to bridge a wider gap. The default covers 93%% of "
+                        "the 941 real gaps measured across the corpus (median 0.67 m, "
+                        "p90 3.95); the old 20 m bridged 99.9%%, including a 35 m span "
+                        "longer than a whole median stem")
+    p.add_argument("--max-gap-widths", type=float, default=12.0,
+                   help="refuse a gap wider than this many stem widths, so the limit "
+                        "scales with the trunk rather than being purely absolute")
     p.add_argument("--max-offset", type=float, default=2.0,
                    help="refuse a bridge running more than this many stem widths off the "
                         "fitted axis")
     a = p.parse_args(argv)
-    build(a.stems, a.ortho, a.out, a.instances, a.report, a.max_gap, a.max_offset)
+    build(a.stems, a.ortho, a.out, a.instances, a.report, a.max_gap,
+          a.max_gap_widths, a.max_offset)
     return 0
 
 
