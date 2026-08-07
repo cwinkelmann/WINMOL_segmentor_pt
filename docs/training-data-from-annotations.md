@@ -189,3 +189,36 @@ would run more than `--max-offset` stem widths off the fitted axis. Refusals are
 the report rather than silently dropped: **17 of ~950 bridges were refused across the three
 sites, 1.8%**, which is itself evidence that `id` really does mean one tree. A corpus where
 that rate were high would be telling you the field means something else.
+
+### Does training on amodal masks actually help?
+
+HRNet + ImageNet encoder (the best configuration from the architecture sweep), trained
+twice with identical settings — once on modal masks, once on amodal — then both evaluated
+on the **same** images.
+
+| | components | mean component length | longest | largest share |
+|---|---:|---:|---:|---:|
+| modal-trained | 2.60 | 262 px | 376 px | 69% |
+| **amodal-trained** | 2.65 | **276 px** | **399 px** | 71% |
+| *amodal labels (ceiling)* | *2.30* | *309 px* | *408 px* | *74%* |
+
+**Amodal training produces measurably longer, less broken stems: +5.3% mean component
+length and +6.1% on the longest component.** It closes roughly a quarter of the gap
+between the modal-trained model and the label ceiling (85% → 89% of label continuity).
+
+Modest, but in the direction that matters, and the visual is clearer than the number:
+
+![Modal versus amodal labels and predictions](assets/amodal-vs-modal-predictions.jpg)
+
+**A metric that lied first.** The original measure counted skeleton endpoints, on the
+reasoning that one unbroken stem contributes 2 and three fragments contribute 6. In
+practice it was dominated by skeleton spurs off the ragged traced outlines — the reference
+masks score ~33 endpoints per tile against a prediction's ~6, which measures outline
+roughness, not breaks. It reported the amodal model as *worse* (6.35 vs 5.97) while the
+predictions were visibly more continuous. Mean major-axis length of the connected
+components measures the property directly and agrees with what the eye sees.
+
+**F1 is not the comparison.** A modal-trained and an amodal-trained model are scored
+against different labels; the modal target is strictly easier. On the shared amodal test
+set the two are near-identical (0.7564 vs 0.7584), which is itself informative — the
+amodal model gains its continuity without paying for it in accuracy.
