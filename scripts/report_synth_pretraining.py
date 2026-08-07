@@ -26,6 +26,7 @@ C_BASE = "#5A7D9A"      # beech only
 C_SYNTH = "#C8763C"     # synthetic pretrain
 C_INK = "#2B2B2B"
 C_MUTE = "#8A8A8A"
+C_PRE = "#6B8E5A"       # imagenet encoder
 C_GRID = "#DDDDDD"
 
 
@@ -50,7 +51,7 @@ def _title(fig, title, subtitle=None):
 
 def _footer(fig, page, total):
     fig.text(0.94, 0.035, f"{page} / {total}", ha="right", fontsize=8, color=C_MUTE)
-    fig.text(0.06, 0.035, "WINMOL segmentor — synthetic pretraining study",
+    fig.text(0.06, 0.035, "WINMOL segmentor — what moves a beech stem segmenter",
              fontsize=8, color=C_MUTE)
 
 
@@ -58,8 +59,8 @@ def page_headline(pdf, runs, dataset, corpus):
     import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=(8.27, 11.69))
-    _title(fig, "Does synthetic pretraining help a beech stem segmenter?",
-           "The weaker the model, the more it helps. Leak-free block split, one run per arm.")
+    _title(fig, "What actually moves a beech stem segmenter?",
+           "Architecture, then pretrained weights, then synthetic data. Leak-free block split, one run per arm.")
 
     seen, archs = set(), []
     for r in runs:                                   # first-appearance order
@@ -69,29 +70,35 @@ def page_headline(pdf, runs, dataset, corpus):
     ax = fig.add_axes([0.12, 0.615, 0.76, 0.245])
     xs = np.arange(len(archs))
     # keep bars readable whether there is one architecture or four
-    w = 0.30 if len(archs) > 1 else 0.22
+    ARMS = [("beech only", C_BASE), ("synthetic pretrain", C_SYNTH),
+            ("imagenet encoder", C_PRE)]
+    arms = [(a, c) for a, c in ARMS if any(r["arm"] == a for r in runs)]
+    w = 0.84 / max(len(arms), 1) / max(len(archs), 1) * len(archs) * 0.9
+    w = min(w, 0.26)
     top = max(r["f1"] for r in runs) * 1.30
-    for i, (arm, c) in enumerate((("beech only", C_BASE), ("synthetic pretrain", C_SYNTH))):
+    for i, (arm, c) in enumerate(arms):
         vals = [next((r["f1"] for r in runs if r["arch"] == a and r["arm"] == arm), np.nan)
                 for a in archs]
-        bars = ax.bar(xs + (i - 0.5) * w, vals, w * 0.9, color=c, label=arm, zorder=3)
+        off = (i - (len(arms) - 1) / 2) * w
+        bars = ax.bar(xs + off, vals, w * 0.88, color=c, label=arm, zorder=3)
         for b, v in zip(bars, vals):
             if not np.isnan(v):
                 # two bars of a pair sit at almost the same height; stagger the labels
                 # vertically or they overlap
-                ax.text(b.get_x() + b.get_width() / 2, v + top * (0.012 + 0.038 * i),
-                        f"{v:.4f}", ha="center", fontsize=7, color=C_INK)
+                ax.text(b.get_x() + b.get_width() / 2, v + top * (0.012 + 0.036 * i),
+                        f"{v:.4f}", ha="center", fontsize=6.2, color=C_INK)
     # delta above the pair, clear of both bars and of the value labels
-    for j, a in enumerate(archs):
-        base = next((r["f1"] for r in runs if r["arch"] == a and r["arm"] == "beech only"), None)
-        syn = next((r["f1"] for r in runs if r["arch"] == a and r["arm"] == "synthetic pretrain"), None)
-        if base and syn:
-            y = max(base, syn) + top * 0.115
-            ax.annotate("", xy=(j + w / 2, y), xytext=(j - w / 2, y),
-                        arrowprops=dict(arrowstyle="<->", color=C_MUTE, lw=0.9))
-            ax.text(j, y + top * 0.02, f"{100*(syn-base):+.1f} pts", ha="center",
-                    fontsize=9.5, weight="bold",
-                    color=C_SYNTH if syn > base else C_BASE)
+    if len(arms) == 2:
+        for j, a in enumerate(archs):
+            base = next((r["f1"] for r in runs if r["arch"] == a and r["arm"] == "beech only"), None)
+            syn = next((r["f1"] for r in runs if r["arch"] == a and r["arm"] == "synthetic pretrain"), None)
+            if base and syn:
+                y = max(base, syn) + top * 0.115
+                ax.annotate("", xy=(j + w / 2, y), xytext=(j - w / 2, y),
+                            arrowprops=dict(arrowstyle="<->", color=C_MUTE, lw=0.9))
+                ax.text(j, y + top * 0.02, f"{100*(syn-base):+.1f} pts", ha="center",
+                        fontsize=9.5, weight="bold",
+                        color=C_SYNTH if syn > base else C_BASE)
     ax.set_xticks(xs); ax.set_xticklabels(archs, fontsize=10)
     # right margin reserved for the reference-line label, so it never sits over a bar
     ax.set_xlim(-0.55, len(archs) - 0.5 + 0.62)
@@ -105,7 +112,7 @@ def page_headline(pdf, runs, dataset, corpus):
     # struck through by the dash nor overlapping a bar
     ax.text(len(archs) - 0.5 + 0.58, 0.772, "published R model 0.760", va="bottom",
             ha="right", fontsize=7, color=C_MUTE)
-    ax.legend(frameon=False, fontsize=9, ncol=2, loc="lower center",
+    ax.legend(frameon=False, fontsize=8.5, ncol=3, loc="lower center",
               bbox_to_anchor=(0.5, 1.005))
 
     # The gain is not constant across architectures — and how it varies is the finding.
@@ -134,26 +141,29 @@ def page_headline(pdf, runs, dataset, corpus):
         ax2.set_ylim(min(gs) - 1.1, max(gs) + 0.9)
         ax2.set_xlim(min(bs) - 0.03, max(bs) + 0.04)
         ax2.grid(color=C_GRID, lw=0.8, zorder=0)
-        ax2.set_title("The stronger the baseline, the less synthetic data adds",
+        ax2.set_title("Synthetic data helps most where the model is weakest",
                       fontsize=9, color=C_MUTE, loc="left", pad=6)
         body = (
-            "The gain tracks how weak the model is.\n"
-            "DPT, which barely learns the task at all\n"
-            "from scratch, gains +4.4; HRNet, the\n"
-            "strongest, gains +0.1. Synthetic data is\n"
-            "compensating for a data-starved model\n"
-            "rather than adding what a good one lacks.\n\n"
-            "SegFormer b2 is the exception and the\n"
-            "only negative result: -2.2, with precision\n"
-            "falling to 0.728 against recall 0.793. At\n"
-            "24.7M parameters on 3,084 tiles that reads\n"
-            "as overfitting in the fine-tune stage, but\n"
-            "it is one run and could be noise.\n\n"
-            "None of these models had pretrained\n"
-            "weights. That, not architecture or\n"
-            "synthetic data, is the untested lever."
+            "Best result: HRNet with an ImageNet\n"
+            "encoder, 0.7898. Measured against the\n"
+            "UNet baseline of 0.7638, the three levers\n"
+            "are worth very different amounts:\n\n"
+            "   architecture (UNet -> HRNet)   +2.2\n"
+            "   ImageNet encoder (on HRNet)    +0.4\n"
+            "   synthetic pretrain (on HRNet)  +0.1\n\n"
+            "Synthetic data helps most where the\n"
+            "model is weakest (DPT +4.4, HRNet +0.1)\n"
+            "— it substitutes for capacity rather than\n"
+            "adding what a good model lacks.\n\n"
+            "Pretrained weights help the mid-size\n"
+            "models (b2 +0.5, HRNet +0.4), do nothing\n"
+            "for the small one (b0 -0.2), and make DPT\n"
+            "WORSE (-2.5) — at lr=1e-3 with plain Adam,\n"
+            "a CNN-tuned rate applied to every arch, a\n"
+            "ViT loses its pretrained features early.\n"
+            "A loop limitation, not a verdict on ViTs."
         )
-        fig.text(0.665, 0.545, body, fontsize=8.5, va="top", linespacing=1.5)
+        fig.text(0.655, 0.550, body, fontsize=7.4, va="top", linespacing=1.40)
     else:
         body = (
             "Synthetic pretraining gives a gain on top of a reasonable baseline: arm A lands\n"
@@ -168,8 +178,8 @@ def page_headline(pdf, runs, dataset, corpus):
         f"The corpus holds {corpus['stem_m2']:,} m² of digitized stem in total — under one hectare, across\n"
         f"{corpus['polygons']:,} polygons and {corpus['trees']:,} trees, and only {corpus['unlabelled_beech']} unannotated beech orthomosaic remains.\n"
         f"Beech labelling is close to exhausted, so a generator producing unlimited perfectly-\n"
-        f"labelled tiles is one of the few sources of signal left — and the architecture result\n"
-        f"above says it is not the cheapest one to reach for first."
+        f"labelled tiles is one of the few sources of signal left. But the sweep above says it is\n"
+        f"the smallest of the three levers: reach for architecture and pretrained weights first."
     )
     ax3 = fig.add_axes([0.10, 0.115, 0.80, 0.185]); ax3.axis("off")
     ax3.add_patch(__import__("matplotlib").patches.FancyBboxPatch(
@@ -352,7 +362,7 @@ def main(argv=None):
         page_numbers(pdf, d["runs"], {**d["dataset"], "_params": d.get("params_m", {})})
         page_pitfalls(pdf, d["colour"], a.overlay)
         page_caveats(pdf, d["synth_colour"])
-        pdf.infodict()["Title"] = "WINMOL — synthetic pretraining for beech stem segmentation"
+        pdf.infodict()["Title"] = "WINMOL — what moves a beech stem segmenter"
     print(f"wrote {a.out} ({os.path.getsize(a.out)/1024:.0f} KB)")
     return 0
 
