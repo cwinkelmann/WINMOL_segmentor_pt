@@ -203,22 +203,33 @@ that rate were high would be telling you the field means something else.
 ### Does training on amodal masks actually help?
 
 HRNet + ImageNet encoder (the best configuration from the architecture sweep), trained
-twice with identical settings — once on modal masks, once on amodal — then both evaluated
-on the **same** images.
+three times with identical settings and evaluated on the **same** images:
 
-| | components | mean component length | longest | largest share |
+| | components | mean component length | longest | F1 |
 |---|---:|---:|---:|---:|
-| modal-trained | 2.60 | 262 px | 376 px | 69% |
-| **amodal-trained** | 2.65 | **276 px** | **399 px** | 71% |
-| *amodal labels (ceiling)* | *2.30* | *309 px* | *408 px* | *74%* |
+| modal-trained | 2.62 | 264 px | 379 px | 0.7626 |
+| amodal, permissive bridging | 2.66 | 277 px | 400 px | 0.7634 |
+| **amodal, conservative bridging** | 2.70 | **276 px** | 395 px | 0.7570 |
+| *amodal labels (ceiling)* | *2.30* | *300 px* | *396 px* | — |
 
-**Amodal training produces measurably longer, less broken stems: +5.3% mean component
-length and +6.1% on the longest component.** It closes roughly a quarter of the gap
-between the modal-trained model and the label ceiling (85% → 89% of label continuity).
+**Amodal training yields +4.5% mean component length**, closing roughly a third of the gap
+to the label ceiling (88% → 92% of label continuity).
 
-Modest, but in the direction that matters, and the visual is clearer than the number:
+The important line is the middle one. The first amodal run used a 20 m bridging limit that
+reconstructed about twice as much area, much of it invented. Retraining on the conservative
+labels gives **+4.5% against +4.9%** — statistically the same. So the benefit comes from
+bridging *real* occlusions, and the invented spans contributed nothing. Had the numbers
+diverged, the original result would have been an artefact of the labels rather than a
+property of amodal training.
 
-![Modal versus amodal labels and predictions](assets/amodal-vs-modal-predictions.jpg)
+It costs about 0.6 points of F1 (0.7570 vs 0.7626), and the shape of that is informative:
+precision falls (0.7518 vs 0.7765) while recall rises (0.7624 vs 0.7491). The amodal model
+marks more stem, some of which the labels do not credit — which is the intended behaviour,
+since it is predicting trunk that the camera could not see.
+
+**F1 is not the comparison to make.** A modal-trained and an amodal-trained model are scored
+against different labels and the modal target is strictly easier. Continuity is computed
+from the prediction alone, so it is the only figure here that means the same thing for both.
 
 **A metric that lied first.** The original measure counted skeleton endpoints, on the
 reasoning that one unbroken stem contributes 2 and three fragments contribute 6. In
