@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pytest
 from PIL import Image
 
 from training.config import TrainConfig
@@ -25,6 +26,8 @@ def test_cli_derives_all_four_paths():
 
 
 def test_run_training_writes_all_four(tmp_path):
+    # exercises the Keras mirror alongside pt/onnx, so it needs TensorFlow
+    pytest.importorskip("tensorflow")
     _make_ds(tmp_path)
     # Deliberately split output dirs: pt/keras land in nonexistent subdirs that
     # differ from hdf5/onnx, so run_training must create each independently (a

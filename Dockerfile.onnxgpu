@@ -1,0 +1,32 @@
+# onnxruntime-GPU variant of winmol-train: swaps the CPU onnxruntime wheel for the
+# CUDA build so ONNX models can be served on the CUDAExecutionProvider (production-
+# representative GPU inference), and adds onnxconverter_common for fp16 conversion.
+#
+# Build:  docker build -f Dockerfile.onnxgpu -t winmol-onnxgpu .
+FROM winmol-train
+
+# onnxruntime and onnxruntime-gpu conflict (same package namespace) — remove the CPU
+# wheel first. The default PyPI onnxruntime-gpu wheel targets CUDA 13; our base is
+# CUDA 12.8, so pull the CUDA-12 build from ORT's dedicated cu12 index (links against
+# the base image's CUDA 12.8 + cuDNN 9 runtime libs). onnxconverter-common (fp16) is PyPI.
+RUN python -m pip uninstall -y onnxruntime && \
+    python -m pip install "onnxruntime-gpu==1.27.0" \
+        --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ && \
+    python -m pip install onnxconverter-common
+
+# TensorRT 10 (for the TensorRT EP — highest-throughput GPU inference, fp16 + int8). The pip
+# wheel ships libnvinfer.so.10 that onnxruntime-gpu's TRT provider dlopen's.
+RUN python -m pip install "tensorrt-cu12==10.13.*"
+
+# The CUDA 12.8 / cuDNN 9 runtime libs ship as pip nvidia-*-cu12 wheels under
+# site-packages/nvidia/*/lib (that's how the pytorch base bundles them). onnxruntime-gpu
+# dlopen's libcudart/libcublas/libcudnn by soname, so register those dirs with ldconfig.
+RUN find /opt/conda/lib/python3.11/site-packages/nvidia -maxdepth 2 -name lib -type d \
+        > /etc/ld.so.conf.d/nvidia-wheels.conf && \
+    ldconfig
+# TensorRT libs (libnvinfer.so.10) live in site-packages/tensorrt_libs; ldconfig doesn't reliably
+# pick them up, so put them on LD_LIBRARY_PATH for the ORT TensorRT EP to dlopen.
+ENV LD_LIBRARY_PATH=/opt/conda/lib/python3.11/site-packages/tensorrt_libs
+
+ENTRYPOINT ["python"]
+CMD ["-c", "import onnxruntime as ort; print(ort.get_available_providers())"]

@@ -39,6 +39,7 @@ class TrainConfig:
     keras_out: Optional[str] = None
     pt_out: Optional[str] = None
     arch: str = "unet"                       # unet | deeplabv3plus | hrnet
+    width_mult: float = 1.0                  # UNet channel-width scale (1.0 = full; <1 = smaller/faster)
     encoder: str = "resnet34"                # smp encoder (deeplabv3plus)
     encoder_weights: Optional[str] = None    # None (no download) or "imagenet"
     export_keras: bool = False               # also emit Keras .hdf5/.keras (UNet only)
@@ -50,6 +51,10 @@ class TrainConfig:
     patience_stage2: int = 5                 # early-stop patience, stage 2 (R value)
     val_data_dir: Optional[str] = None       # single-stage: fixed val set (else 80/20 split of data_dir)
     test_data_dir: Optional[str] = None      # held-out test set evaluated after training (R cost_eval)
+    multiscale: bool = False                 # multi-scale RandomSizedCrop on native-res tiles
+    crop_min_px: int = 400                   # multiscale: min crop side sampled from the tile
+    crop_max_px: int = 1024                  # multiscale: max crop side (>= native tile -> full)
+    eval_tiling: bool = False                # deterministic grid tiling for val/test (native res)
 
     @property
     def image_dir(self) -> str:

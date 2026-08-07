@@ -47,26 +47,48 @@ class _DoubleConv(nn.Module):
         return self.c2(self.drop(self.c1(x)))
 
 
+def _scale_width(base, width_mult):
+    # Scale a base channel count, snapping to a multiple of 8 (hardware-friendly,
+    # keeps int8/AVX kernels happy). width_mult=1.0 reproduces the base ladder exactly.
+    return max(8, int(round(base * width_mult / 8.0)) * 8)
+
+
 class UNet(nn.Module):
-    def __init__(self, in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS, dropout=0.1):
+    """U-Net with an optional ``width_mult`` that scales every channel width.
+
+    ``width_mult=1.0`` (default) is byte-identical to the original 64->1024 ladder.
+    Smaller multipliers (e.g. 0.5) cut channel widths for a ~quadratic drop in conv
+    FLOPs/params -- the primary lever for CPU-inference speedup -- while leaving the
+    forward topology and the ONNX contract (512x512x3 -> 512x512x1) unchanged.
+    """
+
+    def __init__(self, in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS, dropout=0.1,
+                 width_mult=1.0):
         super().__init__()
-        self.enc1 = _DoubleConv(in_channels, 64, dropout)
-        self.enc2 = _DoubleConv(64, 128, dropout)
-        self.enc3 = _DoubleConv(128, 256, dropout)
-        self.enc4 = _DoubleConv(256, 512, dropout)
-        self.bottleneck = _DoubleConv(512, 1024, dropout)
+        w1, w2, w3, w4, w5 = (_scale_width(b, width_mult)
+                              for b in (64, 128, 256, 512, 1024))
+        self.enc1 = _DoubleConv(in_channels, w1, dropout)
+        self.enc2 = _DoubleConv(w1, w2, dropout)
+        self.enc3 = _DoubleConv(w2, w3, dropout)
+        self.enc4 = _DoubleConv(w3, w4, dropout)
+        self.bottleneck = _DoubleConv(w4, w5, dropout)
         self.pool = nn.MaxPool2d(2)
 
-        self.up4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2, bias=False)
-        self.dec4 = _DoubleConv(1024, 512, dropout)
-        self.up3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2, bias=False)
-        self.dec3 = _DoubleConv(512, 256, dropout)
-        self.up2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2, bias=False)
-        self.dec2 = _DoubleConv(256, 128, dropout)
-        self.up1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2, bias=False)
-        self.dec1 = _DoubleConv(128, 64, dropout)
+        # Decoder input channels come from the actual forward-time concat
+        # (skip + upsample output, each w_k -> 2*w_k), NOT the next ladder width:
+        # with independent rounding in _scale_width, w5 == 2*w4 etc. only holds
+        # for multipliers like 1.0/0.5/0.25. At those points 2*w_k equals the
+        # historical ladder value, so width_mult=1.0 stays byte-identical.
+        self.up4 = nn.ConvTranspose2d(w5, w4, kernel_size=2, stride=2, bias=False)
+        self.dec4 = _DoubleConv(2 * w4, w4, dropout)
+        self.up3 = nn.ConvTranspose2d(w4, w3, kernel_size=2, stride=2, bias=False)
+        self.dec3 = _DoubleConv(2 * w3, w3, dropout)
+        self.up2 = nn.ConvTranspose2d(w3, w2, kernel_size=2, stride=2, bias=False)
+        self.dec2 = _DoubleConv(2 * w2, w2, dropout)
+        self.up1 = nn.ConvTranspose2d(w2, w1, kernel_size=2, stride=2, bias=False)
+        self.dec1 = _DoubleConv(2 * w1, w1, dropout)
 
-        self.head = nn.Conv2d(64, out_channels, kernel_size=1)
+        self.head = nn.Conv2d(w1, out_channels, kernel_size=1)
 
     def forward(self, x):
         c1 = self.enc1(x)

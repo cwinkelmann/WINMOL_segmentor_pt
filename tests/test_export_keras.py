@@ -3,6 +3,12 @@ import numpy as np
 import torch
 
 from winmol_unet.model import UNet
+import pytest
+
+# the Keras mirror is opt-in (--export-keras) and TensorFlow is not installed in
+# CI; skip rather than fail collection where it is absent
+pytest.importorskip("tensorflow")
+
 from winmol_unet.export_keras import export_to_keras_hdf5
 
 def _torch_probs(model, x_nhwc):

@@ -1,4 +1,10 @@
 import numpy as np
+import pytest
+
+# the Keras mirror is opt-in (--export-keras) and TensorFlow is not installed in
+# CI; skip rather than fail collection where it is absent
+pytest.importorskip("tensorflow")
+
 from winmol_unet.keras_model import build_keras_unet
 
 

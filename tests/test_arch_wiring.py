@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pytest
 from PIL import Image
 
 from training.config import TrainConfig
@@ -55,6 +56,9 @@ def test_unet_default_is_onnx_pt_only(tmp_path):
 
 
 def test_unet_export_keras_flag_writes_all_four(tmp_path):
+    # writes the Keras HDF5/.keras mirror, so it needs TensorFlow; the sibling
+    # non-UNet test does not, because it asserts the fail-fast before export
+    pytest.importorskip("tensorflow")
     _make_ds(tmp_path)
     cfg = _cfg(tmp_path, "unet", export_keras=True)
     run_training(cfg)
