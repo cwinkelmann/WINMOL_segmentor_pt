@@ -47,18 +47,38 @@ def _skeleton_endpoints(mask):
     return int(((sk == 1) & (neighbours == 1)).sum())
 
 
-def continuity(mask):
-    """Per-tile continuity statistics for one binary mask."""
+def continuity(mask, min_px=64):
+    """Per-tile continuity statistics for one binary mask.
+
+    `component_len_px` — the mean major-axis length of the connected components — is the
+    metric to read. Endpoint counting turned out to be dominated by skeleton spurs off a
+    ragged traced outline (the reference masks score ~33 endpoints per tile against a
+    prediction's ~6, which is an artefact of outline roughness, not of breaks). Component
+    length measures the thing directly: a stem bridged across its occlusion gaps yields
+    one long component instead of several short ones.
+
+    Specks below `min_px` are ignored — they are noise, and counting them swamps the
+    component statistics of whichever model happens to be less confident.
+    """
     from scipy.ndimage import label
+    from skimage.measure import regionprops
 
     lab, n = label(mask)
     if n == 0:
-        return {"components": 0, "endpoints": 0, "largest_share": 0.0, "mean_area_px": 0.0}
-    sizes = np.bincount(lab.ravel())[1:]
-    return {"components": int(n),
+        return {"components": 0, "endpoints": 0, "largest_share": 0.0,
+                "mean_area_px": 0.0, "component_len_px": 0.0, "longest_len_px": 0.0}
+    props = [r for r in regionprops(lab) if r.area >= min_px]
+    if not props:
+        return {"components": 0, "endpoints": 0, "largest_share": 0.0,
+                "mean_area_px": 0.0, "component_len_px": 0.0, "longest_len_px": 0.0}
+    sizes = np.array([r.area for r in props], dtype=float)
+    lens = np.array([r.axis_major_length for r in props], dtype=float)
+    return {"components": len(props),
             "endpoints": _skeleton_endpoints(mask),
             "largest_share": float(sizes.max() / sizes.sum()),
-            "mean_area_px": float(sizes.mean())}
+            "mean_area_px": float(sizes.mean()),
+            "component_len_px": float(lens.mean()),
+            "longest_len_px": float(lens.max())}
 
 
 def _load_model(path, arch, device):
@@ -85,7 +105,9 @@ def evaluate(model_path, data_dir, arch="hrnet", threshold=0.5, limit=None, devi
     if limit:
         imgs = imgs[:limit]
 
-    agg = {k: [] for k in ("components", "endpoints", "largest_share", "mean_area_px")}
+    keys = ("components", "endpoints", "largest_share", "mean_area_px",
+            "component_len_px", "longest_len_px")
+    agg = {k: [] for k in keys}
     ref = {k: [] for k in agg}
     tp = fp = fn = 0
     for p in imgs:
@@ -113,7 +135,8 @@ def evaluate(model_path, data_dir, arch="hrnet", threshold=0.5, limit=None, devi
         print(f"{os.path.basename(os.path.dirname(model_path))}  ({out['tiles']} tiles)")
         print(f"  F1 {out['f1']:.4f}  P {out['precision']:.4f}  R {out['recall']:.4f}")
         for label, d in (("prediction", out["prediction"]), ("labels   ", out["reference"])):
-            print(f"  {label}: {d['components']:.2f} components, {d['endpoints']:.2f} endpoints, "
+            print(f"  {label}: {d['components']:.2f} components, mean length "
+                  f"{d['component_len_px']:.0f} px, longest {d['longest_len_px']:.0f} px, "
                   f"largest {100*d['largest_share']:.0f}% of area")
     return out
 
