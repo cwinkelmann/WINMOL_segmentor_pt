@@ -9,7 +9,7 @@ from winmol_unet.export import export_to_onnx
 from winmol_unet.runtime import OnnxSegmenter
 
 
-@pytest.mark.parametrize("arch", ["deeplabv3plus", "hrnet"])
+@pytest.mark.parametrize("arch", ["deeplabv3plus", "hrnet", "segformer"])
 def test_arch_exports_and_serves_nhwc(tmp_path, arch, monkeypatch):
     # Pin the CPU EP so the check is EP-independent (CoreML/CUDA compute in fp16 and
     # would nudge sigmoid outputs past a tight epsilon — see WINMOL_ONNX_FORCE_CPU).

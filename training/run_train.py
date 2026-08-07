@@ -194,7 +194,8 @@ def config_from_args(argv=None):
     p.add_argument("--aug-brightness-limit", type=float, default=0.2)
     p.add_argument("--aug-contrast-limit", type=float, default=0.2)
     p.add_argument("--aug-hsv-p", type=float, default=0.5)
-    p.add_argument("--arch", default="unet", help="unet|deeplabv3plus|hrnet")
+    p.add_argument("--arch", default="unet",
+                   help="unet|deeplabv3plus|hrnet|segformer")
     p.add_argument("--width-mult", type=float, default=1.0,
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
     p.add_argument("--encoder", default="resnet34", help="smp encoder (deeplabv3plus)")
