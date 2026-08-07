@@ -153,3 +153,39 @@ bugs are silent — a mask offset by a metre still trains, just badly.
 Sixteen tiles sampled from Kaufland, eight shown, mask in orange. Each tile is a
 different random position and rotation; the masks sit on the stems, which is what
 confirms the reprojection, the rotation and the window transform together.
+
+## Amodal stems: bridging the occlusion gaps
+
+`--instance-level tree` gives the fragments of one stem a shared label, but the mask still
+has holes where branches hid the trunk. `scripts/amodal_stems.py` reconstructs those spans,
+producing one connected polygon per tree covering the trunk **including the parts the camera
+never saw**.
+
+```bash
+python scripts/amodal_stems.py --stems <site>.shp --ortho <site>_ortho.tif \
+  --out <site>_amodal.tif --instances <site>_amodal_inst.tif --report <site>.json
+```
+
+Fragments of one id are collinear by construction, so the axis is fitted by PCA over every
+vertex, fragments are ordered along it, and consecutive pairs are joined by a segment
+buffered to half the local stem width — interpolated across the gap, so a tapering trunk
+stays tapered.
+
+| site | fragments | trees | bridges | stem area | reconstructed | refused |
+|---|---:|---:|---:|---:|---:|---:|
+| Kaufland | 125 | 60 | 64 | 250 → 289 m² | +15.5% | 1 |
+| Barnekow_5 | 1012 | 332 | 673 | 1826 → 2078 m² | +13.8% | 7 |
+| Campus | 822 | 600 | 213 | 2908 → 3096 m² | +6.5% | 9 |
+
+![Modal fragments versus reconstructed amodal trunks](assets/amodal-bridging.jpg)
+
+**Why this is a different learning target.** A model trained on modal masks learns "mark the
+bark you can see". Trained on amodal masks it learns "mark where the trunk is" — which is
+what a downstream vectorizer needs and currently has to infer for itself.
+
+**What is refused, and why that matters.** A shared `id` is an assumption about the data, not
+a guarantee. A bridge is declined when the gap exceeds `--max-gap` (default 20 m) or when it
+would run more than `--max-offset` stem widths off the fitted axis. Refusals are counted in
+the report rather than silently dropped: **17 of ~950 bridges were refused across the three
+sites, 1.8%**, which is itself evidence that `id` really does mean one tree. A corpus where
+that rate were high would be telling you the field means something else.
