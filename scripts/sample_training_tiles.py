@@ -40,6 +40,8 @@ import math
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import numpy as np
 
 
@@ -74,29 +76,52 @@ def _repair(geoms, label, quiet=False):
     return out
 
 
-def _load_geoms(path, dst_crs, species=None, label="layer", quiet=False):
-    """Read a vector layer, reproject to `dst_crs`, return valid shapely geometries."""
+def _load_geoms(path, dst_crs, species=None, label="layer", quiet=False, amodal=False):
+    """Read a vector layer, reproject to `dst_crs`, return valid shapely geometries.
+
+    With amodal=True the stem fragments sharing an `id` are bridged across their
+    occlusion gaps first (see scripts/amodal_stems.py), so the tiles carry the whole
+    trunk rather than only the parts the camera saw.
+    """
     import fiona
     from rasterio.warp import transform_geom
     from shapely.geometry import shape
 
     with fiona.open(path) as src:
         crs = src.crs
-        out = []
-        for f in src:
+        out, ids = [], []
+        for i, f in enumerate(src):
             g = f["geometry"]
             if g is None:
                 continue
+            props = f["properties"] or {}
             if species:
-                sp = (f["properties"] or {}).get("Species")
+                sp = props.get("Species")
                 # the corpus spells beech both 'RBU' and 'rBU'
                 if sp is None or str(sp).strip().upper() not in species:
                     continue
             out.append(shape(g))
+            ids.append(props.get("id", ("_row", i)))
     if crs and dst_crs and str(crs) != str(dst_crs):
         out = [shape(transform_geom(crs, dst_crs, g.__geo_interface__)) for g in out]
     # repair after reprojection: that step can itself produce invalid rings
-    return _repair(out, label, quiet), crs
+    out = _repair(out, label, quiet)
+    if amodal:
+        from amodal_stems import bridge_tree
+
+        groups = {}
+        for g, key in zip(out, ids):
+            groups.setdefault(key, []).append(g)
+        bridged, refused = [], 0
+        for frags in groups.values():
+            geom, ref = bridge_tree(frags)
+            bridged.append(geom)
+            refused += len(ref)
+        if not quiet:
+            print(f"{label}: bridged {len(out)} fragments into {len(bridged)} amodal stems"
+                  + (f" ({refused} bridges refused)" if refused else ""))
+        out = bridged
+    return out, crs
 
 
 def _random_points(poly, n, rng):
@@ -187,7 +212,8 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
                  oversample=100.0, inward_buffer_m=None, min_stem_frac=1 / 200.0,
                  max_nodata_frac=0.02, seed=1, species=None, limit=None,
                  start_index=1, rotate=True, quiet=False,
-                 block_size_m=None, split=None, split_fractions=None, split_seed=1):
+                 block_size_m=None, split=None, split_fractions=None, split_seed=1,
+                 amodal=False):
     import rasterio
     from affine import Affine
     from PIL import Image
@@ -201,7 +227,7 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
     src = rasterio.open(ortho)
     gsd = abs(src.transform.a)
 
-    stem_geoms, _ = _load_geoms(stems, src.crs, species, "stems", quiet)
+    stem_geoms, _ = _load_geoms(stems, src.crs, species, "stems", quiet, amodal=amodal)
     if not stem_geoms:
         raise SystemExit(f"no stem polygons selected from {stems}")
     tree = STRtree(stem_geoms)
@@ -369,6 +395,9 @@ def main(argv=None):
                    metavar=("TRAIN", "VAL", "TEST"))
     p.add_argument("--split-seed", type=int, default=1,
                    help="block assignment seed; must match across the train/val/test runs")
+    p.add_argument("--amodal", action="store_true",
+                   help="bridge the occlusion gaps between fragments sharing an id, so the "
+                        "masks cover the whole trunk rather than only its visible parts")
     p.add_argument("--stats-json", default=None)
     a = p.parse_args(argv)
 
@@ -382,7 +411,8 @@ def main(argv=None):
                          a.oversample, a.inward_buffer, a.min_stem_frac,
                          a.max_nodata_frac, a.seed, species, a.limit, a.start_index,
                          not a.no_rotate, quiet=False, block_size_m=a.block_size,
-                         split=a.split, split_fractions=fr, split_seed=a.split_seed)
+                         split=a.split, split_fractions=fr, split_seed=a.split_seed,
+                         amodal=a.amodal)
     if a.stats_json:
         with open(a.stats_json, "w") as f:
             json.dump(stats, f, indent=1)
