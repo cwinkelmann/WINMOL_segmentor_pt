@@ -1,6 +1,11 @@
 import numpy as np
 import torch
 
+import pytest
+
+# the Keras mirror is opt-in (--export-keras) and TensorFlow is not installed in
+# CI; skip rather than fail collection where it is absent
+pytest.importorskip("tensorflow")
 from winmol_unet.model import UNet
 from winmol_unet.export import export_to_pt
 from winmol_unet.export_keras import export_to_keras, export_to_keras_hdf5
