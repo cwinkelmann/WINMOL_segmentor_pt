@@ -19,7 +19,7 @@ from winmol_unet.export import export_to_onnx, export_to_pt
 
 from .augment import build_augmentation
 from .config import TrainConfig
-from .dataset import StemDataset, train_val_split
+from .dataset import StemDataset, TilingStemDataset, split_ids
 from .evaluate import evaluate
 from .model_factory import build_model
 from .train import train_one_run
@@ -34,20 +34,33 @@ def _worker_init(_):
         tf.set_random_seed(info.seed % (2 ** 31 - 1))
 
 
+def _eval_dataset(image_dir, mask_dir, cfg, ids=None):
+    """Validation/test dataset: deterministic native-res grid tiling when cfg.eval_tiling,
+    else the plain resize-to-img_size StemDataset. Never augments."""
+    if cfg.eval_tiling:
+        return TilingStemDataset(image_dir, mask_dir, tile=cfg.img_size, ids=ids,
+                                 cache=cfg.cache_dataset)
+    return StemDataset(image_dir, mask_dir, cfg.img_size, transform=None, ids=ids,
+                       cache=cfg.cache_dataset)
+
+
 def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_mask_dir=None):
     if cfg.num_workers > 0 and cfg.cache_dataset:
         warnings.warn("num_workers>0 with cache_dataset=True caches per-worker and discards "
                       "it each epoch; use --no-cache-dataset for large datasets.", stacklevel=2)
+    # multiscale trains on native-res tiles (the transform's RandomSizedCrop resizes to
+    # img_size); otherwise images are resized to img_size at load time as before.
+    train_resize = not cfg.multiscale
     if val_image_dir is not None:
         # pre-materialized fixed split: train on all of image_dir, validate on the given dir
         train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
-                               cache=cfg.cache_dataset)
-        val_ds = StemDataset(val_image_dir, val_mask_dir, cfg.img_size, transform=None,
-                             cache=cfg.cache_dataset)
+                               cache=cfg.cache_dataset, resize=train_resize)
+        val_ds = _eval_dataset(val_image_dir, val_mask_dir, cfg)
     else:
-        train_ds, val_ds = train_val_split(
-            image_dir, mask_dir, cfg.val_fraction, cfg.seed, cfg.img_size,
-            transform=transform, cache=cfg.cache_dataset)
+        train_ids, val_ids = split_ids(image_dir, mask_dir, cfg.val_fraction, cfg.seed)
+        train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
+                               ids=train_ids, cache=cfg.cache_dataset, resize=train_resize)
+        val_ds = _eval_dataset(image_dir, mask_dir, cfg, ids=val_ids)
     # drop_last avoids a trailing batch of 1 (breaks BatchNorm in DeepLabV3+ ASPP
     # [N,C,1,1]) — only when there is more than one batch's worth, so a tiny set
     # isn't zeroed out. num_workers>0 is only safe with cache_dataset=False.
@@ -91,9 +104,8 @@ def _run_test(model, cfg):
     if not cfg.test_data_dir:
         return None
     from torch.utils.tensorboard import SummaryWriter
-    test_ds = StemDataset(os.path.join(cfg.test_data_dir, "train"),
-                          os.path.join(cfg.test_data_dir, "mask"),
-                          cfg.img_size, transform=None, cache=cfg.cache_dataset)
+    test_ds = _eval_dataset(os.path.join(cfg.test_data_dir, "train"),
+                            os.path.join(cfg.test_data_dir, "mask"), cfg)
     test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
     m = evaluate(model, test_loader)             # model on its current device (no aug)
     writer = SummaryWriter(os.path.join(cfg.log_dir, "test"))
@@ -194,6 +206,13 @@ def config_from_args(argv=None):
     p.add_argument("--aug-brightness-limit", type=float, default=0.2)
     p.add_argument("--aug-contrast-limit", type=float, default=0.2)
     p.add_argument("--aug-hsv-p", type=float, default=0.5)
+    p.add_argument("--multiscale", action="store_true",
+                   help="multi-scale RandomSizedCrop on native-res tiles (needs a native-res "
+                        "dataset, e.g. the 1024px BAMFORESTS tiles)")
+    p.add_argument("--crop-min-px", type=int, default=400, help="multiscale: min crop side")
+    p.add_argument("--crop-max-px", type=int, default=1024, help="multiscale: max crop side")
+    p.add_argument("--eval-tiling", action="store_true",
+                   help="deterministic native-res grid tiling for val/test (full coverage)")
     p.add_argument("--arch", default="unet", help="unet|deeplabv3plus|hrnet")
     p.add_argument("--width-mult", type=float, default=1.0,
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
@@ -223,6 +242,8 @@ def config_from_args(argv=None):
         aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
+        multiscale=a.multiscale, crop_min_px=a.crop_min_px, crop_max_px=a.crop_max_px,
+        eval_tiling=a.eval_tiling,
         arch=a.arch, width_mult=a.width_mult,
         encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,

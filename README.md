@@ -141,6 +141,32 @@ evaluated on it with no augmentation; precision/recall/F1 are printed, logged to
 (`logs/test/`), and written to `test_results.md` in `--out-dir`. Training also uses
 `ReduceLROnPlateau` (factor 0.1, patience 2) matching the R LR schedule.
 
+**Multi-scale native-fidelity training** (for native-resolution tiles larger than 512) — pass
+`--multiscale`. Instead of downscaling each tile to
+512 at load time, the loader keeps it at native resolution and augments with a **rotate →
+random-resized-crop**: the full tile is rotated by an arbitrary angle (`--aug-rotate-p` /
+`--aug-rotate-limit`, e.g. `180` for full 360°; exposed corners pad black), then a window of
+side `[--crop-min-px, --crop-max-px]` (default `400`/`1024`) is cropped and resized to 512.
+Rotating the full tile *before* cropping keeps the crop on valid interior pixels. The sampled
+crop side spans the effective GSD range (`crop_max`→coarse, native→1:1, `crop_min`→zoom-in),
+so the model becomes robust to the analyzer's user-set `tile_size`. Requires a native-res
+dataset and `--no-cache-dataset` (native tiles are too large to cache). Pair with
+`--eval-tiling` (below).
+
+Generate the larger tiles this wants with `scripts/coco_to_dataset.py`, or — from
+orthomosaics — with `scripts/sample_training_tiles.py --tile-px 1024 --extent 30`, which
+keeps the same 2.9 cm/px ground resolution over a 4× larger footprint. Sampling *larger*
+tiles and letting `--multiscale` crop them is the better division of labour: the crop range
+then supplies the scale and rotation variety, so the generator does not have to bake a single
+fixed resampling into every tile. If you do that, drop the generator's own rotation
+(`--no-rotate`) rather than rotating twice — each rotation resamples, and two of them blur
+the stem edges the model is trying to find.
+
+**Deterministic eval tiling** — `--eval-tiling` evaluates val/test by cutting each native tile
+into a full-coverage grid of non-overlapping 512 tiles (2×2 for a 1024px image) at native
+resolution, instead of one downscaled 512. Reproducible and matches the fine scale that
+`--multiscale` trains at. Applies to the val split and the `--test-data-dir` stage.
+
 **Large datasets** — the resize cache is ~4 MB/pair; for thousands of pairs pass
 `--no-cache-dataset --num-workers 4` (loads per batch with parallel workers instead of
 caching, avoiding out-of-memory).
