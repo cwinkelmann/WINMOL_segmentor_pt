@@ -19,13 +19,28 @@ def _tiny_unet_onnx(path):
     return path
 
 
+def _weight_bytes(path):
+    """Total bytes of a model's initializers, wherever they are stored.
+
+    Comparing os.path.getsize is wrong: from torch 2.9 the ONNX exporter writes weights
+    to a sidecar `.onnx.data` file, leaving the `.onnx` a ~13 KB graph stub. The
+    quantizer then writes a single self-contained file, so the file-size comparison read
+    2.4 MB against 13 KB and failed — while the weights had in fact shrunk. Measuring the
+    initializers is storage-agnostic and tests what the assertion actually means.
+    """
+    from onnx import numpy_helper
+
+    model = onnx.load(path, load_external_data=True)
+    return sum(numpy_helper.to_array(t).nbytes for t in model.graph.initializer)
+
+
 def test_dynamic_int8_roundtrips_and_keeps_contract(tmp_path):
     src = _tiny_unet_onnx(str(tmp_path / "m.onnx"))
     dst = str(tmp_path / "m.int8.onnx")
     quantize_dynamic_int8(src, dst)
 
     validate_onnx_model(onnx.load(dst))              # contract still holds
-    assert os.path.getsize(dst) < os.path.getsize(src)  # int8 weights are smaller
+    assert _weight_bytes(dst) < _weight_bytes(src)   # int8 weights are smaller
 
     os.environ["WINMOL_ONNX_FORCE_CPU"] = "1"
     seg = OnnxSegmenter(dst)
