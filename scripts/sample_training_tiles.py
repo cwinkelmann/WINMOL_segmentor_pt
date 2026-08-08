@@ -222,6 +222,17 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
     else:
         inner = area.buffer(-buf)
     if inner.is_empty:
+        if block_size_m and split:
+            # A split that yields no ground is a silent hole in the dataset: the driver
+            # loop moves on and that site simply contributes nothing to this split. It
+            # happened to Kaufland's val split, whose two 30 m blocks were edge slivers
+            # that vanished under the buffer.
+            raise SystemExit(
+                f"split {split!r} has blocks, but they shrink to nothing under the "
+                f"{buf:.2f} m intra-block buffer — this site would contribute NO tiles to "
+                f"{split!r}. Use a larger --block-size (currently {block_size_m:g} m, needs "
+                f"to exceed {2 * buf:.2f} m by enough to leave usable area), a smaller "
+                f"--extent, or accept that this site cannot supply that split.")
         raise SystemExit(
             f"the AOI shrinks to nothing under a {buf:.2f} m inward buffer "
             f"(its area is {area.area:.0f} m²). Use a smaller --extent, or pass an "
@@ -249,6 +260,17 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
     half_diag = extent_m * math.sqrt(2) / 2
     win_px = int(math.ceil(2 * half_diag / gsd))
     crop_px = int(round(extent_m / gsd))
+
+    # Provenance: a tile is a rotated crop of one orthomosaic, and without a record of
+    # which one and where, a suspicious label cannot be traced back to the imagery it came
+    # from. Auditing a tile otherwise means guessing its site from its index.
+    site = os.path.basename(ortho)
+    for suffix in ("_ortho.tif", "_ortho.tiff", ".tif", ".tiff"):
+        if site.endswith(suffix):
+            site = site[: -len(suffix)]
+            break
+    manifest_path = os.path.join(out_dir, "tiles.jsonl")
+    manifest = open(manifest_path, "a")
 
     n = start_index
     stats = {"attempts": 0, "no_stem": 0, "too_few_stems": 0, "nodata": 0, "written": 0}
@@ -316,16 +338,27 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
 
         rgb.save(os.path.join(img_dir, f"train{n}.jpeg"), quality=95)
         msk.save(os.path.join(msk_dir, f"mask{n}.gif"))
+        manifest.write(json.dumps({
+            "n": n, "site": site, "ortho": os.path.abspath(ortho),
+            "crs": str(src.crs), "centre_x": round(float(cx), 3),
+            "centre_y": round(float(cy), 3), "angle_deg": round(float(angle), 2),
+            "extent_m": extent_m, "tile_px": tile_px,
+            "gsd_m_per_px": round(extent_m / tile_px, 5),
+            "stem_frac": round(cov_tile, 5), "split": split}) + "\n")
         coverages.append(float((np.asarray(msk) > 0).mean()))
         stats["written"] += 1
         n += 1
 
+    manifest.close()
     src.close()
+    stats["manifest"] = manifest_path
+    stats["site"] = site
     stats["mean_stem_coverage"] = round(float(np.mean(coverages)), 5) if coverages else 0.0
     stats["next_index"] = n
     if not quiet:
         print(f"wrote {stats['written']} tiles to {out_dir} "
               f"(mean stem coverage {100 * stats['mean_stem_coverage']:.2f}%)")
+        print(f"  provenance appended to {os.path.basename(manifest_path)}")
         print(f"rejected: {stats['no_stem']} empty, {stats['too_few_stems']} below "
               f"{100 * min_stem_frac:.2f}% stem, {stats['nodata']} over nodata")
         if stats["written"] == 0:

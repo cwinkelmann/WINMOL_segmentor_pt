@@ -110,6 +110,22 @@ was never imaged. The script prints the factor per site. Either accept it as
 scale augmentation, or set `--extent` per site to hold the resampling near 1.0
 (Campus wants roughly `--extent 33`).
 
+## Tracing a tile back to the ground
+
+Every dataset carries a `tiles.jsonl` recording, per tile, the source orthomosaic, the
+world centre, the rotation, the ground resolution and the stem fraction. Without it a
+suspicious label cannot be checked, because a tile index says nothing about where it came
+from.
+
+```bash
+python scripts/locate_tile.py --data-dir <DS>/test --tile 182 --crop audit.png
+```
+
+`--crop` re-cuts the same footprint from the source orthomosaic at **native** resolution.
+That is usually the view that settles a label question: a Campus training tile is
+upsampled 3.2× from 6.4 cm imagery and has no detail left to judge by, while the native
+crop does.
+
 ## Leak-free splits
 
 Split by **site**, never by tile. With 100× oversampling adjacent tiles overlap

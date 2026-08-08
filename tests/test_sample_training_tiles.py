@@ -161,7 +161,11 @@ def test_same_seed_reproduces_the_same_tiles(site, tmp_path):
     b = sample_tiles(site["ortho"], site["stems"], site["aoi"], str(tmp_path / "b"),
                      limit=4, seed=7, quiet=True)
 
-    assert a == b
+    # `manifest` is an output path and differs between the two directories by
+    # construction; everything describing the sampling itself must match
+    volatile = {"manifest"}
+    assert {k: v for k, v in a.items() if k not in volatile} == \
+           {k: v for k, v in b.items() if k not in volatile}
     for n in range(1, 5):
         assert ((tmp_path / "a" / "mask" / f"mask{n}.gif").read_bytes()
                 == (tmp_path / "b" / "mask" / f"mask{n}.gif").read_bytes())
@@ -286,3 +290,73 @@ def test_block_size_must_exceed_the_buffer(site, tmp_path):
     with pytest.raises(SystemExit, match="leaves nothing after"):
         sample_tiles(site["ortho"], site["stems"], site["aoi"], str(tmp_path / "ds"),
                      block_size_m=10.0, split="train", limit=2, quiet=True)
+
+
+def test_every_written_tile_is_recorded_in_the_manifest(site, tmp_path):
+    """A tile with no provenance cannot be traced back to the ground it came from."""
+    import json
+
+    out = tmp_path / "ds"
+    stats = sample_tiles(site["ortho"], site["stems"], site["aoi"], str(out),
+                         limit=5, seed=1, quiet=True)
+
+    recs = [json.loads(l) for l in (out / "tiles.jsonl").read_text().splitlines() if l.strip()]
+    assert len(recs) == stats["written"]
+    assert [r["n"] for r in recs] == list(range(1, stats["written"] + 1))
+    for r in recs:
+        assert r["site"] == "site", "site is derived from the ortho filename"
+        assert r["crs"] == CRS
+        assert os.path.isabs(r["ortho"]) and os.path.exists(r["ortho"])
+        # the recorded centre must be inside the AOI it was drawn from
+        assert ORIGIN[0] < r["centre_x"] < ORIGIN[0] + 60
+        assert ORIGIN[1] - 60 < r["centre_y"] < ORIGIN[1]
+        assert 0.0 <= r["stem_frac"] <= 1.0
+
+
+def test_manifest_appends_across_sites_rather_than_overwriting(site, tmp_path):
+    """Pooling sites into one dataset must not lose the earlier site's provenance."""
+    import json
+
+    out = tmp_path / "ds"
+    a = sample_tiles(site["ortho"], site["stems"], site["aoi"], str(out),
+                     limit=3, seed=1, quiet=True)
+    sample_tiles(site["ortho"], site["stems"], site["aoi"], str(out),
+                 limit=3, seed=2, start_index=a["next_index"], quiet=True)
+
+    recs = [json.loads(l) for l in (out / "tiles.jsonl").read_text().splitlines() if l.strip()]
+    assert len(recs) == 6
+    assert [r["n"] for r in recs] == [1, 2, 3, 4, 5, 6]
+
+
+def test_locate_tile_round_trips_a_tile_to_its_source(site, tmp_path):
+    from scripts.locate_tile import find, native_crop
+
+    out = tmp_path / "ds"
+    sample_tiles(site["ortho"], site["stems"], site["aoi"], str(out),
+                 limit=4, seed=1, quiet=True)
+
+    rec = find(str(out), 3)
+    assert rec["n"] == 3 and rec["site"] == "site"
+    info = native_crop(rec, str(tmp_path / "crop.png"))
+    # the fixture ortho is 2 cm/px and tiles are 15 m / 512 px = 2.93 cm/px
+    assert info["native_gsd_cm"] == pytest.approx(2.0, abs=0.01)
+    assert os.path.exists(info["path"])
+
+
+def test_an_empty_split_names_the_split_it_would_silently_drop(site, tmp_path):
+    """A split with no usable ground must say so, not leave a hole in the dataset.
+
+    Kaufland's val split hit this: its two 30 m blocks were edge slivers that vanished
+    under the buffer, so the site contributed zero val tiles and the driver loop moved on
+    without comment.
+    """
+    from shapely.geometry import box
+
+    cx, cy = ORIGIN[0] + 30.0, ORIGIN[1] - 30.0
+    # a long thin AOI: blocks exist, but nothing survives the inward buffer
+    sliver = tmp_path / "sliver.shp"
+    _write_polygons(str(sliver), [box(cx - 40, cy - 6, cx + 40, cy + 6)])
+
+    with pytest.raises(SystemExit, match=r"would contribute NO tiles"):
+        sample_tiles(site["ortho"], site["stems"], str(sliver), str(tmp_path / "ds"),
+                     block_size_m=30.0, split="val", limit=2, quiet=True)
