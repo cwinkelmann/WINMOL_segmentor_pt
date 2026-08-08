@@ -62,3 +62,77 @@ def test_an_aoi_too_small_to_halve_is_reported_not_silently_emptied():
     tiny = box(0, 0, 10, 10)
     a, b = halve_aoi(tiny, 7.24)
     assert a.is_empty or b.is_empty, "caller must detect this and refuse"
+
+
+def _tiny_site(tmp_path):
+    """A site whose stem shapefile contains a self-intersecting ring."""
+    import fiona
+    import numpy as np
+    import rasterio
+    from shapely.geometry import Polygon, box, mapping
+
+    crs, gsd = "EPSG:25833", 0.02
+    ox, oy = 400000.0, 6000000.0
+    n = int(80 / gsd)
+    with rasterio.open(tmp_path / "o.tif", "w", driver="GTiff", width=n, height=n,
+                       count=3, dtype="uint8", crs=crs,
+                       transform=rasterio.transform.from_origin(ox, oy, gsd, gsd)) as dst:
+        dst.write(np.full((3, n, n), 120, "uint8"))
+
+    cx, cy = ox + 40, oy - 40
+    bowtie = Polygon([(cx, cy), (cx + 3, cy + 1), (cx, cy + 1), (cx + 3, cy)])
+    assert not bowtie.is_valid, "the fixture must actually be invalid"
+    stems = [bowtie] + [box(cx + dx, cy + dy, cx + dx + 3, cy + dy + 0.4)
+                        for dx in range(-24, 25, 4) for dy in range(-24, 25, 4)]
+    schema = {"geometry": "Polygon", "properties": {"id": "int", "Species": "str"}}
+    with fiona.open(tmp_path / "s.shp", "w", driver="ESRI Shapefile", crs=crs,
+                    schema=schema) as dst:
+        for i, g in enumerate(stems):
+            dst.write({"geometry": mapping(g), "properties": {"id": i, "Species": "RBU"}})
+    with fiona.open(tmp_path / "a.shp", "w", driver="ESRI Shapefile", crs=crs,
+                    schema={"geometry": "Polygon", "properties": {"n": "int"}}) as dst:
+        dst.write({"geometry": mapping(box(cx - 30, cy - 30, cx + 30, cy + 30)),
+                   "properties": {"n": 1}})
+    return {"name": "S", "ortho": str(tmp_path / "o.tif"),
+            "stems": str(tmp_path / "s.shp"), "aoi": str(tmp_path / "a.shp")}
+
+
+def test_pipeline_repairs_geometry_before_sampling(tmp_path):
+    """fix -> sample -> split must be structural, not left to the caller.
+
+    An invalid ring aborts GEOS on the first set operation, killing a sampling run
+    partway through, so the repair cannot be optional or ordered by convention.
+    """
+    import json
+
+    from scripts.make_splits import run
+
+    site = _tiny_site(tmp_path)
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps({"extent_m": 10.24, "caps": {"train": 4, "test": 3},
+                               "sites": [dict(site, halves=["train", "test"])]}))
+
+    manifest = run(str(cfg), str(tmp_path / "ds"), "halve", quiet=True)
+
+    rec = manifest["sites"][0]["geometry"]
+    assert rec["repaired"] == 1, "the bowtie must have been repaired in step 1"
+    assert rec["dropped"] == 0
+    # the cleaned shapefile is an artefact, not just an in-memory fix
+    assert (tmp_path / "ds" / "_clean" / "S.shp").exists()
+    assert (tmp_path / "ds" / "_clean" / "S_geom.json").exists()
+    assert manifest["sites"][0]["halves"]["train"]["tiles"] > 0
+
+
+def test_skip_fix_bypasses_step_one(tmp_path):
+    import json
+
+    from scripts.make_splits import run
+
+    site = _tiny_site(tmp_path)
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps({"extent_m": 10.24, "caps": {"train": 3, "test": 2},
+                               "sites": [dict(site, halves=["train", "test"])]}))
+
+    manifest = run(str(cfg), str(tmp_path / "ds"), "halve", skip_fix=True, quiet=True)
+    assert manifest["sites"][0]["geometry"] is None
+    assert not (tmp_path / "ds" / "_clean").exists()

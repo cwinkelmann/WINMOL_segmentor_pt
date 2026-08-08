@@ -110,6 +110,44 @@ was never imaged. The script prints the factor per site. Either accept it as
 scale augmentation, or set `--extent` per site to hold the resampling near 1.0
 (Campus wants roughly `--extent 33`).
 
+## The pipeline: fix → sample → split
+
+Three steps, in that order, because the order is forced: 50 of the corpus's 3,842 polygons
+have self-intersecting rings, and GEOS aborts on the first set operation that touches one.
+Sampling before repairing kills the run partway through — that is how the first Campus
+build died.
+
+```bash
+# all three at once; step 1 runs per site and writes its artefacts under <out>/_clean/
+python scripts/make_splits.py --config sites.json --out datasets/beech --strategy halve
+```
+
+`make_splits.py` performs the repair itself rather than trusting the caller to have done
+it, so the ordering is structural. The individual steps are also available alone:
+
+```bash
+python scripts/fix_geometries.py --stems <site>.shp --out <site>_clean.shp \
+    --report <site>_geom.json          # step 1, or --check-only as a preflight
+python scripts/sample_training_tiles.py --stems <site>_clean.shp ...   # step 2
+```
+
+**Two split strategies**, chosen with `--strategy`:
+
+- `halve` cuts each AOI across its long axis and holds the footprint half-diagonal out on
+  *each* side of the cut. Both splits stay in the same site, phenology and resolution, so
+  the score measures segmentation. It cannot tell you about transfer to a new site.
+- `sites` assigns whole orthomosaics. The stronger claim, but it needs sites to spare —
+  with three beech sites, one per split is what produced an F1 of exactly 0.0000.
+
+Verified on Kaufland: the closest train/test tile centres are 34.20 m apart, against the
+14.48 m at which two tiles could overlap at all.
+
+**A faithful port of the R generator** lives at `scripts/r_sample_tiles.py`, for comparing
+against the R model's training data on equal terms. It reproduces the R semantics including
+the ones worth avoiding — notably that R's acceptance rule sums the *whole* area of every
+polygon intersecting the footprint rather than the part inside it, so a tile can qualify on
+a stem that mostly falls outside.
+
 ## Tracing a tile back to the ground
 
 Every dataset carries a `tiles.jsonl` recording, per tile, the source orthomosaic, the

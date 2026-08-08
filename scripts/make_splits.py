@@ -39,6 +39,14 @@ becomes a measure of one acquisition. Prefer it from about six sites upward.
 
 Both strategies write `splits.json` recording exactly which ground went where, and both
 refuse loudly rather than leaving a split empty.
+
+## Pipeline order
+
+This runs **fix -> sample -> split** in that order, per site, because it has to: 50 of the
+corpus's polygons have self-intersecting rings and GEOS aborts on the first set operation
+that touches one, killing a sampling run partway through. Step 1 writes cleaned shapefiles
+and their repair reports under `<out>/_clean/`, and every later step reads those rather
+than the originals. `--skip-fix` is available when the input is already repaired.
 """
 import argparse
 import json
@@ -47,6 +55,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fix_geometries import fix as fix_geometries  # noqa: E402
 from sample_training_tiles import _load_geoms, sample_tiles  # noqa: E402
 
 
@@ -103,7 +112,27 @@ def _write_aoi(geom, path, crs):
             dst.write({"geometry": mapping(g), "properties": {"part": "half"}})
 
 
-def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, quiet=False):
+def _clean_stems(site, out_dir, quiet):
+    """Step 1 of the pipeline: repair before anything reads the geometry.
+
+    50 of the corpus's polygons have self-intersecting rings, and GEOS aborts on the
+    first set operation that touches one -- a sampling run dies tens of thousands of
+    tiles in. Doing the repair here, rather than trusting the caller to have run
+    fix_geometries.py first, makes the pipeline order structural: fix, then sample,
+    then split.
+    """
+    work = os.path.join(out_dir, "_clean")
+    os.makedirs(work, exist_ok=True)
+    cleaned = os.path.join(work, f"{site['name']}.shp")
+    report = fix_geometries(site["stems"], cleaned,
+                            os.path.join(work, f"{site['name']}_geom.json"), quiet=quiet)
+    return cleaned, {"polygons": report["polygons"], "repaired": report["repaired"],
+                     "dropped": report["dropped"],
+                     "area_delta_m2": report["area_delta_m2"]}
+
+
+def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
+        quiet=False):
     import rasterio
 
     cfg = json.load(open(config_path))
@@ -117,18 +146,25 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, quiet=False):
 
     for site in cfg["sites"]:
         name = site["name"]
+        # STEP 1 — fix. Everything downstream reads the cleaned geometry.
+        if skip_fix:
+            stems, geom_report = site["stems"], None
+        else:
+            stems, geom_report = _clean_stems(site, out_dir, quiet)
+
         if strategy == "sites":
             split = site.get("split")
             if split not in counters:
                 raise SystemExit(f"site {name!r} needs a \"split\" of train/val/test "
                                  f"for --strategy sites (got {split!r})")
-            stats = sample_tiles(site["ortho"], site["stems"], site["aoi"],
+            # STEP 2 — sample, STEP 3 — the split is the destination directory
+            stats = sample_tiles(site["ortho"], stems, site["aoi"],
                                  os.path.join(out_dir, split), extent_m=extent,
                                  limit=caps.get(split), start_index=counters[split],
                                  seed=seed, quiet=quiet)
             counters[split] = stats["next_index"]
             manifest["sites"].append({"name": name, "split": split,
-                                      "tiles": stats["written"]})
+                                      "tiles": stats["written"], "geometry": geom_report})
             continue
 
         # halve: derive two AOIs from this site and give them to different splits
@@ -145,11 +181,12 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, quiet=False):
                 f"a smaller --extent or a site with more ground is needed.")
 
         parts = site.get("halves", ["train", "test"])
-        entry = {"name": name, "split": "halved", "halves": {}}
+        entry = {"name": name, "split": "halved", "halves": {},
+                 "geometry": geom_report}
         for geom, split in zip((a, b), parts):
             tmp = os.path.join(out_dir, f"_aoi_{name}_{split}.shp")
             _write_aoi(geom, tmp, crs)
-            stats = sample_tiles(site["ortho"], site["stems"], tmp,
+            stats = sample_tiles(site["ortho"], stems, tmp,
                                  os.path.join(out_dir, split), extent_m=extent,
                                  limit=caps.get(split), start_index=counters[split],
                                  seed=seed, quiet=quiet)
@@ -177,8 +214,10 @@ def main(argv=None):
     p.add_argument("--cut-axis", choices=("auto", "ns", "ew"), default="auto",
                    help="halve only; 'auto' cuts across the AOI's long axis")
     p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--skip-fix", action="store_true",
+                   help="the stems are already repaired; skip step 1")
     a = p.parse_args(argv)
-    run(a.config, a.out, a.strategy, a.cut_axis, a.seed)
+    run(a.config, a.out, a.strategy, a.cut_axis, a.seed, a.skip_fix)
     return 0
 
 
