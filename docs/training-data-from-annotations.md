@@ -207,3 +207,42 @@ bugs are silent — a mask offset by a metre still trains, just badly.
 Sixteen tiles sampled from Kaufland, eight shown, mask in orange. Each tile is a
 different random position and rotation; the masks sit on the stems, which is what
 confirms the reprojection, the rotation and the window transform together.
+
+## Halved site vs held-out orthomosaic
+
+The same three configurations trained on both split strategies. `halve` shares each site
+between splits (disjoint ground, same forest); `sites` holds a whole orthomosaic out —
+Kaufland, which appears nowhere in training.
+
+| configuration | halved | site holdout | drop |
+|---|---:|---:|---:|
+| UNet | 0.7696 | 0.6699 | −10.0 |
+| **HRNet, from scratch** | **0.8020** | **0.7253** | **−7.7** |
+| HRNet + ImageNet | 0.7960 | 0.6901 | −10.6 |
+
+**A held-out orthomosaic costs about 8–11 F1 points.** That is a real cost, not a collapse:
+compare the earlier attempt that held out Bachsee_north and returned F1 exactly 0.0000
+because its November canopy is a colour domain nothing else covers. Kaufland is a hard but
+fair test, so whole-site evaluation is viable on this corpus — with the right site.
+
+Three things fall out.
+
+**The failure is recall, not precision.** Every configuration keeps precision near its
+halved value while recall falls 12–19 points (HRNet + ImageNet: 0.8155→0.8328 precision,
+0.7775→0.5892 recall). The models do not become confused on an unseen site; they become
+conservative. What they mark is still right — they simply do not recognise ~40% of the
+stems as stems. That is the benign failure mode: an under-reporting detector is visibly
+under-reporting, where the opposite would produce confident nonsense.
+
+**HRNet transfers better, and the gap widens with difficulty.** It leads UNet by 3.2 points
+on the halved split and 5.5 on the holdout, and degrades least (−7.7 against −10.0 and
+−10.6). Architecture choice matters more the harder the test.
+
+**ImageNet pretraining hurts transfer here.** It costs 0.6 points on the halved split and
+3.5 on the holdout. Combined with its earlier +0.4 on the smaller block split, the pattern
+is consistent: pretrained weights substitute for data, and their value turns negative once
+enough real data is present. From scratch is the better default on this corpus.
+
+One caveat on the size of the drop. This test stacks three shifts at once — unseen site,
+July leaf-on against October and February training, and near-native 1.05x resampling
+against 3.2x/1.7x in training. The 8–11 points are their sum, not site transfer alone.
