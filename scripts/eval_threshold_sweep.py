@@ -28,6 +28,19 @@ import sys
 import numpy as np
 
 
+def _ap_from_curve(precision, recall):
+    """Step-wise integral of precision over recall: sum (R_i - R_{i-1}) * P_i.
+
+    It must be walked in order of INCREASING recall. The arrays in `sweep` are indexed by
+    ascending threshold, so recall runs the other way; integrating them in index order
+    gives a negative "AP", which is how this bug announced itself.
+    """
+    order = np.argsort(recall)
+    r_sorted, p_sorted = np.asarray(recall)[order], np.asarray(precision)[order]
+    dr = np.diff(np.concatenate([[0.0], r_sorted]))
+    return float(np.sum(dr * p_sorted))
+
+
 def sweep(model_path, data_dir, arch="hrnet", bins=2000, limit=None, device="cpu",
           quiet=False):
     import glob
@@ -74,10 +87,7 @@ def sweep(model_path, data_dir, arch="hrnet", bins=2000, limit=None, device="cpu
         f1 = np.where(precision + recall > 0,
                       2 * precision * recall / np.maximum(precision + recall, 1e-9), 0.0)
 
-    # AP as the step-wise integral of precision over recall, the definition that does not
-    # reward interpolation: sum (R_i - R_{i+1}) * P_i walking from high threshold to low
-    dr = np.diff(np.concatenate([[0.0], recall]))
-    ap = float(np.sum(dr * precision))
+    ap = _ap_from_curve(precision, recall)
 
     best = int(np.argmax(f1))
     half = int(0.5 * bins)

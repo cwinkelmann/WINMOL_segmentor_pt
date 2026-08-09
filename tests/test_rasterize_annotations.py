@@ -129,3 +129,26 @@ def test_non_overlapping_annotations_are_rejected_not_written_empty(tmp_path):
 
     with pytest.raises(SystemExit, match="do not overlap"):
         rasterize(str(tmp_path / "s.shp"), str(tmp_path / "o.tif"), str(tmp_path / "m.tif"))
+
+
+def test_average_precision_is_a_probability_not_a_negative_number():
+    """AP integrates precision over *increasing* recall.
+
+    The arrays in eval_threshold_sweep are indexed by ascending threshold, so recall runs
+    the other way; integrating them in index order yields a negative value. That is not a
+    subtle wrongness — it is outside the range AP can take — so it is worth pinning.
+    """
+    import numpy as np
+
+    from scripts.eval_threshold_sweep import _ap_from_curve
+
+    # a perfect ranker: precision 1 everywhere, recall sweeping the full range
+    thresholds = np.linspace(0, 1, 101)
+    recall = 1.0 - thresholds          # decreasing with index, as in the real arrays
+    precision = np.ones_like(recall)
+    ap = _ap_from_curve(precision, recall)
+    assert 0.0 <= ap <= 1.0
+    assert ap == pytest.approx(1.0, abs=1e-6)
+
+    # a ranker with precision 0.5 across the same recall span scores about half
+    assert _ap_from_curve(np.full_like(recall, 0.5), recall) == pytest.approx(0.5, abs=1e-6)
