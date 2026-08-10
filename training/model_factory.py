@@ -22,6 +22,9 @@ _DEFAULT_ENCODER = {
     "segformer": "mit_b0",              # b1/b2/b3/b5 scale to 13.7/24.7/44.6/82.0M
     "dpt": "tu-vit_base_patch16_384",
     "convnext": "tu-convnext_large.dinov3_lvd1689m",   # _base is 92.7M, _large 203.3M
+    # Decoder study: same encoder as 'convnext', so a difference is the decoder's.
+    "fpn": "tu-convnext_large.dinov3_lvd1689m",
+    "pan": "tu-convnext_large.dinov3_lvd1689m",
 }
 
 
@@ -63,6 +66,16 @@ def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
         # weights named by the encoder's own tag -- '.dinov3_lvd1689m' here, NOT ImageNet.
         return smp.Unet(encoder_name=enc, encoder_weights=encoder_weights,
                         in_channels=IN_CHANNELS, classes=OUT_CHANNELS)
+    if arch in ("fpn", "pan"):
+        # Decoder arm of the pyramid study, holding the encoder fixed at 'convnext''s.
+        # Unet's decoder is a plain top-down cascade; FPN fuses a lateral pyramid; PAN
+        # adds the bottom-up path that carries fine-scale detail back up to the coarse
+        # levels. PAN is the closest thing smp ships to the BiFPN that won recall, MAE
+        # and AP on full-size validation in the HerdNet study -- BiFPN is PAN's fusion
+        # made bidirectional and per-connection weighted.
+        return (smp.FPN if arch == "fpn" else smp.PAN)(
+            encoder_name=enc, encoder_weights=encoder_weights,
+            in_channels=IN_CHANNELS, classes=OUT_CHANNELS)
     if arch == "dpt":
         # DPT's ViT encoders are built for a fixed input (384 or 224) and assert on
         # anything else. dynamic_img_size=True interpolates the position embeddings
@@ -72,4 +85,4 @@ def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
                        in_channels=IN_CHANNELS, classes=OUT_CHANNELS,
                        dynamic_img_size=True)
     raise ValueError(f"unknown arch {arch!r}; choose 'unet', 'deeplabv3plus', 'hrnet', "
-                     f"'segformer', 'convnext' or 'dpt'")
+                     f"'segformer', 'convnext', 'fpn', 'pan' or 'dpt'")
