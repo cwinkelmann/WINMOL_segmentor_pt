@@ -208,15 +208,17 @@ def config_from_args(argv=None):
     p.add_argument("--aug-hsv-p", type=float, default=0.5)
     p.add_argument("--multiscale", action="store_true",
                    help="multi-scale RandomSizedCrop on native-res tiles (needs a native-res "
-                        "dataset, e.g. the 1024px BAMFORESTS tiles)")
+                        "dataset, e.g. --native-px 1024 from sample_training_tiles.py)")
     p.add_argument("--crop-min-px", type=int, default=400, help="multiscale: min crop side")
     p.add_argument("--crop-max-px", type=int, default=1024, help="multiscale: max crop side")
     p.add_argument("--eval-tiling", action="store_true",
                    help="deterministic native-res grid tiling for val/test (full coverage)")
-    p.add_argument("--arch", default="unet", help="unet|deeplabv3plus|hrnet")
+    p.add_argument("--arch", default="unet",
+                   help="unet|deeplabv3plus|hrnet|segformer|dpt")
     p.add_argument("--width-mult", type=float, default=1.0,
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
-    p.add_argument("--encoder", default="resnet34", help="smp encoder (deeplabv3plus)")
+    p.add_argument("--encoder", default=None,
+                   help="smp encoder; default is per-arch (e.g. mit_b0 for segformer, mit_b2/b3/b5 for larger)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     p.add_argument("--export-keras", action="store_true",
                    help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
