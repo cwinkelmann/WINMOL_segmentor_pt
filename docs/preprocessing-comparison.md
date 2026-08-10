@@ -173,13 +173,38 @@ pretraining reversed it (b2 0.7855). The open question is whether 82M pretrained
 
 All rows train on arm B (fixed-metre), so they are directly comparable to §1's arm-B column.
 
-| model | params | pretrained | test F1 | P / R | vs same arch from scratch |
-|---|---:|---|---:|---|---:|
-| HRNet w18 | 16.1M | — | **0.7229** | 0.8181 / 0.6475 | *(the §1 reference)* |
-| HRNet w18 | 16.1M | ImageNet | 0.7218 | 0.8563 / 0.6238 | **−0.1** — no effect |
-| SegFormer mit_b0 | 3.7M | — | 0.6623 | 0.7973 / 0.5663 | *(the §1 reference)* |
-| SegFormer mit_b2 | 24.7M | ImageNet | 0.7041 | 0.7933 / 0.6330 | **+4.2** over b0 scratch |
-| SegFormer mit_b5 | 82.0M | ImageNet | *pending* | | |
+| model | params | pretrained | val F1 | test F1 | P / R |
+|---|---:|---|---:|---:|---|
+| SegFormer mit_b0 | 3.7M | — | 0.7537 | 0.6623 | 0.7973 / 0.5663 |
+| SegFormer mit_b2 | 24.7M | ImageNet | 0.7623 | 0.7041 | 0.7933 / 0.6330 |
+| SegFormer mit_b5 | 82.0M | ImageNet | **0.7731** | 0.7188 | 0.8081 / 0.6473 |
+| **HRNet w18** | **16.1M** | **—** | 0.7641 | **0.7229** | 0.8181 / 0.6475 |
+| HRNet w18 | 16.1M | ImageNet | 0.7708 | 0.7218 | 0.8563 / 0.6238 |
+
+**Answer to the question this probe was built for: no — 82M pretrained does not beat a 16M
+HRNet.** It does not lose either. The top three (HRNet scratch 0.7229, HRNet+ImageNet
+0.7218, mit_b5 0.7188) span **0.4 points across a 5× parameter range**, which at n=1 is
+indistinguishable. **Take the cheapest model that ties: HRNet w18 from scratch.**
+
+**Validation ranks these models in almost the reverse order of test.** mit_b5 has the best
+val F1 in the entire study (0.7731) and the best val loss (0.318), and comes third on test.
+HRNet+ImageNet beats HRNet-scratch on validation (0.7708 vs 0.7641) and loses on test.
+**Capacity and ImageNet weights buy in-domain fit that does not survive the site change** —
+so a model selected on this corpus's validation split will be the wrong model for the
+Analyzer. That is the practical warning in this table.
+
+**ImageNet weights are worth nothing on HRNet here (−0.1)**, and what little they move goes
+the wrong way: precision up (0.8181 → 0.8563), recall down (0.6475 → 0.6238). Pretrained
+features make the model more conservative on a corpus whose failure mode is already recall.
+This is the third measurement of the same effect — +0.4 on a block split, −3.5 on a
+held-out ortho, ~0 here. **Pretrained weights substitute for data; their value goes to zero
+once enough real data is present.**
+
+**Within SegFormer, capacity does scale — but the clean comparison is smaller than it
+looks.** b0→b2 is +4.2 and b2→b5 is +1.5, but b0 is from scratch while b2 and b5 carry
+ImageNet weights, so only **b2→b5 isolates capacity: +1.5 points for 3.3× the parameters.**
+This does reverse the earlier from-scratch finding that 24.7M overfits this corpus —
+with pretraining, capacity helps rather than hurts, it just helps very little.
 
 ---
 
