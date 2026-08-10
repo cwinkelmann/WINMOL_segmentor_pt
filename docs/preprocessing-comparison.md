@@ -33,17 +33,17 @@ Test F1 on Campus_Oberheide, from scratch.
 
 | arm | UNet | HRNet | SegFormer b0 |
 |---|---:|---:|---:|
-| **A** — R port | 0.3760 | 0.5702 | *failed — relaunch* |
-| **B** — fixed-metre | **0.6410** | *pending* | *pending* |
-| **C** — native + multiscale | *pending* | *pending* | *pending* |
+| **A** — R port | 0.3760 | 0.5702 | *running (relaunched)* |
+| **B** — fixed-metre | 0.6410 | *pending* | **0.6623** |
+| **C** — native + multiscale | 0.5647 | 0.6160 | *pending* |
 
 Precision / recall, same runs:
 
 | arm | UNet | HRNet | SegFormer b0 |
 |---|---|---|---|
-| **A** — R port | 0.8561 / 0.2409 | 0.8487 / 0.4294 | *failed* |
-| **B** — fixed-metre | 0.8689 / 0.5079 | *pending* | *pending* |
-| **C** — native + multiscale | *pending* | *pending* | *pending* |
+| **A** — R port | 0.8561 / 0.2409 | 0.8487 / 0.4294 | *running* |
+| **B** — fixed-metre | 0.8689 / 0.5079 | *pending* | 0.7973 / 0.5663 |
+| **C** — native + multiscale | 0.5647 | 0.6160 | *pending* |
 
 **Verdict against the acceptance criteria:** *pending — needs arms B and C complete.*
 
