@@ -54,3 +54,31 @@ python scripts/benchmark_architectures.py --gen-data-dir <GEN> --spec-data-dir <
 - Tests are TDD-first and are the executable spec (contract parity, export/serve, two-stage handoff). Add/adjust tests before changing behavior. Keep them **hermetic** (synthetic data in `tmp_path`, `encoder_weights=None` for smp archs to avoid downloads).
 - ONNX parity/serve tests pin the CPU EP via the `WINMOL_ONNX_FORCE_CPU` env var — CoreML/CUDA compute in fp16 and are not bit-exact; use CPU for exact fp32 comparisons.
 - `pyproject.toml` scopes filterwarnings; keep exports/warnings clean rather than re-adding noise.
+
+## Running experiments — use the `winmol-experiment` skill
+
+Any claim that one configuration beats another goes through
+`.claude/skills/winmol-experiment/SKILL.md`. It is short, and every rule in it exists
+because its absence already produced a wrong result in this repo:
+
+- **Name the yardstick before training.** Arms trained on different data are scored on
+  different exams. A modal- and an amodal-trained model each scored against their own
+  labels are not comparable; three preprocessing arms with different footprints are not
+  comparable on F1. For full-pipeline claims the yardstick is full-orthomosaic inference
+  **masked to the AOI** — outside the windthrow polygon stems are real but undigitised, so
+  scoring the whole raster punishes the better model hardest.
+- **Verify leak-freedom numerically** from `tiles.jsonl`, not by assertion. Oversampled
+  tiles overlap; a random tile split leaks.
+- **Sanity-check metrics before trusting them.** AP outside [0,1], file-size comparisons
+  that break on external data, and skeleton endpoints dominated by outline spurs have all
+  produced confidently wrong conclusions here. Pin any metric you rely on with a test.
+- **Cross-validate across data sources** — leave-one-site-out by default; report every
+  fold; state superiority as a fold count, never a mean.
+- **Random figures by default.** A selected figure must be labelled as selected and shown
+  alongside a random sample.
+- **Reports render from JSON copied verbatim from `test_results.md`** and compute no
+  metrics, so they cannot drift from what training reported.
+
+Datasets carry `tiles.jsonl` (source ortho, world centre, rotation, GSD, stem fraction);
+`scripts/locate_tile.py --tile N --crop out.png` re-cuts a tile's footprint at native
+resolution, which is what settles most label questions.
