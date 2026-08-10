@@ -1,7 +1,7 @@
 """Model factory: select the segmentation architecture.
 
 'unet' uses the in-repo winmol_unet.model.UNet (shared, analyzer-installed package).
-'deeplabv3plus', 'hrnet', 'segformer' and 'dpt' use segmentation-models-pytorch (smp) — a training-only
+'deeplabv3plus', 'hrnet', 'segformer', 'convnext' and 'dpt' use segmentation-models-pytorch (smp) — a training-only
 dependency, imported lazily so the 'unet' path never requires it. Every branch returns
 an nn.Module whose forward(x:[N,3,512,512]) -> logits [N,1,512,512], which is the only
 contract the training loop and winmol_unet.export.export_to_onnx require.
@@ -21,6 +21,7 @@ _DEFAULT_ENCODER = {
     "hrnet": "tu-hrnet_w18",
     "segformer": "mit_b0",              # b1/b2/b3/b5 scale to 13.7/24.7/44.6/82.0M
     "dpt": "tu-vit_base_patch16_384",
+    "convnext": "tu-convnext_large.dinov3_lvd1689m",   # _base is 92.7M, _large 203.3M
 }
 
 
@@ -50,6 +51,18 @@ def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
         # larger variants would be fitting noise.
         return smp.Segformer(encoder_name=enc, encoder_weights=encoder_weights,
                              in_channels=IN_CHANNELS, classes=OUT_CHANNELS)
+    if arch == "convnext":
+        # A Unet decoder on a ConvNeXt encoder carrying DINOv3 weights distilled from the
+        # ViT teacher. The DINOv3 ViTs are patch-16, so every feature they emit is stride
+        # 16: a stem 15-40 px wide at the analyzer's 2.93 cm/px is then 1-2.5 tokens, the
+        # resolution tax that sank DPT (0.4917, worst measured here). The ConvNeXt
+        # distillations keep the stride-4/8/16/32 pyramid a Unet decoder needs, so they
+        # carry the pretraining without paying it.
+        #
+        # encoder_weights='imagenet' resolves to timm pretrained=True, which fetches the
+        # weights named by the encoder's own tag -- '.dinov3_lvd1689m' here, NOT ImageNet.
+        return smp.Unet(encoder_name=enc, encoder_weights=encoder_weights,
+                        in_channels=IN_CHANNELS, classes=OUT_CHANNELS)
     if arch == "dpt":
         # DPT's ViT encoders are built for a fixed input (384 or 224) and assert on
         # anything else. dynamic_img_size=True interpolates the position embeddings
@@ -59,4 +72,4 @@ def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
                        in_channels=IN_CHANNELS, classes=OUT_CHANNELS,
                        dynamic_img_size=True)
     raise ValueError(f"unknown arch {arch!r}; choose 'unet', 'deeplabv3plus', 'hrnet', "
-                     f"'segformer' or 'dpt'")
+                     f"'segformer', 'convnext' or 'dpt'")

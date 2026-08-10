@@ -214,7 +214,7 @@ def config_from_args(argv=None):
     p.add_argument("--eval-tiling", action="store_true",
                    help="deterministic native-res grid tiling for val/test (full coverage)")
     p.add_argument("--arch", default="unet",
-                   help="unet|deeplabv3plus|hrnet|segformer|dpt")
+                   help="unet|deeplabv3plus|hrnet|segformer|convnext|dpt")
     p.add_argument("--width-mult", type=float, default=1.0,
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
     p.add_argument("--encoder", default=None,

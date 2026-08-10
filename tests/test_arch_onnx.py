@@ -9,12 +9,20 @@ from winmol_unet.export import export_to_onnx
 from winmol_unet.runtime import OnnxSegmenter
 
 
-@pytest.mark.parametrize("arch", ["deeplabv3plus", "hrnet", "segformer"])
-def test_arch_exports_and_serves_nhwc(tmp_path, arch, monkeypatch):
+@pytest.mark.parametrize("arch,encoder", [
+    ("deeplabv3plus", None),
+    ("hrnet", None),
+    ("segformer", None),
+    # convnext's production default is tu-convnext_large.dinov3_lvd1689m (203.3M), whose
+    # ONNX artifact is ~800 MB. Exercise the same code path on the tiny variant: identical
+    # stage structure and channel-list plumbing into the Unet decoder, ~28M to export.
+    ("convnext", "tu-convnext_tiny.dinov3_lvd1689m"),
+])
+def test_arch_exports_and_serves_nhwc(tmp_path, arch, encoder, monkeypatch):
     # Pin the CPU EP so the check is EP-independent (CoreML/CUDA compute in fp16 and
     # would nudge sigmoid outputs past a tight epsilon — see WINMOL_ONNX_FORCE_CPU).
     monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
-    model = build_model(arch, encoder_weights=None).eval()
+    model = build_model(arch, encoder=encoder, encoder_weights=None).eval()
     path = export_to_onnx(model, str(tmp_path / f"{arch}.onnx"))   # opset 17 + contract validate
     out = OnnxSegmenter(path).predict_on_batch(
         np.random.rand(2, 512, 512, 3).astype(np.float32))
