@@ -1,7 +1,8 @@
 # Training-preprocessing comparison — results
 
 Design: `docs/superpowers/specs/2026-08-10-preprocessing-comparison-design.md`.
-**Status: extraction grid complete (9/9); capacity probe and synthetic pretraining in progress.** Cells marked *pending* have not run yet; `failed` needs a relaunch.
+**Status: complete.** 21 runs — 9 extraction, 5 capacity, 3 synthetic (rerun after a
+validation fix voided the first pass), 3 DINOv3 decoder, 1 of which failed and is marked so.
 Every filled value is copied from that run's own `test_results.md`.
 
 ## Setup
