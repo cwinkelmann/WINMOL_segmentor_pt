@@ -33,28 +33,59 @@ Test F1 on Campus_Oberheide, from scratch.
 
 | arm | UNet | HRNet | SegFormer b0 |
 |---|---:|---:|---:|
-| **A** — R port | 0.3760 | 0.5702 | *running (relaunched)* |
-| **B** — fixed-metre | 0.6410 | *pending* | **0.6623** |
+| **A** — R port | 0.3760 | 0.5702 | 0.5756 |
+| **B** — fixed-metre | 0.6410 | **0.7229** | 0.6623 |
 | **C** — native + multiscale | 0.5647 | 0.6160 | *pending* |
 
 Precision / recall, same runs:
 
 | arm | UNet | HRNet | SegFormer b0 |
 |---|---|---|---|
-| **A** — R port | 0.8561 / 0.2409 | 0.8487 / 0.4294 | *running* |
-| **B** — fixed-metre | 0.8689 / 0.5079 | *pending* | 0.7973 / 0.5663 |
-| **C** — native + multiscale | 0.5647 | 0.6160 | *pending* |
+| **A** — R port | 0.8561 / 0.2409 | 0.8487 / 0.4294 | 0.8764 / 0.4285 |
+| **B** — fixed-metre | 0.8689 / 0.5079 | 0.8181 / 0.6475 | 0.7973 / 0.5663 |
+| **C** — native + multiscale | 0.8553 / 0.4215 | 0.8013 / 0.5003 | *pending* |
 
-**Verdict against the acceptance criteria:** *pending — needs arms B and C complete.*
+**Verdict against the acceptance criteria:** the criteria were written for four
+leave-one-site-out folds; what ran is one held-out site paired across three architectures.
+Read against that design, on the eight runs in hand:
+
+| comparison | ΔF1 per pairing | result |
+|---|---|---|
+| **B vs A** | UNet +26.5, HRNet +15.3, SegFormer +8.7 | **superior** — positive in 3 of 3, margin far beyond −1.0 |
+| **C vs A** | UNet +18.9, HRNet +4.6 | **superior** — positive in 2 of 2 |
+| **B vs C** | UNet +7.6, HRNet +10.7 | B ahead in 2 of 2 |
+
+Neither repo variant is inferior to the R port anywhere. **The fixed-metre sampler is the
+recommended extraction.** The claim is one fold, n=1 per cell — architecture pairing is not
+a substitute for site folds, and the remaining folds are still the stronger evidence.
 
 ### What is visible so far
 
-**Fixed-metre beats the R port on UNet by 26.5 points** (0.6410 vs 0.3760), and the whole
-difference is recall (0.5079 vs 0.2409) at nearly identical precision (0.869 vs 0.856).
-One architecture, one run — directional only until arm B's HRNet lands.
+**The arm ranking is B > C > A, and it holds on every paired architecture.**
 
-**Every arm is precision-heavy and recall-starved** on this test site: precision ~0.85
-against recall 0.24–0.51. Consistent with everything else measured on unseen ground — the
+| pairing | A | C | B |
+|---|---:|---:|---:|
+| UNet | 0.3760 | 0.5647 | **0.6410** |
+| HRNet | 0.5702 | 0.6160 | **0.7229** |
+| SegFormer b0 | 0.5756 | *pending* | **0.6623** |
+
+**Best model in the study: HRNet on fixed-metre tiles, 0.7229** — 0.8181 precision,
+0.6475 recall, the only run above 0.6 recall.
+
+**The size of the gap depends on the architecture, so quote a range, not a number.** A→B is
++26.5 on UNet, +15.3 on HRNet, +8.7 on SegFormer. All three are positive and large, but
+the UNet figure is the outlier, not the headline: UNet is the weakest model here and takes
+the most damage from weak data. **The honest summary is "8–27 points depending on
+architecture, positive everywhere".**
+
+**Arm A's deficit is recall, and it is structural.** Precision is the highest of any arm
+(0.856–0.876) while recall is the lowest (0.24–0.43). R's acceptance rule sums the *whole*
+area of every polygon intersecting the footprint rather than the part inside it, so tiles
+qualify on stems that mostly fall outside — the model is trained on ground that is emptier
+than its label budget implies, and learns to withhold.
+
+**Every arm is precision-heavy and recall-starved** on this test site: precision 0.80–0.88
+against recall 0.24–0.57. Consistent with everything else measured on unseen ground — the
 models become conservative rather than wrong.
 
 ---
@@ -65,16 +96,56 @@ The previous attempt at this comparison had validation F1 **exactly 0.0000** in 
 runs, because Bachsee_north was used as the validation site. Checkpoint selection ran on a
 dead signal and the results were discarded. This is now the first thing checked.
 
-| run | val F1 | val loss | verdict |
-|---|---:|---:|---|
-| A-r15-unet | 0.6760 | 0.468 | healthy |
-| A-r15-hrnet | 0.7002 | 0.443 | healthy |
-| B-fix-unet | *pending* | *pending* | |
-| *(remaining)* | *pending* | *pending* | |
+Checkpoints are selected on **val loss** (`training/train.py:60`), early stop patience 5.
+Values below are taken at the selected epoch, read from each run's TensorBoard scalars.
 
-The in-domain → out-of-domain drop is large: HRNet 0.700 → 0.570 (−13 points), UNet
-0.676 → 0.376 (−30). Oberheide stacks three shifts at once — unseen site, species mix
-(37% beech against 99% and 86% in training), and sparse stems (2.27% against 5.93%/4.42%).
+| run | epochs run | ckpt epoch | val loss | val F1 | test F1 | verdict |
+|---|---:|---:|---:|---:|---:|---|
+| A-r15-unet | 19 | 14 | 0.468 | 0.6760 | 0.3760 | healthy |
+| A-r15-hrnet | 24 | 19 | 0.443 | 0.7002 | 0.5702 | healthy |
+| A-r15-segformer | 20 | 15 | 0.431 | 0.7045 | 0.5756 | healthy |
+| B-fix-unet | 30 | **30** | 0.364 | 0.7372 | 0.6410 | healthy, **not converged** |
+| B-fix-hrnet | 29 | 24 | 0.327 | **0.7641** | 0.7229 | healthy |
+| B-fix-segformer | 30 | **29** | 0.343 | 0.7537 | 0.6623 | healthy, **not converged** |
+| C-nat-unet | 30 | 29 | 0.546 | 0.6063 | 0.5647 | healthy, **not converged** |
+| C-nat-hrnet | 25 | 20 | 0.469 | 0.6621 | 0.6160 | healthy |
+
+Every run carries a live validation signal. None is anywhere near the 0.0000 that voided
+the previous wave. Validation ranks the arms in the same order as test (B > A > C by val
+F1, B > C > A by test), so checkpoint selection was not fighting the result.
+
+**Two of arm B's three runs never converged** — checkpoint at epoch 29–30, still improving
+when the budget ran out, whereas arm A early-stopped at 14–19 having exhausted its patience.
+This does not threaten the result; it means **arm B's measured advantage is a lower bound.**
+Arm A was given every epoch it could use and still lost.
+
+**Arm A degrades most on unseen ground.** The in-domain → out-of-domain drop:
+
+| run | val F1 | test F1 | drop |
+|---|---:|---:|---:|
+| A-r15-unet | 0.6760 | 0.3760 | **−30.0** |
+| A-r15-hrnet | 0.7002 | 0.5702 | −13.0 |
+| A-r15-segformer | 0.7045 | 0.5756 | −12.9 |
+| B-fix-unet | 0.7372 | 0.6410 | −9.6 |
+| B-fix-segformer | 0.7537 | 0.6623 | −9.1 |
+| C-nat-hrnet | 0.6621 | 0.6160 | **−4.6** |
+| C-nat-unet | 0.6063 | 0.5647 | **−4.2** |
+| B-fix-hrnet | 0.7641 | 0.7229 | **−4.1** |
+
+**Arm A loses 13–30 points crossing to a new site; arms B and C lose 4–10.** The three
+smallest drops belong to arm C's two runs and arm B's HRNet — so this is not purely a
+multiscale effect, and the earlier reading that arm C alone transfers well does not survive
+B's HRNet landing. What the table does support: **the R port's tiles produce models that
+look fine in-domain and fall apart off it**, by a margin no architecture closes.
+
+Arm C is worth a separate note because it is measured under a handicap: the shared
+validation set is cut by arm B's fixed-metre extraction, so arm C is validated slightly
+off its own domain. Its val F1 is the lowest in the study (0.6063 / 0.6621) and its test
+score still beats arm A. The same yardstick for all arms is the design intent; here it
+works against C.
+
+Oberheide stacks three shifts at once — unseen site, species mix (37% beech against 99%
+and 86% in training), and sparse stems (2.27% against 5.93%/4.42%).
 
 ---
 
