@@ -82,3 +82,19 @@ because its absence already produced a wrong result in this repo:
 Datasets carry `tiles.jsonl` (source ortho, world centre, rotation, GSD, stem fraction);
 `scripts/locate_tile.py --tile N --crop out.png` re-cuts a tile's footprint at native
 resolution, which is what settles most label questions.
+
+## Running the Analyzer — use the `winmol-analyzer` skill
+
+`.claude/skills/winmol-analyzer/SKILL.md` covers the sibling repo at
+`/Users/christian/hnee/WINMOL_Analyzer`: the five-positional-argument CLI contract, handing
+a trained ONNX over, and full-orthomosaic evaluation against a rasterised stem map.
+
+Two things from it are worth knowing even without reading it:
+
+- **`tile_size` is a scale knob, not a performance knob.** The Analyzer cuts
+  `ceil(tile_size / pixel_size)` pixels and resizes to 512, so the model's effective ground
+  resolution is `tile_size / 512` — 2.93 cm/px at the default 15 m, independent of the
+  orthomosaic's own resolution. A fixed-scale model loses 5.2 F1 across ±30% zoom, so check
+  this before blaming a model for inconsistent results.
+- **Evaluate inside the AOI only.** Outside the windthrow polygon stems are real but
+  undigitised; scoring the whole raster counts correct detections as false positives.
