@@ -214,8 +214,39 @@ Two-stage: stage 1 on generated data, stage 2 on arm B.
 
 | stage-1 source | tiles | nature | HRNet | UNet |
 |---|---:|---|---:|---:|
-| `armC-barnekow` (ControlNet / SD) | 1,200 | rich imagery, 2.2% mask noise | *pending* | *pending* |
-| `SynthRGBD-3000` (Blender) | 3,000 | exact masks, no vegetation green | *pending* | — |
+| *(none — the arm B baseline)* | — | — | **0.7229** | **0.6410** |
+| `armC-barnekow` (ControlNet / SD) | 1,200 | rich imagery, 2.2% mask noise | 0.7205 (**−0.2**) | 0.6374 (**−0.4**) |
+| `SynthRGBD-3000` (Blender) | 3,000 | exact masks, no vegetation green | 0.7091 (**−1.4**) | — |
+
+**Synthetic pretraining is worth nothing on this corpus.** All three arms land within
+−0.2 to −1.4 of training on arm B alone. Neither generated imagery (Stable Diffusion,
+real-looking texture, 2.2% mask noise) nor generated geometry (Blender, exact masks, no
+vegetation colour) beats simply not doing it. This matches the earlier architecture study,
+where synthetic pretraining was +0.1 on HRNet — within noise then, within noise now.
+
+Stage 1 itself works: val F1 reaches 0.887–0.903 on the generated data, so the models
+learn those sets easily. The features just do not transfer.
+
+### These numbers replace an earlier, wrong set
+
+The first pass reported `SynthRGBD` at **+1.1** and `armC-barnekow`+UNet at **+3.6**.
+Those runs are void. `run_two_stage` built stage 2's loaders without passing
+`--val-data-dir`, so it silently fell back to `split_ids()` — a random split of the arm-B
+training tiles. That is both a *different* signal from the single-stage baselines it was
+being compared against (in-training-distribution: stage-2 val F1 read 0.80–0.81 against
+0.73–0.76 for the same data properly held out) and a *leaky* one, because the samplers
+oversample and adjacent tiles overlap.
+
+Test metrics were never affected — those always used the shared Oberheide set — but
+checkpoint selection was, and it moved the answer by up to 3.9 points and flipped the sign
+on two of three arms. Fixed in `a1ca11d`, pinned by
+`tests/test_two_stage.py::test_two_stage_stage2_validates_on_the_given_val_dir`.
+
+| run | leaky-val (void) | fixed | shift |
+|---|---:|---:|---:|
+| `armC-barnekow` + HRNet | 0.7147 | 0.7205 | +0.6 |
+| `SynthRGBD` + HRNet | 0.7343 | 0.7091 | **−2.5** |
+| `armC-barnekow` + UNet | 0.6766 | 0.6374 | **−3.9** |
 
 ### Why only armC-barnekow
 
@@ -250,3 +281,50 @@ satisfied by bright blobs, not by stems. Edge energy exposed the tail the mean c
   and needs a 46 m buffer; no block size leaves usable ground on either training site, so
   in-domain validation was impossible at that size. This is a property of the corpus's
   small AOIs, not a bug — and it caps how much scale diversity arm C can carry.
+
+---
+
+## 5 · DINOv3 pretraining and the decoder study
+
+DINOv3 weights are in the installed timm (1.0.28), satellite variants included. The
+`convnext_*.dinov3_*` distillations were chosen over the ViTs deliberately: DINOv3's ViTs
+are patch-16, so every feature is stride 16, and a stem 15–40 px wide at the Analyzer's
+2.93 cm/px is then 1–2.5 tokens — the resolution tax that produced DPT's 0.4917, the worst
+number in this project. The ConvNeXt distillations keep the stride-4/8/16/32 pyramid.
+
+Encoder held fixed at `tu-convnext_large.dinov3_lvd1689m` (203.3M); only the decoder varies.
+All on arm B, same val and test as everything above.
+
+| decoder | test F1 | P / R | vs HRNet-scratch (0.7229) |
+|---|---:|---|---:|
+| Unet | 0.6499 | 0.8411 / 0.5295 | **−7.3** |
+| FPN | 0.5286 | 0.8827 / 0.3773 | −19.4 |
+| PAN | *failed — see below* | | |
+
+**DINOv3 does not help here.** A 203M encoder carrying self-supervised features from
+1.689B images loses to a 16.1M HRNet trained from scratch by 7.3 points. That is the same
+verdict the capacity probe reached from the other direction (§3: 82M pretrained ties 16M
+from scratch), and the same one the held-out-ortho study reached about ImageNet weights.
+**Pretrained features keep failing to beat in-domain training on this corpus**, and the
+corpus is the reason: under one hectare of digitised stem, at a ground resolution and a
+subject matter that no pretraining set covers.
+
+### PAN did not produce a result
+
+`smp.PAN` reports F1 0.0000 with **loss 629**. This is not a decoder verdict — it is a
+broken run, and the shape of the failure says where:
+
+| epoch | 1 | 2 | 3 | 4 | 5 |
+|---|---:|---:|---:|---:|---:|
+| train loss | 1.1 | 0.9 | 0.8 | 1.1 | 1.2 |
+| val loss | 84,558 | 732,952 | 7,795,279 | 4,810 | 667 |
+
+**Training is stable; evaluation explodes.** A model that trains at loss 1.1 and evaluates
+at 10⁶ is not diverging — it is producing different activations in `eval()` than in
+`train()`, which points at BatchNorm running statistics. PAN's Global Attention Upsample
+pools to 1×1 and normalises there, and BatchNorm over `[N,C,1,1]` is a hazard this repo has
+already hit once (see the `drop_last` comment in `run_train._build_loaders`, added for
+DeepLabV3+'s ASPP). Diagnosing it properly, or lowering the LR from the default 1e-3, needs
+the config mechanism that is still outstanding — `lr` is deliberately not a CLI flag.
+
+Until then PAN is untested, and the BiFPN question it was meant to stand in for is open.
