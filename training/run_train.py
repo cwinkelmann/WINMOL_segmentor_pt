@@ -166,7 +166,14 @@ def run_two_stage(cfg):
 
     for g in opt.param_groups:                   # reset LR for stage 2 (mirrors R's k_set_value)
         g["lr"] = cfg.lr
-    spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform)
+    # Stage 2 must validate on the SAME held-out split as single-stage runs, or its
+    # checkpoint selection is not comparable to theirs. Omitting these fell back to
+    # split_ids() — a random split of the spec tiles, which is both a different signal
+    # (in-training-distribution, so ~+5 F1 higher) and a leaky one, since the samplers
+    # oversample and adjacent tiles overlap. `--val-data-dir` was silently ignored here.
+    spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform,
+                                          val_image_dir=cfg.val_image_dir,
+                                          val_mask_dir=cfg.val_mask_dir)
     train_one_run(model, spec_train, spec_val, cfg, patience=cfg.patience_stage2,
                   ckpt_name="best_stage2.pt", log_dir=os.path.join(cfg.log_dir, "stage2"),
                   optimizer=opt)
