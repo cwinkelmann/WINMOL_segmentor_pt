@@ -176,7 +176,7 @@ All rows train on arm B (fixed-metre), so they are directly comparable to §1's 
 | model | params | pretrained | test F1 | P / R | vs same arch from scratch |
 |---|---:|---|---:|---|---:|
 | HRNet w18 | 16.1M | — | **0.7229** | 0.8181 / 0.6475 | *(the §1 reference)* |
-| HRNet w18 | 16.1M | ImageNet | *pending* | | |
+| HRNet w18 | 16.1M | ImageNet | 0.7218 | 0.8563 / 0.6238 | **−0.1** — no effect |
 | SegFormer mit_b0 | 3.7M | — | 0.6623 | 0.7973 / 0.5663 | *(the §1 reference)* |
 | SegFormer mit_b2 | 24.7M | ImageNet | 0.7041 | 0.7933 / 0.6330 | **+4.2** over b0 scratch |
 | SegFormer mit_b5 | 82.0M | ImageNet | *pending* | | |
