@@ -187,7 +187,8 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
                  oversample=100.0, inward_buffer_m=None, min_stem_frac=1 / 200.0,
                  max_nodata_frac=0.02, seed=1, species=None, limit=None,
                  start_index=1, rotate=True, quiet=False,
-                 block_size_m=None, split=None, split_fractions=None, split_seed=1):
+                 block_size_m=None, split=None, split_fractions=None, split_seed=1,
+                 native_px=None, antialias="auto"):
     import rasterio
     from affine import Affine
     from PIL import Image
@@ -200,6 +201,15 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
     rng = np.random.default_rng(seed)
     src = rasterio.open(ortho)
     gsd = abs(src.transform.a)
+
+    if native_px:
+        # Native mode: the footprint is a fixed number of SOURCE pixels, so nothing is
+        # resampled and the tile keeps whatever ground resolution the orthomosaic has.
+        # A 1024 px tile is 21 m of ground at 2.1 cm/px and 65 m at 6.4 cm/px — the
+        # apparent size of a stem therefore varies across sites, which is the point:
+        # it is the scale diversity a fixed-metre footprint deliberately removes.
+        extent_m = native_px * gsd
+        tile_px = native_px
 
     stem_geoms, _ = _load_geoms(stems, src.crs, species, "stems", quiet)
     if not stem_geoms:
@@ -331,7 +341,19 @@ def sample_tiles(ortho, stems, aoi, out_dir, extent_m=15.0, tile_px=512,
             stats["too_few_stems"] += 1
             continue
 
-        rgb = rgb.resize((tile_px, tile_px), Image.BICUBIC)
+        if antialias == "auto":
+            rgb = rgb.resize((tile_px, tile_px), Image.BICUBIC)
+        else:
+            # Mirror the Analyzer's own resize so a train/serve comparison is exact:
+            # utils/Prediction.py::_resize_batch uses skimage order=3 with
+            # anti_aliasing=False, while its stream path uses GDAL cubic, which does
+            # filter. Those two paths disagree whenever a tile is downsampled.
+            from skimage.transform import resize as _skresize
+
+            arr = _skresize(np.asarray(rgb, np.float32) / 255.0, (tile_px, tile_px),
+                            order=3, mode="edge", anti_aliasing=(antialias == "on"),
+                            preserve_range=True)
+            rgb = Image.fromarray(np.clip(arr * 255.0, 0, 255).astype("uint8"))
         msk = msk.resize((tile_px, tile_px), Image.NEAREST)
         # the loader binarizes anyway; keep the gif strictly two-valued
         msk = Image.fromarray(((np.asarray(msk) > 127) * 255).astype("uint8"))
@@ -378,6 +400,11 @@ def main(argv=None):
     p.add_argument("--out", required=True, help="dataset root; gets train/ and mask/")
     p.add_argument("--extent", type=float, default=15.0, help="footprint side in metres")
     p.add_argument("--tile-px", type=int, default=512)
+    p.add_argument("--native-px", type=int, default=None,
+                   help="cut tiles of this many SOURCE pixels with no resampling; "
+                        "--extent and --tile-px are then derived from the ortho's own "
+                        "resolution. Use for multi-scale training, where the loader crops "
+                        "and resizes instead")
     p.add_argument("--oversample", type=float, default=100.0,
                    help="attempts per footprint-sized cell of the AOI (R used 100)")
     p.add_argument("--inward-buffer", type=float, default=None,
@@ -402,6 +429,11 @@ def main(argv=None):
                    metavar=("TRAIN", "VAL", "TEST"))
     p.add_argument("--split-seed", type=int, default=1,
                    help="block assignment seed; must match across the train/val/test runs")
+    p.add_argument("--antialias", choices=("auto", "on", "off"), default="auto",
+                   help="image resampling: 'auto' keeps PIL bicubic (the default, which "
+                        "filters when downsampling); 'on'/'off' use skimage order=3 with "
+                        "anti_aliasing set accordingly, matching the Analyzer's own two "
+                        "paths so a train/serve mismatch can be measured")
     p.add_argument("--stats-json", default=None)
     a = p.parse_args(argv)
 
@@ -415,7 +447,8 @@ def main(argv=None):
                          a.oversample, a.inward_buffer, a.min_stem_frac,
                          a.max_nodata_frac, a.seed, species, a.limit, a.start_index,
                          not a.no_rotate, quiet=False, block_size_m=a.block_size,
-                         split=a.split, split_fractions=fr, split_seed=a.split_seed)
+                         split=a.split, split_fractions=fr, split_seed=a.split_seed,
+                         native_px=a.native_px, antialias=a.antialias)
     if a.stats_json:
         with open(a.stats_json, "w") as f:
             json.dump(stats, f, indent=1)

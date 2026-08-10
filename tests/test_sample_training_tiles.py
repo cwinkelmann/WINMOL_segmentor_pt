@@ -360,3 +360,63 @@ def test_an_empty_split_names_the_split_it_would_silently_drop(site, tmp_path):
     with pytest.raises(SystemExit, match=r"would contribute NO tiles"):
         sample_tiles(site["ortho"], site["stems"], str(sliver), str(tmp_path / "ds"),
                      block_size_m=30.0, split="val", limit=2, quiet=True)
+
+
+def test_native_px_keeps_the_orthos_own_resolution(site, tmp_path):
+    """Native mode must not resample: 1024 source pixels in, 1024 px tile out.
+
+    A fixed-metre footprint normalises every site to one ground resolution, which is
+    exactly the scale diversity multi-scale training needs to keep.
+    """
+    import json
+
+    from PIL import Image
+
+    out = tmp_path / "ds"
+    sample_tiles(site["ortho"], site["stems"], site["aoi"], str(out),
+                 native_px=256, limit=3, seed=1, quiet=True)
+
+    img = Image.open(out / "train" / "train1.jpeg")
+    assert img.size == (256, 256)
+    rec = json.loads((out / "tiles.jsonl").read_text().splitlines()[0])
+    # the fixture ortho is 2 cm/px, so 256 px is 5.12 m and the tile stays at 2 cm/px
+    assert rec["extent_m"] == pytest.approx(256 * GSD, rel=1e-6)
+    assert rec["gsd_m_per_px"] == pytest.approx(GSD, rel=1e-3)
+
+
+@pytest.mark.parametrize("mode", ["on", "off"])
+def test_antialias_switch_changes_pixels_only_when_downsampling(site, tmp_path, mode):
+    """The flag must actually change the imagery, and must not touch the mask.
+
+    The Analyzer resizes with skimage order=3 and anti_aliasing=False on its CPU path
+    while its stream path uses GDAL cubic, which filters. Those disagree only when a tile
+    is downsampled, which is exactly when aliasing appears.
+    """
+    from PIL import Image
+
+    out = tmp_path / f"ds_{mode}"
+    # 15 m at the fixture's 2 cm/px reads a 1061 px window and resizes to 512: a
+    # downsample, so anti-aliasing is in play
+    sample_tiles(site["ortho"], site["stems"], site["aoi"], str(out),
+                 extent_m=15.0, limit=2, seed=1, quiet=True, antialias=mode)
+    img = np.asarray(Image.open(out / "train" / "train1.jpeg").convert("RGB"), np.int16)
+    msk = np.asarray(Image.open(out / "mask" / "mask1.gif").convert("L"))
+    assert img.shape == (512, 512, 3)
+    assert set(np.unique(msk)) <= {0, 255}, "the mask must stay binary either way"
+
+
+def test_antialiased_and_aliased_tiles_actually_differ(site, tmp_path):
+    from PIL import Image
+
+    for mode in ("on", "off"):
+        sample_tiles(site["ortho"], site["stems"], site["aoi"], str(tmp_path / mode),
+                     extent_m=15.0, limit=1, seed=1, quiet=True, antialias=mode)
+    a = np.asarray(Image.open(tmp_path / "on" / "train" / "train1.jpeg"), np.int16)
+    b = np.asarray(Image.open(tmp_path / "off" / "train" / "train1.jpeg"), np.int16)
+    diff = np.abs(a - b)
+    # The fixture is smooth noise, so the two filters land close together (mean ~0.45
+    # levels). What matters is that they differ at all and that some pixels differ
+    # visibly; on real imagery with thin bright stems the gap is far larger. An earlier
+    # version asserted mean > 0.5, which was a guessed threshold, not a measured one.
+    assert diff.max() >= 2, "anti-aliasing must change some pixels materially"
+    assert diff.mean() > 0.1, "the switch must change the imagery it produces"
