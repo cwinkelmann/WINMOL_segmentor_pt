@@ -1,0 +1,39 @@
+{
+  "_source": "Every value copied from a run's own test_results.md on carrot under /raid/cwinkelmann/winmol/runs/. Nothing recomputed.",
+  "corpus": {"sites": 8, "polygons": 3842, "trees": 1777, "fragmented_trees": 909,
+             "invalid_polygons": 50, "stem_m2": 9804, "aoi_ha": 32.35,
+             "beech_sites": 4, "unlabelled_beech_orthos": 1, "pine_annotated": 0},
+  "architecture_blockslit": [
+    {"arch": "DPT (ViT-b)", "params_m": 122.1, "scratch": 0.4917, "synth": 0.5361, "imagenet": 0.4671},
+    {"arch": "UNet", "params_m": 31.0, "scratch": 0.7638, "synth": 0.7748, "imagenet": null},
+    {"arch": "SegFormer b0", "params_m": 3.7, "scratch": 0.7788, "synth": 0.7833, "imagenet": 0.7773},
+    {"arch": "SegFormer b2", "params_m": 24.7, "scratch": 0.7806, "synth": 0.7588, "imagenet": 0.7855},
+    {"arch": "HRNet w18", "params_m": 16.1, "scratch": 0.7856, "synth": 0.7870, "imagenet": 0.7898}
+  ],
+  "split_strategy": [
+    {"config": "UNet", "halved": 0.7696, "site_holdout": 0.6699},
+    {"config": "HRNet scratch", "halved": 0.8020, "site_holdout": 0.7253},
+    {"config": "HRNet + ImageNet", "halved": 0.7960, "site_holdout": 0.6901}
+  ],
+  "scale_sweep_hrnet": [
+    {"zoom": 0.70, "cm_px": 2.86, "ap": 0.7513, "f1": 0.6702},
+    {"zoom": 0.85, "cm_px": 2.35, "ap": 0.7830, "f1": 0.7077},
+    {"zoom": 1.00, "cm_px": 2.00, "ap": 0.7950, "f1": 0.7225},
+    {"zoom": 1.15, "cm_px": 1.74, "ap": 0.7949, "f1": 0.7208},
+    {"zoom": 1.30, "cm_px": 1.54, "ap": 0.7794, "f1": 0.7031}
+  ],
+  "amodal": [
+    {"model": "modal-trained", "component_len_px": 264, "longest_px": 379, "f1": 0.7626},
+    {"model": "amodal, permissive bridging", "component_len_px": 277, "longest_px": 400, "f1": 0.7634},
+    {"model": "amodal, conservative bridging", "component_len_px": 276, "longest_px": 395, "f1": 0.7570},
+    {"model": "amodal labels (ceiling)", "component_len_px": 300, "longest_px": 396, "f1": null}
+  ],
+  "preprocessing_invalid": {
+    "note": "All six runs had validation F1 exactly 0.0000 because Bachsee_north was used as the validation site. Checkpoint selection was therefore driven by a dead signal and these numbers are NOT a valid arm comparison.",
+    "runs": [
+      {"arm": "A R port", "unet": 0.0646, "hrnet": 0.5038},
+      {"arm": "B fixed-metre", "unet": 0.3635, "hrnet": 0.6872},
+      {"arm": "C native+multiscale", "unet": 0.1227, "hrnet": 0.1680}
+    ]
+  }
+}
