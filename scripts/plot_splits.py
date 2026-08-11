@@ -52,8 +52,9 @@ def closest_between(a, b):
 
 
 def plot(data_dir, config_path=None, out_path=None, dpi=140):
-    import matplotlib
-    matplotlib.use("Agg")
+    # NB: no matplotlib.use() here — a library function must not hijack the caller's
+    # backend, or a notebook importing it silently stops rendering figures inline.
+    # The CLI selects Agg for itself in main().
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
@@ -131,6 +132,8 @@ def main(argv=None):
     p.add_argument("--out", default=None, help="output png")
     a = p.parse_args(argv)
 
+    import matplotlib
+    matplotlib.use("Agg")                    # headless: the CLI only ever writes a file
     _, summary = plot(a.data_dir, a.config, a.out)
     bad = 0
     print(f"{'site':28s} {'train':>6s} {'val':>5s} {'test':>5s} {'closest':>9s}")
