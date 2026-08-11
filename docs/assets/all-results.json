@@ -117,6 +117,44 @@
    "test_tiles": 1000
   }
  },
+ "beech-20260811": {
+  "beech-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7197,
+   "loss": 0.3843,
+   "precision": 0.7329,
+   "recall": 0.707,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAll/test",
+   "test_tiles": 666
+  },
+  "beech-hrnet-in": {
+   "arch": "hrnet",
+   "f1": 0.7298,
+   "loss": 0.3741,
+   "precision": 0.7292,
+   "recall": 0.7303,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAll/test",
+   "test_tiles": 666
+  },
+  "beech-segformer-b2": {
+   "arch": "segformer",
+   "f1": 0.7153,
+   "loss": 0.391,
+   "precision": 0.7358,
+   "recall": 0.6959,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAll/test",
+   "test_tiles": 666
+  },
+  "beech-unet": {
+   "arch": "unet",
+   "f1": 0.6877,
+   "loss": 0.4264,
+   "precision": 0.7086,
+   "recall": 0.668,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAll/test",
+   "test_tiles": 666
+  }
+ },
  "big-20260807": {
   "dpt-A": {
    "arch": "dpt",
