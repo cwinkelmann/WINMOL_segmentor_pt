@@ -1,4 +1,4 @@
-"""Build leak-free train/val/test splits, by halving a site or by holding sites out.
+"""Build leak-free train/val/test splits: by block, by halving a site, or by holding sites out.
 
     python scripts/make_splits.py --config sites.json --out /path/to/DS --strategy halve
     python scripts/make_splits.py --config sites.json --out /path/to/DS --strategy sites
@@ -9,7 +9,25 @@
                 "split": "train"}, ...],
      "extent_m": 10.24, "caps": {"train": 2000, "val": 400, "test": 400}}
 
-`split` is only read by `--strategy sites`; `halve` derives its own.
+`split` is only read by `--strategy sites`; `halve` and `blocks` derive their own.
+
+## blocks — every site in every split
+
+The AOI of each site is cut into a `block_size_m` grid, whole blocks are dealt to
+train/val/test, and each block is then shrunk by the footprint half-diagonal, so two tiles
+on opposite sides of a shared edge cannot overlap. All sites feed all three splits.
+
+This is what to use when the deliverable is a *model* rather than a transfer measurement.
+Holding a whole site out answers "does this generalise to a new forest"; pooling blocks
+answers "how well can we read the forests we have", and keeps every acquisition's
+phenology and resolution in training — which matters when one site returns F1 0.0000 as a
+holdout, as Bachsee_north does.
+
+Its test score is therefore optimistic about a genuinely new site. Report it alongside a
+`sites` run, never instead of one.
+
+Size the grid so at least ~12 blocks fit, or a split will be dealt none:
+`block_size_m ~ sqrt(aoi_m2 / 12)`.
 
 ## halve — one site, cut in two
 
@@ -137,10 +155,16 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
 
     cfg = json.load(open(config_path))
     extent = cfg.get("extent_m", 10.24)
+    native_px = cfg.get("native_px")
     caps = cfg.get("caps", {"train": 2000, "val": 400, "test": 400})
-    buffer_m = extent * math.sqrt(2) / 2
+    # In native mode the footprint is a pixel count, so its size in metres — and therefore
+    # the buffer that keeps splits apart — differs per site with the ortho's resolution.
+    buffer_m = None if native_px else extent * math.sqrt(2) / 2
     os.makedirs(out_dir, exist_ok=True)
-    manifest = {"strategy": strategy, "extent_m": extent, "buffer_m": round(buffer_m, 3),
+    manifest = {"strategy": strategy,
+                "extent_m": None if native_px else extent,
+                "native_px": native_px,
+                "buffer_m": None if native_px else round(buffer_m, 3),
                 "sites": []}
     counters = {s: 1 for s in ("train", "val", "test")}
 
@@ -161,24 +185,65 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
             stats = sample_tiles(site["ortho"], stems, site["aoi"],
                                  os.path.join(out_dir, split), extent_m=extent,
                                  limit=caps.get(split), start_index=counters[split],
-                                 seed=seed, quiet=quiet)
+                                 seed=seed, quiet=quiet, native_px=native_px)
             counters[split] = stats["next_index"]
             manifest["sites"].append({"name": name, "split": split,
                                       "tiles": stats["written"], "geometry": geom_report})
             continue
 
+        if strategy == "blocks":
+            # Every site contributes to every split. The AOI is cut into a grid, whole
+            # blocks are assigned, and each block is then shrunk by the footprint's
+            # half-diagonal — so two tiles either side of a shared block edge are at
+            # least `extent * sqrt(2)` apart, the distance below which rotated footprints
+            # can share area. Leak-free without removing an acquisition from training.
+            block = site.get("block_size_m", cfg.get("block_size_m"))
+            if not block:
+                raise SystemExit(
+                    f"site {name!r}: --strategy blocks needs \"block_size_m\", per site or "
+                    f"at the top level. Aim for 12+ blocks across the AOI, or a split ends "
+                    f"up with none: block_size ~ sqrt(aoi_m2 / 12).")
+            fracs = cfg.get("split_fractions", {"train": 0.7, "val": 0.15, "test": 0.15})
+            entry = {"name": name, "split": "blocks", "block_size_m": block,
+                     "geometry": geom_report, "tiles": {}}
+            # `caps` is the TOTAL per split, shared equally between sites. Applying it
+            # per site instead lets the largest AOI exhaust the budget alone: Campus is
+            # 118,808 m² against Kaufland's 5,393, so an unshared cap of 800 val tiles
+            # was filled entirely by Campus and the other three sites reached validation
+            # with nothing. Equal shares over-represent the small sites relative to their
+            # ground, which is the intended trade — site identity has dominated every
+            # comparison measured here, so balance beats proportionality.
+            n_sites = len(cfg["sites"])
+            share = {s: (math.ceil(c / n_sites) if c else None) for s, c in caps.items()}
+            for split in ("train", "val", "test"):
+                stats = sample_tiles(site["ortho"], stems, site["aoi"],
+                                     os.path.join(out_dir, split), extent_m=extent,
+                                     limit=share.get(split), start_index=counters[split],
+                                     seed=seed, quiet=quiet, native_px=native_px,
+                                     block_size_m=block, split=split,
+                                     split_fractions=fracs,
+                                     split_seed=cfg.get("split_seed", 1))
+                counters[split] = stats["next_index"]
+                entry["tiles"][split] = stats["written"]
+            manifest["sites"].append(entry)
+            continue
+
         # halve: derive two AOIs from this site and give them to different splits
         with rasterio.open(site["ortho"]) as src:
             crs = src.crs
+            gsd = abs(src.transform.a)
+        site_extent = native_px * gsd if native_px else extent
+        site_buffer = site_extent * math.sqrt(2) / 2
         aoi_geoms, _ = _load_geoms(site["aoi"], crs, None, "aoi", quiet=True)
         from shapely.ops import unary_union
         whole = unary_union(aoi_geoms)
-        a, b = halve_aoi(whole, buffer_m, cut_axis)
+        a, b = halve_aoi(whole, site_buffer, cut_axis)
         if a.is_empty or b.is_empty:
             raise SystemExit(
                 f"site {name!r}: halving leaves one side empty. Its AOI is "
-                f"{whole.area:.0f} m² and the cut holds {buffer_m:.2f} m out on each side; "
-                f"a smaller --extent or a site with more ground is needed.")
+                f"{whole.area:.0f} m² and the cut holds {site_buffer:.2f} m out on each "
+                f"side (footprint {site_extent:.1f} m at {100*gsd:.2f} cm/px); a smaller "
+                f"footprint or a site with more ground is needed.")
 
         parts = site.get("halves", ["train", "test"])
         entry = {"name": name, "split": "halved", "halves": {},
@@ -189,10 +254,12 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
             stats = sample_tiles(site["ortho"], stems, tmp,
                                  os.path.join(out_dir, split), extent_m=extent,
                                  limit=caps.get(split), start_index=counters[split],
-                                 seed=seed, quiet=quiet)
+                                 seed=seed, quiet=quiet, native_px=native_px)
             counters[split] = stats["next_index"]
             entry["halves"][split] = {"aoi_m2": round(geom.area, 1),
-                                      "tiles": stats["written"]}
+                                      "tiles": stats["written"],
+                                      "extent_m": round(site_extent, 2),
+                                      "gsd_cm": round(100 * gsd, 2)}
         manifest["sites"].append(entry)
 
     with open(os.path.join(out_dir, "splits.json"), "w") as f:
@@ -210,7 +277,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--config", required=True)
     p.add_argument("--out", required=True)
-    p.add_argument("--strategy", choices=("halve", "sites"), required=True)
+    p.add_argument("--strategy", choices=("halve", "sites", "blocks"), required=True)
     p.add_argument("--cut-axis", choices=("auto", "ns", "ew"), default="auto",
                    help="halve only; 'auto' cuts across the AOI's long axis")
     p.add_argument("--seed", type=int, default=1)
