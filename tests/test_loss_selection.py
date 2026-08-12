@@ -11,7 +11,7 @@ from training.run_train import config_from_args
 
 
 def test_both_losses_registered_and_distinct():
-    assert set(LOSSES) == {"bce_soft_f1", "bce"}
+    assert set(LOSSES) == {"bce_soft_f1", "bce", "bce_hard_f1"}
     logits = torch.randn(2, 1, 16, 16)
     target = (torch.rand(2, 1, 16, 16) > 0.5).float()
     assert abs(bce_soft_f1_loss(logits, target) - bce_loss(logits, target)) > 1e-3
