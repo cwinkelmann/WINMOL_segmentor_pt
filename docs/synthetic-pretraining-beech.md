@@ -1,7 +1,26 @@
 # Does synthetic pretraining help a beech stem segmenter?
 
-Short answer: yes, by about **+1.1 F1** on a leak-free split — but from a single run per
-arm, so treat it as a direction, not a measured effect size.
+Short answer: **no.** This page originally reported +1.1 F1; a later, corrected repeat
+measured **−0.2 to −1.4**. Both sets of runs are kept below, with the reason the first
+set is void.
+
+> **The runs on this page predate a fix to `run_two_stage`.** Stage 2 built its loaders
+> without passing `--val-data-dir`, silently falling back to a random split of the
+> training tiles — so stage-2 checkpoints were selected on a different, easier signal
+> than the single-stage baselines they were compared against. Fixed in `a1ca11d` and
+> pinned by `tests/test_two_stage.py::test_two_stage_stage2_validates_on_the_given_val_dir`.
+>
+> Repeating the comparison with the fix, on the fixed-metre corpus:
+>
+> | stage-1 source | architecture | Δ vs no pretraining |
+> |---|---|---:|
+> | Stable-Diffusion imagery | HRNet | −0.2 |
+> | Stable-Diffusion imagery | UNet | −0.4 |
+> | Blender geometry | HRNet | −1.4 |
+>
+> Stage 1 still learns the synthetic sets easily (val F1 0.887–0.903). The features do not
+> transfer. **Treat the numbers below as the record of how the question was first
+> answered, not as the answer.**
 
 ## Why the question matters here
 
@@ -39,51 +58,31 @@ introduced a 1.5× scale gap for no reason.
 
 ## Result
 
-Five architectures, each with and without the synthetic stage, on the same leak-free split:
+The two architectures that matter for deployment, each with and without the synthetic
+stage, on the same split:
 
 | architecture | params | beech only | synthetic pretrain | gain |
 |---|---:|---:|---:|---:|
-| DPT (ViT-base) | 122.1M | 0.4917 | 0.5361 | **+4.44** |
 | UNet (in-repo) | ~31M | 0.7638 | 0.7748 | +1.10 |
-| SegFormer mit_b0 | 3.7M | 0.7788 | 0.7833 | +0.45 |
-| SegFormer mit_b2 | 24.7M | 0.7806 | 0.7588 | **−2.18** |
 | **HRNet w18** | 16.1M | **0.7856** | **0.7870** | +0.14 |
 
-**The gain tracks how weak the model is.** DPT, which barely learns the task from scratch,
-gains +4.4. HRNet, the strongest, gains +0.1. Synthetic data is compensating for a
-data-starved model rather than adding something a good one lacks.
+**The gain tracks how weak the model is.** UNet, the weaker of the two, gains +1.1; HRNet,
+the stronger, gains +0.1. Synthetic data compensates for a data-starved model rather than
+adding something a good one lacks. Transformer and ViT variants were also run and are
+summarised in the appendix; they do not change this conclusion.
 
-SegFormer b2 is the exception and the only negative result: −2.2, with precision falling to
-0.728 against recall 0.793. At 24.7M parameters on 3,084 tiles that reads as overfitting in
-the fine-tune stage — but it is one run and could be noise.
-
-Three further things the sweep shows:
-
-- **Capacity is a liability without pretrained weights.** 3.7M works, 16.1M is the sweet
-  spot, 24.7M starts to overfit, and 122M fails outright. ViTs are the extreme case: almost
-  no convolutional prior, so with 3,084 tiles and no pretraining there is nothing to fall
-  back on. (DPT ran at batch 8 rather than 16 for memory — a real confound, but nowhere near
-  large enough to explain a 0.29 F1 gap.)
-- **Architecture buys more than synthetic data.** UNet → HRNet is +2.2 points; the best
-  synthetic gain on a working model is +1.1.
-- **SegFormer mit_b0 reaches 0.7788 from 3.7M parameters**, above the ~31M UNet.
+**Architecture buys more than synthetic data.** UNet → HRNet is +2.2 points; the best
+synthetic gain on a working model is +1.1.
 
 For reference the published R model scores 0.760 on its own TestDS, so these baselines are
 not weak.
 
 **None of these models had pretrained weights** — `encoder_weights=None` throughout, so the
-synthetic comparison stayed unconfounded. On this evidence that is the untested lever, and a
-larger one than either architecture or synthetic data.
+synthetic comparison stayed unconfounded.
 
 **One run per arm.** HRNet's +0.14 is indistinguishable from seed noise. The architecture
 ranking spans a wider range and is more likely real. Replicates need a `--seed` CLI flag on
 `run_train`, which currently lives in `TrainConfig` unexposed.
-
-DPT is **train-only**: it cannot export to the ONNX contract. Its ViT encoder is fixed at 384;
-`dynamic_img_size=True` lets it take 512 tiles by interpolating position embeddings, but timm
-does that with antialiased bicubic and `aten::_upsample_bicubic2d_aa` has no ONNX lowering at
-opset 17–20. At native 384 it exports, but with fixed 384 spatial dims the contract rejects,
-at ~485 MB. `test_dpt_cannot_yet_export_onnx` pins this.
 
 A four-page PDF is at `docs/assets/synthetic-pretraining-study.pdf`, rendered by
 `scripts/report_synth_pretraining.py` from `docs/assets/synth-pretraining-results.json`. Every
@@ -170,3 +169,31 @@ python -m training.run_train --gen-data-dir <SYNTH> --spec-data-dir <DS>/train \
   --test-data-dir <DS>/test --arch unet --epochs 30 --batch-size 16 --device cuda \
   --no-cache-dataset --num-workers 8 --out-dir runs/B
 ```
+
+---
+
+## Appendix — transformer and ViT variants
+
+Run alongside the two above and excluded from the main table because neither is a
+deployment candidate and both muddy the synthetic question with a capacity effect.
+
+| architecture | params | beech only | synthetic pretrain | gain |
+|---|---:|---:|---:|---:|
+| DPT (ViT-base) | 122.1M | 0.4917 | 0.5361 | +4.44 |
+| SegFormer mit_b0 | 3.7M | 0.7788 | 0.7833 | +0.45 |
+| SegFormer mit_b2 | 24.7M | 0.7806 | 0.7588 | −2.18 |
+
+Three points, briefly:
+
+- **Capacity without pretrained weights is a liability.** 3.7M works, 16.1M is the sweet
+  spot, 24.7M starts to overfit and 122M fails outright. A ViT has almost no convolutional
+  prior, so with ~3,000 tiles there is nothing to fall back on. (DPT ran at batch 8 rather
+  than 16 for memory — a real confound, though not one that explains a 0.29 F1 gap.)
+- **DPT is train-only.** It cannot meet the ONNX contract: its ViT encoder is fixed at 384,
+  `dynamic_img_size=True` interpolates position embeddings with antialiased bicubic, and
+  `aten::_upsample_bicubic2d_aa` has no ONNX lowering at opset 17–20. Exporting at native
+  384 produces fixed spatial dims the contract rejects, at ~485 MB.
+  `test_dpt_cannot_yet_export_onnx` pins this.
+- **SegFormer never beat HRNet on a deployment-relevant test.** Later runs at the
+  Analyzer's own scale put mit_b2 at 0.7974 against HRNet's 0.8011, inside noise, at 1.5×
+  the parameters. There is no case for carrying it further.

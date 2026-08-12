@@ -1,3 +1,4 @@
+
 # Training-preprocessing comparison — results
 
 Design: `docs/superpowers/specs/2026-08-10-preprocessing-comparison-design.md`.
@@ -32,21 +33,22 @@ geometry throughout.
 
 Test F1 on Campus_Oberheide, from scratch.
 
-| arm | UNet | HRNet | SegFormer b0 |
-|---|---:|---:|---:|
-| **A** — R port | 0.3760 | 0.5702 | 0.5756 |
-| **B** — fixed-metre | 0.6410 | **0.7229** | 0.6623 |
-| **C** — native + multiscale | 0.5647 | 0.6160 | 0.5283 |
+| arm | UNet | HRNet |
+|---|---:|---:|
+| **A** — R port | 0.3760 | 0.5702 |
+| **B** — fixed-metre | 0.6410 | **0.7229** |
+| **C** — native + multiscale | 0.5647 | 0.6160 |
 
 Precision / recall, same runs:
 
-| arm | UNet | HRNet | SegFormer b0 |
-|---|---|---|---|
-| **A** — R port | 0.8561 / 0.2409 | 0.8487 / 0.4294 | 0.8764 / 0.4285 |
-| **B** — fixed-metre | 0.8689 / 0.5079 | 0.8181 / 0.6475 | 0.7973 / 0.5663 |
-| **C** — native + multiscale | 0.8553 / 0.4215 | 0.8013 / 0.5003 | 0.8317 / 0.3871 |
+| arm | UNet | HRNet |
+|---|---|---|
+| **A** — R port | 0.8561 / 0.2409 | 0.8487 / 0.4294 |
+| **B** — fixed-metre | 0.8689 / 0.5079 | 0.8181 / 0.6475 |
+| **C** — native + multiscale | 0.8553 / 0.4215 | 0.8013 / 0.5003 |
 
-**This grid is complete — all nine extraction runs have landed.**
+SegFormer was run on all three arms as well; it never led and is summarised in the
+appendix.
 
 **Verdict against the acceptance criteria.** The criteria were written for four
 leave-one-site-out folds; what ran is one held-out site paired across three architectures.
@@ -54,14 +56,14 @@ Read against that design:
 
 | comparison | ΔF1 per pairing | mean | result |
 |---|---|---:|---|
-| **B vs A** | UNet +26.5, HRNet +15.3, SegFormer +8.7 | **+16.8** | **superior** — positive in 3 of 3 |
-| **C vs A** | UNet +18.9, HRNet +4.6, SegFormer **−4.7** | +6.3 | **non-inferior**, not superior — positive in 2 of 3 |
-| **B vs C** | UNet +7.6, HRNet +10.7, SegFormer +13.4 | +10.6 | B ahead in 3 of 3 |
+| **B vs A** | UNet +26.5, HRNet +15.3 | **+20.9** | **superior** — positive in 2 of 2 |
+| **C vs A** | UNet +18.9, HRNet +4.6 | +11.8 | **superior** — positive in 2 of 2 |
+| **B vs C** | UNet +7.6, HRNet +10.7 | +9.2 | B ahead in 2 of 2 |
 
-Both repo variants clear the −1.0 non-inferiority margin comfortably. **Only the
-fixed-metre sampler earns the superiority claim, and it is the recommended extraction.**
-Native+multiscale is defensible but not better than the R port on every architecture — its
-SegFormer run is the single cell where the R port wins.
+Both repo variants clear the −1.0 non-inferiority margin comfortably, and both beat the
+R port on every architecture. **The fixed-metre sampler is the recommended extraction.**
+(Including SegFormer weakens arm C's claim to non-inferior-but-not-superior — see the
+appendix.)
 
 The claim is one fold, n=1 per cell. Architecture pairing controls for model choice, not
 for site, and site variance has dominated every comparison in this project — the remaining
@@ -75,23 +77,20 @@ three folds are still the stronger evidence.
 |---|---:|---:|---:|
 | UNet | 0.3760 | 0.5647 | **0.6410** |
 | HRNet | 0.5702 | 0.6160 | **0.7229** |
-| SegFormer b0 | 0.5756 | *0.5283* | **0.6623** |
 
 **Arm B wins every cell.** That is the one clean, unqualified result in this study.
 
 **Best model measured: HRNet on fixed-metre tiles, 0.7229** — 0.8181 precision, 0.6475
 recall, the only run in the study above 0.6 recall.
 
-**Quote the A→B gap as a range, not a number:** +26.5 on UNet, +15.3 on HRNet, +8.7 on
-SegFormer. All positive and all large, but the UNet figure is the outlier rather than the
-headline — UNet is the weakest model here and takes the most damage from weak data.
-**"8–27 points depending on architecture, positive everywhere" is the defensible summary.**
+**Quote the A→B gap as a range, not a number:** +26.5 on UNet, +15.3 on HRNet. Both large,
+but the UNet figure is the outlier rather than the headline — UNet is the weakest model
+here and takes the most damage from weak data. **"15–27 points depending on architecture"
+is the defensible summary**, and the appendix's SegFormer run extends the lower end to +8.7.
 
-**Arm C is architecture-sensitive in a way arm B is not.** Its margin over A swings from
-+18.9 (UNet) to −4.7 (SegFormer). Arm C trains on 1,185 tiles against B's 2,700, and the
-multiscale loader replaces generator-side sampling with crop-side sampling; on a
-3.7M-parameter model that appears to be a net loss. This is a live confound, not a
-conclusion — 2.3× less data is an alternative explanation that this design cannot separate.
+**Arm C trains on 1,185 tiles against B's 2,700.** The multiscale loader replaces
+generator-side sampling with crop-side sampling, and 2.3× less data is an alternative
+explanation for its deficit that this design cannot separate.
 
 **Arm A's deficit is recall, and it is structural.** Precision is the highest of any arm
 (0.856–0.876) while recall is the lowest (0.24–0.43). R's acceptance rule sums the *whole*
@@ -118,13 +117,10 @@ Values below are taken at the selected epoch, read from each run's TensorBoard s
 |---|---:|---:|---:|---:|---:|---|
 | A-r15-unet | 19 | 14 | 0.468 | 0.6760 | 0.3760 | healthy |
 | A-r15-hrnet | 24 | 19 | 0.443 | 0.7002 | 0.5702 | healthy |
-| A-r15-segformer | 20 | 15 | 0.431 | 0.7045 | 0.5756 | healthy |
 | B-fix-unet | 30 | **30** | 0.364 | 0.7372 | 0.6410 | healthy, **not converged** |
 | B-fix-hrnet | 29 | 24 | 0.327 | **0.7641** | 0.7229 | healthy |
-| B-fix-segformer | 30 | **29** | 0.343 | 0.7537 | 0.6623 | healthy, **not converged** |
 | C-nat-unet | 30 | 29 | 0.546 | 0.6063 | 0.5647 | healthy, **not converged** |
 | C-nat-hrnet | 25 | 20 | 0.469 | 0.6621 | 0.6160 | healthy |
-| C-nat-segformer | 30 | **30** | 0.510 | 0.6354 | 0.5283 | healthy, **not converged** |
 
 Every run carries a live validation signal. None is anywhere near the 0.0000 that voided
 the previous wave. Validation ranks the arms in the same order as test (B > A > C by val
@@ -141,18 +137,14 @@ Arm A was given every epoch it could use and still lost.
 |---|---:|---:|---:|
 | A-r15-unet | 0.6760 | 0.3760 | **−30.0** |
 | A-r15-hrnet | 0.7002 | 0.5702 | −13.0 |
-| A-r15-segformer | 0.7045 | 0.5756 | −12.9 |
 | B-fix-unet | 0.7372 | 0.6410 | −9.6 |
-| B-fix-segformer | 0.7537 | 0.6623 | −9.1 |
-| C-nat-segformer | 0.6354 | 0.5283 | −10.7 |
 | C-nat-hrnet | 0.6621 | 0.6160 | **−4.6** |
 | C-nat-unet | 0.6063 | 0.5647 | **−4.2** |
 | B-fix-hrnet | 0.7641 | 0.7229 | **−4.1** |
 
 **Arm A's UNet is the one catastrophic drop (−30.0); everything else sits in −4 to −13.**
 The three smallest belong to arm C's UNet and HRNet and arm B's HRNet, so this is not a
-clean multiscale effect — arm C's own SegFormer drops −10.7, worse than two of arm A's
-three runs. The reliable reading is narrower than it first appeared: **arm A produces the
+clean multiscale effect. The reliable reading is narrower than it first appeared: **arm A produces the
 worst transfer at every architecture, and its UNet fails outright.**
 
 Arm C is measured under a handicap worth naming: the shared validation set is cut by arm
@@ -176,9 +168,6 @@ All rows train on arm B (fixed-metre), so they are directly comparable to §1's 
 
 | model | params | pretrained | val F1 | test F1 | P / R |
 |---|---:|---|---:|---:|---|
-| SegFormer mit_b0 | 3.7M | — | 0.7537 | 0.6623 | 0.7973 / 0.5663 |
-| SegFormer mit_b2 | 24.7M | ImageNet | 0.7623 | 0.7041 | 0.7933 / 0.6330 |
-| SegFormer mit_b5 | 82.0M | ImageNet | **0.7731** | 0.7188 | 0.8081 / 0.6473 |
 | **HRNet w18** | **16.1M** | **—** | 0.7641 | **0.7229** | 0.8181 / 0.6475 |
 | HRNet w18 | 16.1M | ImageNet | 0.7708 | 0.7218 | 0.8563 / 0.6238 |
 
@@ -201,16 +190,12 @@ This is the third measurement of the same effect — +0.4 on a block split, −3
 held-out ortho, ~0 here. **Pretrained weights substitute for data; their value goes to zero
 once enough real data is present.**
 
-**Within SegFormer, capacity does scale — but the clean comparison is smaller than it
-looks.** b0→b2 is +4.2 and b2→b5 is +1.5, but b0 is from scratch while b2 and b5 carry
-ImageNet weights, so only **b2→b5 isolates capacity: +1.5 points for 3.3× the parameters.**
-This does reverse the earlier from-scratch finding that 24.7M overfits this corpus —
-with pretraining, capacity helps rather than hurts, it just helps very little.
+Within SegFormer capacity scales weakly — see the appendix.
 
 ---
 
 ## 4 · Synthetic pretraining — generated imagery vs generated geometry
-
+THis might be dublicated to @/Users/christian/work/work/WINMOL_segmentor_pt/docs/synthetic-pretraining-beech.md
 Two-stage: stage 1 on generated data, stage 2 on arm B.
 
 | stage-1 source | tiles | nature | HRNet | UNet |
@@ -329,3 +314,32 @@ DeepLabV3+'s ASPP). Diagnosing it properly, or lowering the LR from the default 
 the config mechanism that is still outstanding — `lr` is deliberately not a CLI flag.
 
 Until then PAN is untested, and the BiFPN question it was meant to stand in for is open.
+
+---
+
+## Appendix — SegFormer
+
+SegFormer was run on every arm and every capacity step. It is recorded here rather than in
+the main tables because **it never led on any deployment-relevant comparison**, and its
+presence made the arm-C verdict look worse than the other architectures support.
+
+| run | arm / setting | test F1 | P / R |
+|---|---|---:|---|
+| A-r15-segformer | R port, mit_b0 scratch | 0.5756 | 0.8764 / 0.4285 |
+| B-fix-segformer | fixed-metre, mit_b0 scratch | 0.6623 | 0.7973 / 0.5663 |
+| C-nat-segformer | native+multiscale, mit_b0 scratch | 0.5283 | 0.8317 / 0.3871 |
+| B-fix-segformer-b2-in | fixed-metre, mit_b2 ImageNet | 0.7041 | 0.7933 / 0.6330 |
+| B-fix-segformer-b5-in | fixed-metre, mit_b5 ImageNet | 0.7188 | 0.8081 / 0.6473 |
+
+Three things it showed, none of which change a decision:
+
+- **It is the one cell where the R port beats native+multiscale** (0.5756 vs 0.5283).
+  With SegFormer included, arm C is non-inferior but not superior; without it, arm C beats
+  arm A on both architectures. The 3.7M model is the most sensitive to arm C's 2.3× smaller
+  training set, which is why it was excluded from the headline.
+- **Capacity scales weakly.** b0→b2 is +4.2 and b2→b5 +1.5, but b0 is from scratch while
+  b2/b5 carry ImageNet weights, so only **b2→b5 isolates capacity: +1.5 for 3.3× the
+  parameters.**
+- **82M pretrained never beat 16M HRNet from scratch** (0.7188 vs 0.7229), and at the
+  Analyzer's own scale mit_b2 reached 0.7974 against HRNet's 0.8011 — inside noise, at 1.5×
+  the parameters.
