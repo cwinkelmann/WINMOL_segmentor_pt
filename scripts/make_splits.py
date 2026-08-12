@@ -157,11 +157,17 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
     extent = cfg.get("extent_m", 10.24)
     native_px = cfg.get("native_px")
     caps = cfg.get("caps", {"train": 2000, "val": 400, "test": 400})
+    # 'auto' keeps PIL bicubic, which filters hard on downsampling; 'on'/'off' switch to
+    # skimage order=3 with anti_aliasing set accordingly. Measured at a x1.40 downsample,
+    # on-vs-off differ by 0.006 grey levels (skimage's sigma is scale-derived and near
+    # zero there) while auto-vs-skimage differ by 3.16 -- so this knob really selects the
+    # resampler, not the anti-aliasing.
+    antialias = cfg.get("antialias", "auto")
     # In native mode the footprint is a pixel count, so its size in metres — and therefore
     # the buffer that keeps splits apart — differs per site with the ortho's resolution.
     buffer_m = None if native_px else extent * math.sqrt(2) / 2
     os.makedirs(out_dir, exist_ok=True)
-    manifest = {"strategy": strategy,
+    manifest = {"strategy": strategy, "antialias": cfg.get("antialias", "auto"),
                 "extent_m": None if native_px else extent,
                 "native_px": native_px,
                 "buffer_m": None if native_px else round(buffer_m, 3),
@@ -189,6 +195,30 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
             counters[split] = stats["next_index"]
             manifest["sites"].append({"name": name, "split": split,
                                       "tiles": stats["written"], "geometry": geom_report})
+            continue
+
+        if strategy == "blocks" and site.get("whole_split"):
+            # A site too small to be cut up goes entirely into one split. Kaufland's AOI
+            # is 5,393 m² and a 15 m footprint holds 10.61 m out from every edge, leaving
+            # 2,190 m² — no grid leaves more than one usable block. Putting it wholly in
+            # train keeps the corpus's finest orthomosaic (2.09 cm/px) in the model rather
+            # than dropping the resolution extreme; it contributes nothing to val/test,
+            # which is the honest trade and is recorded in splits.json.
+            split = site["whole_split"]
+            if split not in counters:
+                raise SystemExit(f"site {name!r}: whole_split must be train/val/test, "
+                                 f"got {split!r}")
+            n_sites = len(cfg["sites"])
+            cap = caps.get(split)
+            stats = sample_tiles(site["ortho"], stems, site["aoi"],
+                                 os.path.join(out_dir, split), extent_m=extent,
+                                 limit=math.ceil(cap / n_sites) if cap else None,
+                                 start_index=counters[split], seed=seed, quiet=quiet,
+                                 native_px=native_px, antialias=antialias)
+            counters[split] = stats["next_index"]
+            manifest["sites"].append({"name": name, "split": f"whole -> {split}",
+                                      "tiles": {split: stats["written"]},
+                                      "geometry": geom_report})
             continue
 
         if strategy == "blocks":
@@ -219,7 +249,7 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
                 stats = sample_tiles(site["ortho"], stems, site["aoi"],
                                      os.path.join(out_dir, split), extent_m=extent,
                                      limit=share.get(split), start_index=counters[split],
-                                     seed=seed, quiet=quiet, native_px=native_px,
+                                     seed=seed, quiet=quiet, native_px=native_px, antialias=antialias,
                                      block_size_m=block, split=split,
                                      split_fractions=fracs,
                                      split_seed=cfg.get("split_seed", 1))

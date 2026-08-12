@@ -20,7 +20,7 @@
 set -euo pipefail
 
 PY=${PY:-.venv/bin/python}
-GIS=${GIS:-/Users/christian/data/Winmol/training_data/WINMOL_Trainings_Data/GIS}
+GIS=${GIS:-/Volumes/storage/Datasets/Winmol/training_data/WINMOL_Trainings_Data/GIS}
 OUT=${OUT:-$HOME/winmol_data}
 S=scripts/sample_training_tiles.py
 
