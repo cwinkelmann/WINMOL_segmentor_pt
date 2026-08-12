@@ -226,7 +226,7 @@ def config_from_args(argv=None):
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
     p.add_argument("--encoder", default=None,
                    help="smp encoder; default is per-arch (e.g. mit_b0 for segformer, mit_b2/b3/b5 for larger)")
-    p.add_argument("--loss", default="bce_soft_f1", choices=("bce_soft_f1", "bce"),
+    p.add_argument("--loss", default="bce_soft_f1", choices=("bce_soft_f1", "bce", "bce_hard_f1"),
                    help="bce = what R effectively optimises (its F1 term is rounded, "
                         "so it has no gradient)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")

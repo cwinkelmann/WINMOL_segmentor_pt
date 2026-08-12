@@ -45,3 +45,27 @@ def test_a_rounded_f1_term_has_no_gradient():
 def test_cli_selects_the_loss():
     assert config_from_args(["--data-dir", "x"]).loss == "bce_soft_f1"
     assert config_from_args(["--data-dir", "x", "--loss", "bce"]).loss == "bce"
+
+
+def test_r_literal_loss_has_the_same_gradient_as_plain_bce():
+    """`bce_hard_f1` is R's F1Score_loss transcribed. It reports a bigger number than
+    `bce` and produces a bit-identical gradient, which is the whole finding."""
+    torch.manual_seed(0)
+    logits = torch.randn(2, 1, 32, 32)
+    target = (torch.rand(2, 1, 32, 32) > 0.9).float()
+
+    grads = {}
+    values = {}
+    for name in ("bce", "bce_hard_f1", "bce_soft_f1"):
+        x = logits.clone().requires_grad_(True)
+        v = LOSSES[name](x, target)
+        v.backward()
+        grads[name] = x.grad.clone()
+        values[name] = float(v.detach())
+
+    # R's term inflates the reported loss...
+    assert values["bce_hard_f1"] > values["bce"] + 0.5
+    # ...and changes nothing the optimiser sees
+    assert torch.equal(grads["bce_hard_f1"], grads["bce"])
+    # while the soft version genuinely does
+    assert not torch.allclose(grads["bce_soft_f1"], grads["bce"])
