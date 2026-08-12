@@ -136,8 +136,35 @@ it is what R's gradient actually contains.
 
 | loss | F1 | precision | recall |
 |---|---:|---:|---:|
-| `bce_soft_f1` (port) | *running* | | |
-| `bce` (R-equivalent) | *running* | | |
+| `bce` (R-equivalent) | 0.7861 | **0.8394** | 0.7392 |
+| `bce_soft_f1` (port) | 0.7882 | 0.8131 | **0.7647** |
+
+UNet, 40 epochs, `BeechAll15`, everything else held fixed. **F1 is a wash (+0.2) but recall
+moves +2.6 and precision −2.6.** So the port's recall advantage is real and attributable to
+the loss — and it is a trade, not a free gain.
+
+#### Confirmed in R itself
+
+The same test run inside the R/Keras stack, `LOSS=f1` against
+`LOSS=bce` (`loss_binary_crossentropy` alone) with `tensorflow::set_random_seed(1)` on both
+arms, 8 epochs at 256×256:
+
+| epoch | `LOSS=f1` — P / R / F1 | `LOSS=bce` — P / R / F1 | val_loss f1 | val_loss bce | gap |
+|---|---|---|---:|---:|---:|
+| 1 | 0.0492 / 0.9130 / 0.0930 | identical | 8.1591 | 7.2521 | — |
+| 2 | 0.4733 / 0.6648 / 0.5457 | identical | 0.6134 | 0.1577 | 0.4557 |
+| 3 | 0.6154 / 0.6444 / 0.6145 | identical | 0.5028 | 0.1162 | 0.3866 |
+| 4 | 0.7117 / 0.6146 / 0.6467 | identical | 0.4495 | 0.0948 | 0.3547 |
+| 5 | 0.5894 / 0.7988 / 0.6722 | identical | 0.4262 | 0.0977 | 0.3285 |
+| 6 | 0.6825 / 0.7364 / 0.7008 | identical | 0.3846 | 0.0843 | 0.3003 |
+
+**Deleting the F1 term from R's loss changes nothing except the printed loss value**, and
+the gap between the two `val_loss` columns is `1 - F1` at every epoch — the term being
+reported while contributing no gradient. Reproduce with `LOSS` and `SEED` on the R
+container entrypoint (`docker/run_training.R` in `WINMOL_segmentor`).
+
+The root cause is reusing a *metric* as a loss term: `F1Score_loss` calls the `F1Score`
+metric, and metrics threshold by design (`k_round`). Losses must not.
 
 ### The strictly fair comparison — same architecture family, same 256×256
 The *same* PyTorch U-Net was also trained end-to-end at **256×256** through the identical two-stage
