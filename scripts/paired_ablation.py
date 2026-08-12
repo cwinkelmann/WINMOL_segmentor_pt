@@ -14,6 +14,7 @@ mean alone, which one bad seed can carry.
 """
 import argparse
 import json
+import math
 import os
 import statistics
 import sys
@@ -78,11 +79,28 @@ def main(argv=None):
           f"same sign in {r['positive']}/{r['n']} seeds")
     print(f"within-arm spread across seeds: {a.arm_a} {r['spread_a']:.4f}, "
           f"{a.arm_b} {r['spread_b']:.4f}")
-    # a difference smaller than the spread the seeds alone produce is not a result
-    worst = max(r["spread_a"], r["spread_b"])
-    verdict = ("separable — |mean diff| exceeds the within-arm seed spread"
-               if abs(r["mean_diff"]) > worst else
-               "NOT separable — the change moves less than seeds alone do")
+    # Judge the PAIRED differences, not the within-arm spread. Comparing against the
+    # spread would throw away the whole point of pairing: the seed's contribution is
+    # common to both arms and cancels in each difference, which is why a +3.8 recall
+    # shift that is consistent across every seed is readable even though each arm
+    # wanders 4 points on its own.
+    n, mean, sd = r["n"], r["mean_diff"], r["sd_diff"]
+    if n > 1 and sd > 0:
+        t = mean / (sd / math.sqrt(n))
+        r["t"] = t
+        r["df"] = n - 1
+        print(f"paired t = {t:+.2f} on {n-1} df   "
+              f"(within-arm spread {r['spread_a']:.4f} / {r['spread_b']:.4f} — "
+              f"cancelled by pairing)")
+        consistent = r["positive"] in (0, n)
+        strong = abs(t) >= 3.0 and consistent
+        verdict = ("separable — consistent in sign across every seed and large "
+                   "relative to the paired scatter" if strong else
+                   "suggestive — consistent in sign but the paired scatter is not small"
+                   if consistent else
+                   "NOT separable — the difference changes sign across seeds")
+    else:
+        verdict = "insufficient seeds"
     print(f"verdict: {verdict}")
     if r["missing_a"] or r["missing_b"]:
         print(f"note: unpaired seeds dropped — {a.arm_a} missing {r['missing_a']}, "
