@@ -23,7 +23,12 @@ python3 -u winmol_run.py <model_path> <input_tiff> <stem_map_tiff> <output_prefi
 | `input_tiff` | the orthomosaic |
 | `stem_map_tiff` | **output** path for the predicted binary stem raster |
 | `output_prefix` | prefix for the vector outputs |
-| process type | `Stems` (segment + vectorise), `Trees`, or `Nodes` |
+| process type | `Stems`, `Trees`, or `Nodes` — see below |
+
+**`Stems` does NOT vectorise.** `run_stem_pipeline` calls `run_prediction_phase` and
+stops, writing only the stem-map raster; `run_tree_pipeline` runs prediction *and*
+`run_vector_phase`. **Use `Trees` whenever you want vector output.** A `Stems` run exits
+cleanly with no error and no shapefiles, which reads as a failure and is not one.
 
 It re-execs itself with `PYTHONHASHSEED=0` before anything hashes into a set, because
 `connect_stems` joins stems in set-iteration order. **Do not defeat that by setting a
