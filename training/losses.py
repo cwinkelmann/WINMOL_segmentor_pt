@@ -48,3 +48,32 @@ def bce_hard_f1_loss(logits, target, eps=1e-6):
 
 LOSSES = {"bce_soft_f1": bce_soft_f1_loss, "bce": bce_loss,
           "bce_hard_f1": bce_hard_f1_loss}
+
+
+def soften_targets(target, eps=0.0, band_px=2):
+    """Pull the target toward 0.5 in a band around each mask edge.
+
+    Measured motivation: on `BeechAll15/test`, false negatives are **1.59x enriched**
+    within 2 px of an annotation edge (70.3% against a 44.2% baseline), while false
+    positives sit at 0.98x — exactly baseline. The model under-segments at boundaries and
+    hallucinates whole stems elsewhere, so only the first is a labelling problem.
+
+    Stems average 7.8 px wide (23 cm at 2.93 cm/px), so one pixel of boundary
+    disagreement is ~13% of a stem's area. A hand-traced outline is not accurate to that,
+    and a hard target forces the network to commit to it anyway.
+
+    `band_px=0` applies classic global smoothing instead, which also touches interiors
+    the annotators *were* sure about — kept only as a control.
+
+    Erosion/dilation come from max_pool2d, so this stays on-device and costs one pooling
+    pass per batch rather than a per-sample distance transform.
+    """
+    if eps <= 0:
+        return target
+    if band_px <= 0:
+        return target * (1 - eps) + (1 - target) * eps
+    k = 2 * band_px + 1
+    dilated = F.max_pool2d(target, k, stride=1, padding=band_px)
+    eroded = -F.max_pool2d(-target, k, stride=1, padding=band_px)
+    band = dilated - eroded                      # 1 within band_px of an edge, else 0
+    return target * (1 - band * eps) + (1 - target) * (band * eps)

@@ -20,6 +20,8 @@ class TrainConfig:
     patience: int = 5
     loss: str = "bce_soft_f1"   # or 'bce' — what R effectively optimises
     block_order: str = "bn_relu"  # or 'relu_bn' — R's Conv->ReLU->BN order
+    label_smoothing: float = 0.0  # pull targets toward 0.5 near mask edges
+    smooth_band_px: int = 2       # 0 = global smoothing instead of edge-only
     seed: int = 1
     deterministic: bool = False   # cuDNN deterministic kernels; needed for replicates
     device: str = "auto"   # auto -> mps, then cuda, then cpu

@@ -251,6 +251,10 @@ def config_from_args(argv=None):
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
     p.add_argument("--encoder", default=None,
                    help="smp encoder; default is per-arch (e.g. mit_b0 for segformer, mit_b2/b3/b5 for larger)")
+    p.add_argument("--label-smoothing", type=float, default=0.0,
+                   help="pull targets toward 0.5 near mask edges (0 = off)")
+    p.add_argument("--smooth-band-px", type=int, default=2,
+                   help="edge band width; 0 applies global smoothing instead")
     p.add_argument("--block-order", default="bn_relu", choices=("bn_relu", "relu_bn"),
                    help="UNet only. relu_bn is R's Conv->ReLU->BN order")
     p.add_argument("--seed", type=int, default=1,
@@ -291,6 +295,7 @@ def config_from_args(argv=None):
         eval_tiling=a.eval_tiling,
         arch=a.arch, width_mult=a.width_mult, loss=a.loss,
         seed=a.seed, deterministic=a.deterministic, block_order=a.block_order,
+        label_smoothing=a.label_smoothing, smooth_band_px=a.smooth_band_px,
         encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,
     )

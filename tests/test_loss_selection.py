@@ -69,3 +69,29 @@ def test_r_literal_loss_has_the_same_gradient_as_plain_bce():
     assert torch.equal(grads["bce_hard_f1"], grads["bce"])
     # while the soft version genuinely does
     assert not torch.allclose(grads["bce_soft_f1"], grads["bce"])
+
+
+def test_label_smoothing_touches_only_the_edge_band():
+    """Boundary-aware smoothing must leave interiors and far background alone.
+
+    That is the whole point: false negatives are 1.59x enriched within 2 px of an
+    annotation edge, while interiors are pixels the annotators were sure about.
+    """
+    from training.losses import soften_targets
+
+    t = torch.zeros(1, 1, 11, 11)
+    t[0, 0, 4:7, 4:7] = 1.0                        # a 3x3 stem
+
+    s = soften_targets(t, eps=0.1, band_px=1)
+    assert s[0, 0, 5, 5].item() == 1.0             # interior untouched
+    assert abs(s[0, 0, 4, 4].item() - 0.9) < 1e-5  # stem edge pulled down
+    assert abs(s[0, 0, 3, 5].item() - 0.1) < 1e-5  # background beside it pulled up
+    assert s[0, 0, 0, 0].item() == 0.0             # far background untouched
+
+    # off by default, and exactly the identity when eps=0
+    assert torch.equal(soften_targets(t, 0.0, 2), t)
+
+    # band_px=0 is the classic global variant: every pixel moves
+    g = soften_targets(t, eps=0.1, band_px=0)
+    assert abs(g[0, 0, 5, 5].item() - 0.9) < 1e-5
+    assert abs(g[0, 0, 0, 0].item() - 0.1) < 1e-5
