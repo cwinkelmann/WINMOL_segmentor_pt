@@ -134,14 +134,19 @@ To isolate it, `--loss {bce_soft_f1,bce}` selects between the port's objective a
 effective one, with everything else held fixed. `bce` is the honest stand-in for R because
 it is what R's gradient actually contains.
 
-| loss | F1 | precision | recall |
-|---|---:|---:|---:|
-| `bce` (R-equivalent) | 0.7861 | **0.8394** | 0.7392 |
-| `bce_soft_f1` (port) | 0.7882 | 0.8131 | **0.7647** |
+Paired over seeds on SpecDS -> TestDS, `--deterministic`, everything else fixed:
 
-UNet, 40 epochs, `BeechAll15`, everything else held fixed. **F1 is a wash (+0.2) but recall
-moves +2.6 and precision −2.6.** So the port's recall advantage is real and attributable to
-the loss — and it is a trade, not a free gain.
+| metric | mean diff (soft − bce) | sign agreement | paired t | verdict |
+|---|---:|---|---:|---|
+| **recall** | **+0.0377** | 4/4 | +4.86 | **separable** |
+| **precision** | **−0.0253** | 0/4 | −5.47 | **separable** |
+| F1 | +0.0058 | 3/4 | +1.91 | not separable |
+
+**The soft-F1 term buys 3.8 points of recall and costs 2.5 of precision, netting no
+measurable F1 change.** Every seed agrees on the direction of both. It is a trade, not a
+free gain — take it when a missed stem costs more than a false one, which is the usual
+case here because the vectoriser downstream cannot recover a stem the segmenter never
+marked.
 
 #### Confirmed in R itself
 
@@ -165,6 +170,42 @@ container entrypoint (`docker/run_training.R` in `WINMOL_segmentor`).
 
 The root cause is reusing a *metric* as a loss term: `F1Score_loss` calls the `F1Score`
 metric, and metrics threshold by design (`k_round`). Losses must not.
+
+### Every modernisation, paired over 5 seeds
+
+Each row is one change with everything else held fixed, both arms trained on the same
+seeds so the seed's contribution cancels in the per-seed difference. UNet, 40 epochs,
+SpecDS -> TestDS, `--deterministic`. `scripts/paired_ablation.py` reports the per-seed
+differences and a paired t; it refuses a verdict when the sign flips across seeds.
+
+| change | ΔF1 | Δrecall | sign agreement (F1) | paired t | verdict |
+|---|---:|---:|---|---:|---|
+| **Conv→BN→ReLU** instead of R's Conv→ReLU→BN | **+0.0106** | **+0.0292** | 5/5 | 7.44 | **keep — real gain** |
+| **soft-F1 loss term** instead of R's rounded one | +0.0058 | +0.0377 | 3/4 | 1.91 | keep for recall; F1 flat |
+| **label smoothing**, ε=0.1 in a 2 px edge band | **−0.0048** | +0.0041 | 5/5 negative | −4.74 | **do not** |
+
+Per-seed F1 differences for the ordering change: −0.0144, −0.0129, −0.0105, −0.0063,
+−0.0090 (R minus port; negative means R is worse). Never once positive across five seeds,
+at identical parameter count — 31,036,673 either way — so this is the ordering and nothing
+else. **It is the one modernisation that is a straight gain rather than a trade.**
+
+Label smoothing was tried because the disagreement analysis found false negatives **1.59×
+enriched** within 2 px of an annotation edge (70.3% against a 44.2% baseline, on stems
+averaging 7.8 px wide). The diagnosis was right and the intervention still failed: softening
+the target there removes the gradient that pushed the model to commit at edges, recall
+barely moves, and F1 drops on every seed. Filling annotation holes was ruled out before
+running anything — holes are 0.19% of stem area and account for 0.0% of false negatives.
+
+#### Why five seeds and `--deterministic`
+
+Two runs with **bit-identical gradients** (`bce` and `bce_hard_f1`) first measured **2.0 F1
+apart**, because cuDNN picks algorithms by autotuning and a seed alone does not pin that.
+With `--deterministic` the within-arm spread across five different seeds falls to
+0.45–0.96 F1. Most of what looked like seed variance was kernel selection.
+
+That matters for reading every other number in this repo: **unpaired single-run differences
+below ~1 F1 point are not interpretable**, and the three effects above are 0.5–1.1 points.
+They are only readable because the design is paired.
 
 ### The strictly fair comparison — same architecture family, same 256×256
 The *same* PyTorch U-Net was also trained end-to-end at **256×256** through the identical two-stage
