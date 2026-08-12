@@ -57,7 +57,8 @@ The R `model_UNet.R` is the reference the port adapts; these are the deliberate 
    (non-differentiable → the loss effectively trains on BCE alone). The port uses an
    un-thresholded soft F1 so the term genuinely contributes gradient — a documented
    improvement (design spec §8). Reported metrics still use the hard-rounded 0.5-threshold
-   F1, matching R.
+   F1, matching R. **See "The `k_round` finding" below for why this is not a cosmetic
+   difference, and for the ablation that isolates it.**
 
 ## Unchanged from the original (all three implementations)
 
@@ -86,7 +87,7 @@ epochs/stage cap). The R U-Net trains at 256×256 (its native size); the PyTorch
 `results/r_vs_pytorch_lrfix/`.
 
 ### Held-out TestDS — the primary comparison
-
+TODO one test with R but 512
 | Model | Params | Precision | Recall | **F1 (Dice)** | IoU† | Train (min) |
 |-------|-------:|----------:|-------:|--------------:|-----:|------------:|
 | **R U-Net (Keras, 256)** | 31.0M | 0.7619 | 0.7259 | **0.7388** | 0.586 | — |
@@ -107,8 +108,38 @@ The table above reflects each model **as deployed** — R ships at 256×256, thi
 ONNX contract) — so it mixes an architecture difference with a resolution difference. For a verdict
 on the *port itself* the next table controls for resolution.
 
-### The strictly fair comparison — same architecture family, same 256×256
+### The `k_round` finding — R's F1 term never reaches the optimiser
 
+R's training loss is written as `binary_crossentropy + (1 - F1)`, but `controlling.R`
+computes that F1 from `k_round(y_pred)`. **Rounding has zero gradient almost everywhere**,
+so the entire F1 term contributes nothing to the update: R trains on BCE alone, and has
+always done so. The term is real in the *reported* loss value and absent from the
+*optimisation*.
+
+This is verified rather than asserted —
+`tests/test_loss_selection.py::test_a_rounded_f1_term_has_no_gradient` builds R's exact
+expression in torch, calls `.backward()`, and asserts the gradient is empty or all-zero.
+
+Two consequences:
+
+- **`BCE + (1 - soft_F1)` is a genuinely different objective, not a reimplementation.**
+  The soft F1 term is the one modernisation that changes what the optimiser sees.
+- **It is the natural explanation for the recall gain.** A soft-F1 term penalises false
+  negatives and false positives symmetrically through the F1 denominator, whereas BCE on a
+  corpus that is ~95% background is dominated by the majority class and rewards
+  withholding. The R model's profile (P 0.7619 / R 0.7259) against the port's
+  (P 0.7265 / R 0.7677) at the same 256×256 is exactly the shape that predicts.
+
+To isolate it, `--loss {bce_soft_f1,bce}` selects between the port's objective and R's
+effective one, with everything else held fixed. `bce` is the honest stand-in for R because
+it is what R's gradient actually contains.
+
+| loss | F1 | precision | recall |
+|---|---:|---:|---:|
+| `bce_soft_f1` (port) | *running* | | |
+| `bce` (R-equivalent) | *running* | | |
+
+### The strictly fair comparison — same architecture family, same 256×256
 The *same* PyTorch U-Net was also trained end-to-end at **256×256** through the identical two-stage
 pipeline (172 min full run), so R-256 vs PyTorch-256 isolates framework + the architectural/loss
 deltas with resolution held fixed. Source: `results/r_vs_pytorch_lrfix/ablation_results.json`.
