@@ -29,12 +29,14 @@ _DEFAULT_ENCODER = {
 
 
 def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
-                width_mult=1.0):
+                width_mult=1.0, block_order="bn_relu"):
     if arch == "unet":
         from winmol_unet.model import UNet
-        return UNet(dropout=dropout, width_mult=width_mult)
+        return UNet(dropout=dropout, width_mult=width_mult, block_order=block_order)
     if width_mult != 1.0:
         raise ValueError("width_mult is only supported for arch='unet'")
+    if block_order != "bn_relu":
+        raise ValueError("block_order is only supported for arch='unet'")
     import segmentation_models_pytorch as smp
     enc = encoder or _DEFAULT_ENCODER.get(arch)
     if arch == "deeplabv3plus":

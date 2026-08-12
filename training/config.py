@@ -19,6 +19,7 @@ class TrainConfig:
     val_fraction: float = 0.2
     patience: int = 5
     loss: str = "bce_soft_f1"   # or 'bce' — what R effectively optimises
+    block_order: str = "bn_relu"  # or 'relu_bn' — R's Conv->ReLU->BN order
     seed: int = 1
     deterministic: bool = False   # cuDNN deterministic kernels; needed for replicates
     device: str = "auto"   # auto -> mps, then cuda, then cpu

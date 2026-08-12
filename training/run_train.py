@@ -156,7 +156,8 @@ def run_training(cfg):
         cfg.image_dir, cfg.mask_dir, cfg, transform,
         val_image_dir=cfg.val_image_dir, val_mask_dir=cfg.val_mask_dir)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
-                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult)
+                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult,
+                        block_order=cfg.block_order)
     train_one_run(model, train_loader, val_loader, cfg)
     val_metrics = evaluate(model, val_loader)   # on training device
     _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
@@ -171,7 +172,8 @@ def run_two_stage(cfg):
     _seed_everything(cfg)
     transform = build_augmentation(cfg)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
-                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult)
+                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult,
+                        block_order=cfg.block_order)
     # ONE optimizer shared across both stages (Adam moment estimates carry over, as they do in
     # the R pipeline's single compiled optimizer), BUT the learning rate is reset to cfg.lr at
     # the start of stage 2 — mirroring the R fix `k_set_value(optimizer$lr, BASE_LR)`. Without
@@ -249,6 +251,8 @@ def config_from_args(argv=None):
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
     p.add_argument("--encoder", default=None,
                    help="smp encoder; default is per-arch (e.g. mit_b0 for segformer, mit_b2/b3/b5 for larger)")
+    p.add_argument("--block-order", default="bn_relu", choices=("bn_relu", "relu_bn"),
+                   help="UNet only. relu_bn is R's Conv->ReLU->BN order")
     p.add_argument("--seed", type=int, default=1,
                    help="torch/split/augmentation seed. Vary it for replicates: two runs "
                         "with identical gradients measured 2.0 F1 apart without this.")
@@ -286,7 +290,7 @@ def config_from_args(argv=None):
         multiscale=a.multiscale, crop_min_px=a.crop_min_px, crop_max_px=a.crop_max_px,
         eval_tiling=a.eval_tiling,
         arch=a.arch, width_mult=a.width_mult, loss=a.loss,
-        seed=a.seed, deterministic=a.deterministic,
+        seed=a.seed, deterministic=a.deterministic, block_order=a.block_order,
         encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,
     )
