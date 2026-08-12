@@ -226,6 +226,9 @@ def config_from_args(argv=None):
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
     p.add_argument("--encoder", default=None,
                    help="smp encoder; default is per-arch (e.g. mit_b0 for segformer, mit_b2/b3/b5 for larger)")
+    p.add_argument("--loss", default="bce_soft_f1", choices=("bce_soft_f1", "bce"),
+                   help="bce = what R effectively optimises (its F1 term is rounded, "
+                        "so it has no gradient)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     p.add_argument("--export-keras", action="store_true",
                    help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
@@ -253,7 +256,7 @@ def config_from_args(argv=None):
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
         multiscale=a.multiscale, crop_min_px=a.crop_min_px, crop_max_px=a.crop_max_px,
         eval_tiling=a.eval_tiling,
-        arch=a.arch, width_mult=a.width_mult,
+        arch=a.arch, width_mult=a.width_mult, loss=a.loss,
         encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,
     )

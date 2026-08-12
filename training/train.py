@@ -6,7 +6,7 @@ import torch
 
 from .device import resolve_device
 from .evaluate import evaluate
-from .losses import bce_soft_f1_loss
+from .losses import LOSSES, bce_soft_f1_loss
 from .run_logger import RunLogger
 
 
@@ -18,6 +18,7 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
     # mirroring the R pipeline which compiles one optimizer once for both cost_train stages.
     # When None (single-stage) a fresh Adam is created.
     patience = cfg.patience if patience is None else patience
+    loss_fn = LOSSES[getattr(cfg, "loss", "bce_soft_f1")]
     log_dir = cfg.log_dir if log_dir is None else log_dir
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
     ckpt = os.path.join(cfg.checkpoint_dir, ckpt_name)
@@ -39,7 +40,7 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
             for img, mask in train_loader:
                 img, mask = img.to(device), mask.to(device)
                 opt.zero_grad()
-                loss = bce_soft_f1_loss(model(img), mask)
+                loss = loss_fn(model(img), mask)
                 loss.backward()
                 opt.step()
                 running += loss.item()

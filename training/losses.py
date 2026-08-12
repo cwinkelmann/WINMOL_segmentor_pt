@@ -12,3 +12,19 @@ def bce_soft_f1_loss(logits, target, eps=1e-6):
     fn = ((1 - probs) * target).sum()
     soft_f1 = (2 * tp + eps) / (2 * tp + fp + fn + eps)
     return bce + (1 - soft_f1)
+
+
+def bce_loss(logits, target):
+    """Plain BCE — what the R pipeline effectively optimises.
+
+    R's loss is `BCE + (1 - F1)` but its F1 term applies `k_round` to the prediction, and
+    a rounded value has zero gradient almost everywhere. The F1 term therefore contributes
+    nothing to the update and R trains on BCE alone. Selecting this makes the comparison
+    against `bce_soft_f1_loss` an ablation of the one change that actually reaches the
+    optimiser.
+    """
+    import torch.nn.functional as F
+    return F.binary_cross_entropy_with_logits(logits, target)
+
+
+LOSSES = {"bce_soft_f1": bce_soft_f1_loss, "bce": bce_loss}

@@ -18,6 +18,7 @@ class TrainConfig:
     img_size: int = 512
     val_fraction: float = 0.2
     patience: int = 5
+    loss: str = "bce_soft_f1"   # or 'bce' — what R effectively optimises
     seed: int = 1
     device: str = "auto"   # auto -> mps, then cuda, then cpu
     wandb: bool = False
