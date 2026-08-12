@@ -21,7 +21,7 @@ is a *modernized adaptation of the R model, not a layer-exact clone* — see
 | Output size vs input | Smaller (388 for 572) | Identical (256) | **Identical (512×512)** |
 | Skip connections | encoder maps **cropped** before concat | direct concatenate | **direct concatenate** (`torch.cat([enc, up], dim=1)`) |
 | Batch normalization | **None** | after every conv **and** every up-conv (22 BN) | **after every conv, but NOT after up-conv (18 BN)** |
-| Normalization order | Conv → ReLU | Conv → ReLU → BN | **Conv → BN → ReLU** (modern default) |
+| Normalization order | Conv → ReLU | Conv → ReLU → BN | **Conv → BN → ReLU** (modern default; **+1.1 F1**, 5/5 seeds) |
 | Conv bias | Yes | **`use_bias = FALSE`** | **`bias=False`** (BN β subsumes it) |
 | Dropout | only at end of contracting path | one per block (0.1), between the two convs | **one per block (`Dropout2d`, 0.1), between the two convs** |
 | Downsampling | 2×2 max-pool | 2×2 max-pool | **2×2 max-pool** |
@@ -41,7 +41,9 @@ The R `model_UNet.R` is the reference the port adapts; these are the deliberate 
 
 1. **Normalization order — Conv→BN→ReLU vs R's Conv→ReLU→BN.** R fuses ReLU into
    `layer_conv_2d` then applies `batch_normalization`; the port uses the modern
-   Conv→BN→ReLU. A genuinely different operation; both are common.
+   Conv→BN→ReLU. A genuinely different operation; both are common. **Measured: worth
+   +1.1 F1 and +2.9 recall, negative in 0 of 5 paired seeds** — see the ablation table
+   below. Switchable with `--block-order relu_bn` to reproduce R.
 2. **No BatchNorm after ConvTranspose.** R inserts a BN after each of the 4
    up-convolutions (before the skip concat); the port omits them — **18 BN vs R's 22**.
 3. **E7 decoder block uses 256 filters**, correcting R's `filters = 265` transposed-digit
