@@ -125,9 +125,32 @@ def _run_test(model, cfg):
     return m
 
 
+def _seed_everything(cfg):
+    """Seed torch/numpy/python and, on request, pin cuDNN to deterministic kernels.
+
+    `torch.manual_seed` alone is not enough on GPU: cuDNN picks algorithms by
+    autotuning, and non-deterministic reductions make two runs of the *same* code
+    diverge. Measured here: `bce` and `bce_hard_f1` have bit-identical gradients and
+    still landed 2.0 F1 apart. Without `deterministic`, a seed is a label, not a
+    guarantee.
+    """
+    import random
+
+    import numpy as np
+    random.seed(cfg.seed)
+    np.random.seed(cfg.seed)
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
+    if getattr(cfg, "deterministic", False):
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+
 def run_training(cfg):
     _validate_export(cfg)                        # fail fast before training
-    torch.manual_seed(cfg.seed)
+    _seed_everything(cfg)
     transform = build_augmentation(cfg)         # seeded internally via cfg.seed
     train_loader, val_loader = _build_loaders(
         cfg.image_dir, cfg.mask_dir, cfg, transform,
@@ -145,7 +168,7 @@ def run_two_stage(cfg):
     """Two-stage fine-tune: train on GenDS (stage 1), then fine-tune the same model
     on SpecDS (stage 2). Final metrics + export come from the stage-2 (species) model."""
     _validate_export(cfg)                        # fail fast before either stage
-    torch.manual_seed(cfg.seed)
+    _seed_everything(cfg)
     transform = build_augmentation(cfg)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
                         encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult)
@@ -226,6 +249,12 @@ def config_from_args(argv=None):
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
     p.add_argument("--encoder", default=None,
                    help="smp encoder; default is per-arch (e.g. mit_b0 for segformer, mit_b2/b3/b5 for larger)")
+    p.add_argument("--seed", type=int, default=1,
+                   help="torch/split/augmentation seed. Vary it for replicates: two runs "
+                        "with identical gradients measured 2.0 F1 apart without this.")
+    p.add_argument("--deterministic", action="store_true",
+                   help="cuDNN deterministic kernels + fixed algorithm choice. Slower, but "
+                        "without it same-seed runs still diverge on GPU.")
     p.add_argument("--loss", default="bce_soft_f1", choices=("bce_soft_f1", "bce", "bce_hard_f1"),
                    help="bce = what R effectively optimises (its F1 term is rounded, "
                         "so it has no gradient)")
@@ -257,6 +286,7 @@ def config_from_args(argv=None):
         multiscale=a.multiscale, crop_min_px=a.crop_min_px, crop_max_px=a.crop_max_px,
         eval_tiling=a.eval_tiling,
         arch=a.arch, width_mult=a.width_mult, loss=a.loss,
+        seed=a.seed, deterministic=a.deterministic,
         encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,
     )
