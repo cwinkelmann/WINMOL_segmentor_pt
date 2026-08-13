@@ -6,9 +6,13 @@ Numbers below are copied verbatim from
 [`assets/scale-sweep.json`](assets/scale-sweep.json), rendered by
 `scripts/plot_scale_sweep.py` from the six per-model sweeps in `assets/scale-aug/`.
 
-**Answer: ship it.** Jitter flattens the scale curve by **0.87 F1** (3/3 seeds, paired
-t −6.02) and costs **0.11 F1** at the native scale — a difference that is 1/3 seeds
-positive, i.e. indistinguishable from noise.
+**Answer: ship it.** Measured on two architectures. On HRNet, jitter flattens the scale
+curve by **0.87 F1** (3/3 seeds, paired t −6.02) and costs **0.11 F1** at the native scale
+— 1/3 seeds positive, i.e. noise. On UNet the same manipulation flattens it by **1.88 F1**
+(3/3 seeds, t −56.95) and *gains* 0.20 F1 at native scale as well. It wins at every scale
+on every UNet seed.
+
+Sections below cover HRNet first, then the UNet replication and a reproducibility check.
 
 ![F1 versus effective ground resolution](figures/scale-sweep.png)
 
@@ -66,6 +70,57 @@ that spreading training over 2.25–3.81 cm/px would blunt the model at the one 
 it is actually served at — did not materialise. Note also that validation ran at 1.00×
 (`--eval-tiling`), which structurally favours the fixed arm, so this is if anything
 generous to the baseline.
+
+## Replication on UNet — the effect is real and larger
+
+Repeated identically with `--arch unet` (same dataset, crop ranges, seeds, everything);
+sweeps in [`assets/scale-aug-unet/`](assets/scale-aug-unet), aggregate in
+[`assets/scale-sweep-unet.json`](assets/scale-sweep-unet.json).
+
+![UNet: F1 versus effective ground resolution](figures/scale-sweep-unet.png)
+
+| crop | ratio | GSD | fixed | jitter | diff | sign | t |
+|---:|---:|---:|---:|---:|---:|:--:|---:|
+| 394 | 0.77× | 2.254 | 0.7492 | 0.7689 | **+0.0197** | 3/3 | 14.97 |
+| 453 | 0.88× | 2.592 | 0.7760 | 0.7802 | +0.0042 | 3/3 | 3.67 |
+| **512** | **1.00×** | **2.930** | 0.7812 | 0.7833 | +0.0020 | 3/3 | 1.82 |
+| 589 | 1.15× | 3.370 | 0.7729 | 0.7792 | +0.0063 | 3/3 | 3.97 |
+| 666 | 1.30× | 3.811 | 0.7498 | 0.7690 | **+0.0191** | 3/3 | 6.13 |
+
+Spread: fixed **0.0334** (0.0344/0.0333/0.0326) vs jitter **0.0146** (0.0159/0.0138/0.0142).
+Paired: **−0.0188, 3/3 seeds flatter, t −56.95.**
+
+Jitter wins at **every** scale on **every** seed, and unlike HRNet it does not even cost
+anything at 1.00× — it gains 0.20 F1 there, 3/3 seeds.
+
+**Why UNet gains more.** HRNet carries parallel branches at several resolutions through
+the whole network and fuses them repeatedly, so multi-scale context is architectural. A
+plain UNet has one resolution ladder and must *learn* scale invariance from the data. That
+predicts exactly what is measured: UNet is the more scale-brittle baseline (spread 0.0334
+vs HRNet's 0.0295) and gains the most from jitter (−0.0188 vs −0.0087). The two results
+agree in direction and differ in magnitude in the direction the architectures predict,
+which is a stronger joint result than either alone.
+
+| | fixed spread | jitter spread | gain | cost at 1.00× |
+|---|---:|---:|---:|---:|
+| HRNet | 0.0295 | 0.0207 | −0.0087 (t −6.0) | −0.0011 (1/3, noise) |
+| UNet | 0.0334 | 0.0146 | −0.0188 (t −57.0) | **+0.0020** (3/3) |
+
+## Reproducibility check
+
+`fixed-s1` scored highest in its arm in both architectures, so it was re-run from scratch
+with the same seed on a different GPU:
+
+| | F1 | precision | recall |
+|---|---:|---:|---:|
+| original (GPU 0) | 0.7922 | 0.7990 | 0.7856 |
+| reproduction (GPU 7) | 0.7922 | 0.7990 | 0.7856 |
+
+Identical to four decimals. `--deterministic` reproduces across devices, so between-seed
+differences of 1–2 F1 in the fixed arm are genuine seed variance, not run-to-run noise —
+and being common to both arms, they cancel in the paired differences. Runs now write
+`run_config.json` beside the model so this is auditable from the artifacts rather than
+requiring a re-run.
 
 ## Caveats, stated
 
