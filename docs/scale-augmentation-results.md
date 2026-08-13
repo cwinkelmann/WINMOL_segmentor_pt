@@ -24,13 +24,13 @@ Sections below cover HRNet first, then the UNet replication and a reproducibilit
 | sites | Campus + Oberheide block-split (60 m); Bachsee_north, Kaufland whole-to-train |
 | leak check | closest train↔val↔test approach **28.3 m** / **27.9 m** vs a **27.59 m** floor |
 | arms | crop 512–512 (*fixed*) vs 394–666 (*jitter*), `RandomSizedCrop`→512 |
-| held fixed | same tiles, rotation/flip/photometric, HRNet, batch 16, `--deterministic` |
-| n | 3 paired seeds; test = 400 tiles, CPU EP, threshold 0.5 |
+| held fixed | same tiles, rotation/flip/photometric, arch, batch 16, `--deterministic` |
+| n | 3 paired seeds per arch (HRNet, UNet); test = 400 tiles, CPU EP, threshold 0.5 |
 
 Both arms train on **the same 666 px source tiles** and both get random crop *position* —
 only the scale distribution differs. That is what makes the comparison clean.
 
-## Per-scale result
+## HRNet: per-scale result
 
 Differences are jitter − fixed, paired within seed.
 
@@ -116,6 +116,11 @@ with the same seed on a different GPU:
 | original (GPU 0) | 0.7922 | 0.7990 | 0.7856 |
 | reproduction (GPU 7) | 0.7922 | 0.7990 | 0.7856 |
 
+Those are `test_results.md` figures — 1600 windows from `--eval-tiling`, not the sweep's
+400 centre crops, so they differ slightly from the 1.00× column above (0.7922 vs 0.7938 for
+the same model). Every arm-vs-arm number in this report comes from the sweep; the table
+here is a run-identity check, not a scale measurement.
+
 Identical to four decimals. `--deterministic` reproduces across devices, so between-seed
 differences of 1–2 F1 in the fixed arm are genuine seed variance, not run-to-run noise —
 and being common to both arms, they cancel in the paired differences. Runs now write
@@ -132,16 +137,28 @@ requiring a re-run.
   separated from scale jitter without also changing the footprint.
 - **This is not the earlier "5.2 F1 across ±30% zoom" figure.** That came from a different
   model and a test built by re-sampling the orthomosaic per scale, which put each scale on
-  different ground. The 2.95 F1 measured here is the clean version of the same quantity
-  and supersedes it; the two are not directly comparable.
+  different ground. The 2.95 F1 (HRNet) and 3.34 F1 (UNet) measured here are the clean
+  version of the same quantity and supersede it; the two are not directly comparable.
 - **Sites are shared across splits.** The claim is scale robustness within known forests,
   not transfer to a new site.
 - **n = 3.** Enough for the unanimous spread result, thin for the per-scale rows.
 
 ## Recommendation
 
-Enable `--multiscale --crop-min-px 394 --crop-max-px 666` by default for beech training.
-It costs nothing at `tile_size = 15` and roughly a third of the degradation when a user
-moves the tile-size spinbox, which they do. The next question worth answering is whether
-a **wider** range than ±30% keeps paying — the corpus spans 1.58–6.39 cm/px, a 4× range,
-far beyond what was tested here.
+Enable `--multiscale --crop-min-px 394 --crop-max-px 666` by default for beech training,
+on both architectures. It removes **30%** of the scale degradation on HRNet and **56%** on
+UNet, and costs nothing at `tile_size = 15` — on UNet it gains there too. Users do move the
+tile-size spinbox, and nothing in the model warns them when they have.
+
+This does **not** replace matching the training scale to the serving scale. That was worth
+14.6 F1; this is worth 0.9–1.9. Be robust *and* correctly scaled.
+
+Two questions worth answering next, in order:
+
+1. **Does a wider range keep paying?** The corpus spans 1.58–6.39 cm/px, a 4× range,
+   against the 1.7× tested here. The UNet curve is still falling at both ends of the sweep,
+   so ±30% is unlikely to be where the gain stops.
+2. **Does it survive a site holdout?** These splits share sites. Scale robustness within
+   known forests is a weaker claim than scale robustness on new ground, and every
+   domain-shift result in this project has been a recall collapse — the same failure mode
+   jitter is fixing here.

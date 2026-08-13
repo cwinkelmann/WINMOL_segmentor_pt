@@ -42,6 +42,12 @@ Measured on Kaufland, AOI-masked, same model family:
 
 Ship the `tile_size` alongside any model that is not trained at 2.93 cm/px.
 
+**Jitter the training footprint ±30%** — `--multiscale --crop-min-px 394 --crop-max-px 666`
+on a 666 px source. Measured on two architectures, 3 paired seeds each: it flattens the
+F1-vs-GSD curve by 0.87 F1 on HRNet and 1.88 on UNet, and costs nothing at the native
+scale. See [`scale-augmentation-results.md`](scale-augmentation-results.md). Matching the
+scale is still worth far more than being robust to it — do both.
+
 ## Evaluation
 
 - Tile-level F1 for comparing training runs.
