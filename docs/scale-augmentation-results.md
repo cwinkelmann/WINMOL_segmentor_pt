@@ -3,8 +3,8 @@
 Design and yardstick were fixed before training —
 [`superpowers/specs/2026-08-13-scale-augmentation-design.md`](superpowers/specs/2026-08-13-scale-augmentation-design.md).
 Numbers below are copied verbatim from
-[`results/scale-sweep.json`](results/scale-sweep.json), rendered by
-`scripts/plot_scale_sweep.py` from the six per-model sweeps in `results/scale-aug/`.
+[`assets/scale-sweep.json`](assets/scale-sweep.json), rendered by
+`scripts/plot_scale_sweep.py` from the six per-model sweeps in `assets/scale-aug/`.
 
 **Answer: ship it.** Jitter flattens the scale curve by **0.87 F1** (3/3 seeds, paired
 t −6.02) and costs **0.11 F1** at the native scale — a difference that is 1/3 seeds
