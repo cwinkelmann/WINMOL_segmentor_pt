@@ -163,11 +163,16 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
     # zero there) while auto-vs-skimage differ by 3.16 -- so this knob really selects the
     # resampler, not the anti-aliasing.
     antialias = cfg.get("antialias", "auto")
+    # Tiles larger than the model input exist so the loader can crop at varying scale
+    # (RandomSizedCrop -> img_size). Effective GSD is then native_gsd * crop_px / img_size,
+    # which is what makes a model robust to the analyzer's user-set tile_size.
+    tile_px = cfg.get("tile_px", 512)
     # In native mode the footprint is a pixel count, so its size in metres — and therefore
     # the buffer that keeps splits apart — differs per site with the ortho's resolution.
     buffer_m = None if native_px else extent * math.sqrt(2) / 2
     os.makedirs(out_dir, exist_ok=True)
     manifest = {"strategy": strategy, "antialias": cfg.get("antialias", "auto"),
+                "tile_px": cfg.get("tile_px", 512),
                 "extent_m": None if native_px else extent,
                 "native_px": native_px,
                 "buffer_m": None if native_px else round(buffer_m, 3),
@@ -214,7 +219,7 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
                                  os.path.join(out_dir, split), extent_m=extent,
                                  limit=math.ceil(cap / n_sites) if cap else None,
                                  start_index=counters[split], seed=seed, quiet=quiet,
-                                 native_px=native_px, antialias=antialias)
+                                 native_px=native_px, antialias=antialias, tile_px=tile_px)
             counters[split] = stats["next_index"]
             manifest["sites"].append({"name": name, "split": f"whole -> {split}",
                                       "tiles": {split: stats["written"]},
@@ -250,7 +255,7 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
                                      os.path.join(out_dir, split), extent_m=extent,
                                      limit=share.get(split), start_index=counters[split],
                                      seed=seed, quiet=quiet, native_px=native_px, antialias=antialias,
-                                     block_size_m=block, split=split,
+                                     tile_px=tile_px, block_size_m=block, split=split,
                                      split_fractions=fracs,
                                      split_seed=cfg.get("split_seed", 1))
                 counters[split] = stats["next_index"]
