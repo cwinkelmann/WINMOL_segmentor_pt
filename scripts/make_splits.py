@@ -250,7 +250,18 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
             # comparison measured here, so balance beats proportionality.
             n_sites = len(cfg["sites"])
             share = {s: (math.ceil(c / n_sites) if c else None) for s, c in caps.items()}
-            for split in ("train", "val", "test"):
+            # `block_splits` narrows which splits this site is dealt blocks for. A
+            # leave-one-site-out fold needs its training sites to yield train and val
+            # only — the test set is the held-out site, and dealing test blocks here
+            # would mix a second site into the yardstick. Splits left out get no cells,
+            # so their fraction must be 0 or the blocks simply go unused.
+            wanted = site.get("block_splits", cfg.get("block_splits",
+                                                      ("train", "val", "test")))
+            unknown = [s for s in wanted if s not in ("train", "val", "test")]
+            if unknown:
+                raise SystemExit(f"site {name!r}: block_splits has {unknown}, "
+                                 f"expected any of train/val/test")
+            for split in wanted:
                 stats = sample_tiles(site["ortho"], stems, site["aoi"],
                                      os.path.join(out_dir, split), extent_m=extent,
                                      limit=share.get(split), start_index=counters[split],
