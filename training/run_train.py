@@ -301,8 +301,52 @@ def config_from_args(argv=None):
     )
 
 
+def write_run_config(cfg, argv=None, path=None):
+    """Record what this run actually was, next to what it produced.
+
+    Without this a finished run cannot be audited: `test_results.md` names only the
+    dataset and the architecture, so a question like "did seed 1 really use the same
+    crop range?" has no answer in the artifacts. Provenance that lives only in the
+    launching shell is gone the moment the shell is.
+    """
+    import dataclasses
+    import json
+    import socket
+    import subprocess
+    import sys
+    from datetime import datetime, timezone
+
+    out_dir = path or os.path.dirname(cfg.onnx_out) or "."
+    os.makedirs(out_dir, exist_ok=True)
+
+    def _git(*args):
+        try:
+            return subprocess.run(("git", *args), cwd=os.path.dirname(os.path.abspath(__file__)),
+                                  capture_output=True, text=True, timeout=10,
+                                  check=True).stdout.strip()
+        except Exception:
+            return None                       # a run outside a checkout is still a valid run
+
+    dirty = _git("status", "--porcelain")
+    payload = {
+        "config": dataclasses.asdict(cfg),
+        "argv": list(argv if argv is not None else sys.argv),
+        "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "host": socket.gethostname(),
+        "git_commit": _git("rev-parse", "HEAD"),
+        "git_dirty": bool(dirty) if dirty is not None else None,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "torch": torch.__version__,
+    }
+    p = os.path.join(out_dir, "run_config.json")
+    with open(p, "w") as f:
+        json.dump(payload, f, indent=1, default=str)
+    return p
+
+
 def main():
     cfg = config_from_args()
+    write_run_config(cfg)
     result = run_two_stage(cfg) if (cfg.gen_data_dir and cfg.spec_data_dir) else run_training(cfg)
     print(result)
 
