@@ -26,7 +26,14 @@ def score(model_path, data_dir, batch_size=8, threshold=0.5, img_size=512):
 
     img_dir = os.path.join(data_dir, "train")
     msk_dir = os.path.join(data_dir, "mask")
-    ids = sorted(int(f[5:-5]) for f in os.listdir(img_dir) if f.endswith(".jpeg"))
+    # match train<N>.jpeg explicitly: TestDS also carries files that do not follow it,
+    # and slicing by index silently produced 'in58' from one of them
+    import re
+    pat = re.compile(r"^train(\d+)\.jpe?g$")
+    ids = sorted(int(m.group(1)) for m in
+                 (pat.match(f) for f in os.listdir(img_dir)) if m)
+    if not ids:
+        raise SystemExit(f"no train<N>.jpeg under {img_dir}")
 
     sess = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
     inp = sess.get_inputs()[0]
