@@ -58,3 +58,41 @@ def test_build_dataset_raises_when_no_pairs(tmp_path):
         tmp_path / "src" / "train" / "train_1.png")
     with pytest.raises(ValueError, match="no paired"):
         build_dataset(str(tmp_path / "src"), str(tmp_path / "dst"))
+
+
+def test_loader_reads_the_published_zenodo_naming(tmp_path):
+    """Zenodo's GenDS uses `train_100_1.jpeg` / `mask_100_1.gif`; ours uses `train1`.
+
+    Both must load without renaming, so a published dataset can be used exactly as
+    distributed rather than through a derived copy nobody can verify.
+    """
+    import numpy as np
+    from PIL import Image
+
+    from training.dataset import _paired_ids, _sort_key
+
+    img = tmp_path / "train"; msk = tmp_path / "mask"
+    img.mkdir(); msk.mkdir()
+    keys = ["_100_1", "_100_2", "_100_10"]
+    for k in keys:
+        Image.fromarray(np.zeros((8, 8, 3), np.uint8), "RGB").save(img / f"train{k}.jpeg")
+        Image.fromarray(np.zeros((8, 8), np.uint8), "L").save(msk / f"mask{k}.gif")
+    # an AppleDouble sidecar must not be picked up as a tile
+    (img / "._train_100_1.jpeg").write_bytes(b"\x00\x05\x16\x07")
+
+    ids = _paired_ids(str(img), str(msk))
+    assert ids == ["_100_1", "_100_2", "_100_10"], ids   # numeric-aware ordering
+
+
+def test_loader_still_reads_our_own_naming(tmp_path):
+    import numpy as np
+    from PIL import Image
+
+    from training.dataset import _paired_ids
+
+    img = tmp_path / "train"; msk = tmp_path / "mask"
+    img.mkdir(); msk.mkdir()
+    for n in (1, 2, 10):
+        Image.fromarray(np.zeros((8, 8, 3), np.uint8), "RGB").save(img / f"train{n}.jpeg")
+        Image.fromarray(np.zeros((8, 8), np.uint8), "L").save(msk / f"mask{n}.gif")
+    assert _paired_ids(str(img), str(msk)) == ["1", "2", "10"]
