@@ -19,7 +19,7 @@ pytest tests/test_two_stage.py::test_two_stage_trains_both_stages_and_exports   
 pytest -k onnx                   # by keyword
 ```
 
-The `.venv/` here runs Python 3.9 with torch 2.8 + tensorflow 2.20 installed. Many tests train small models and are slow (minutes); the suite runs several architectures.
+Use the conda env **`WINMOL_segmentor_pt`** (`~/opt/anaconda3/envs/WINMOL_segmentor_pt/bin/python`, Python 3.11) — it runs the repo, the WINMOL Analyzer and Keras-2 `.hdf5` loads from one interpreter. The old `.venv/` was Python 3.9 and has been removed: it could not import the Analyzer at all (`utils/IO.py` uses `str | None`, needing 3.10+). Many tests train small models and are slow (minutes); the suite runs several architectures.
 
 ### Training / tooling entry points
 

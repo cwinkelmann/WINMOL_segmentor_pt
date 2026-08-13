@@ -122,6 +122,8 @@ target changes — F1 does not.
 - **Check `tile_size` matches what the model was trained for** before concluding anything
   about a model.
 - **`PYTHONHASHSEED=0` is load-bearing** for reproducible stem joining.
-- **The `.venv` in the segmentor repo cannot import onnx and TensorFlow in one process**
+- **Use the conda env `WINMOL_segmentor_pt` (Python 3.11)**, not a 3.9 interpreter — the
+  Analyzer's `utils/IO.py` uses `str | None` annotations and will not import below 3.10.
+- **onnx and TensorFlow can clash in one process**
   (protobuf ABI clash below onnx 1.18); if the Analyzer environment has both, keep onnx at
   1.18 or newer.

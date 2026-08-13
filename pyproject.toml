@@ -5,7 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "winmol_unet"
 version = "0.1.0"
-requires-python = ">=3.9"
+# 3.11+: the analyzer this ships into uses `str | None` annotations (3.10+), and
+# the 3.9 venv could not import it at all. The working environment is the conda
+# env `WINMOL_segmentor_pt` (3.11), which runs the repo, the analyzer and the
+# Keras-2 model loads from one interpreter.
+requires-python = ">=3.11"
 dependencies = [
     # onnxruntime >=1.19 is the first release that supports numpy 2.x; with the older
     # >=1.16 floor pip could pair numpy 2.x (allowed below) with an onnxruntime that
