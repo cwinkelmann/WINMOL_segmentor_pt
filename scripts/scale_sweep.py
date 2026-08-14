@@ -41,7 +41,7 @@ def _crop_resize(im, mk, crop_px, size):
 
 
 def sweep(model, data_dir, crops, size=512, native_gsd_cm=None, threshold=0.5,
-          batch=8, limit=None):
+          batch=8, limit=None, threads=None):
     import onnxruntime as ort
     from PIL import Image
 
@@ -54,7 +54,15 @@ def sweep(model, data_dir, crops, size=512, native_gsd_cm=None, threshold=0.5,
     if not ids:
         raise SystemExit(f"no train<N>.jpeg under {img_dir}")
 
-    sess = ort.InferenceSession(model, providers=["CPUExecutionProvider"])
+    # ORT sizes its intra-op pool to every core it can see. On a 224-core box that means
+    # N concurrent sweeps ask for 224N threads and thrash: six of them measured a load
+    # average of 626 and finished nothing in 24 minutes, while one alone took 2.8 s per
+    # 20 tiles. Cap the pool and several sweeps can share the machine.
+    so = ort.SessionOptions()
+    if threads:
+        so.intra_op_num_threads = int(threads)
+        so.inter_op_num_threads = 1
+    sess = ort.InferenceSession(model, so, providers=["CPUExecutionProvider"])
     inp = sess.get_inputs()[0]
     nhwc = len(inp.shape) == 4 and inp.shape[-1] in (3, "3")
 
@@ -100,12 +108,14 @@ def main(argv=None):
     p.add_argument("--native-gsd-cm", type=float, default=None)
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--threads", type=int, default=None,
+                   help="cap the ORT intra-op pool so sweeps can run in parallel")
     p.add_argument("--label", default=None)
     p.add_argument("--json-out", default=None)
     a = p.parse_args(argv)
 
     rows = sweep(a.model, a.data_dir, a.crops, a.size, a.native_gsd_cm,
-                 a.threshold, limit=a.limit)
+                 a.threshold, limit=a.limit, threads=a.threads)
     label = a.label or os.path.basename(os.path.dirname(a.model))
     hdr = f"{'crop':>6} {'ratio':>6} {'GSD cm':>7} {'F1':>7} {'P':>7} {'R':>7}"
     print(f"{label}   ({rows[0]['tiles']} tiles)")

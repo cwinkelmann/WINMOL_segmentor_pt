@@ -43,3 +43,37 @@ def test_gsd_arithmetic():
     assert abs(native * 394 / size - 2.254) < 1e-3
     assert abs(native * 512 / size - 2.930) < 1e-3
     assert abs(native * 666 / size - 3.810) < 1e-3
+
+
+def test_threads_caps_the_ort_pool(tmp_path, monkeypatch):
+    """Uncapped, N concurrent sweeps ask for N x every core and thrash."""
+    import onnxruntime as ort
+
+    from scripts import scale_sweep
+
+    seen = {}
+    real_session = ort.InferenceSession
+
+    class FakeSession:
+        def __init__(self, model, so=None, providers=None):
+            seen["intra"] = so.intra_op_num_threads if so else None
+            seen["inter"] = so.inter_op_num_threads if so else None
+
+        def get_inputs(self):
+            class I:
+                name, shape = "x", [1, 3, 512, 512]
+            return [I()]
+
+        def run(self, *a, **k):
+            import numpy as np
+            return [np.zeros((1, 1, 512, 512), np.float32)]
+
+    monkeypatch.setattr(ort, "InferenceSession", FakeSession)
+    d = tmp_path / "ds"
+    (d / "train").mkdir(parents=True)
+    (d / "mask").mkdir(parents=True)
+    Image.fromarray(np.zeros((666, 666, 3), np.uint8), "RGB").save(d / "train" / "train1.jpeg")
+    Image.fromarray(np.zeros((666, 666), np.uint8), "L").save(d / "mask" / "mask1.gif")
+    scale_sweep.sweep("m.onnx", str(d), [512], threads=7)
+    assert seen["intra"] == 7 and seen["inter"] == 1
+    assert real_session is not FakeSession
