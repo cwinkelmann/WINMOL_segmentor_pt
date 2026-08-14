@@ -52,9 +52,13 @@ overlap at all.
 | enough sites (≥6) | `--strategy sites` | the stronger claim: nothing shared |
 | any | never a random tile split | oversampled tiles overlap |
 
-> *Happened here:* holding out Bachsee_north gave **F1 exactly 0.0000** for every arm. It
-> is 100% amber pixels (November beech canopy) against ~20% elsewhere — a colour domain
-> nothing in training covered.
+> *Happened here:* holding out Bachsee_north gave **F1 exactly 0.0000** for every arm.
+> Long recorded as a colour-domain failure (amber November canopy, saturation 0.73 against
+> 0.19–0.32 elsewhere). Measured later, the bigger cause is that its canopy is **closed**:
+> stem-minus-background luminance is **−0.17** of a tile standard deviation there against
+> **+0.89** at Kaufland, and fold F1 is monotone in that statistic across all four beech
+> sites. The stems are largely not visible, so no model recovers them — the fold is
+> uninformative rather than hard. Check `scripts/site_gallery.py` before blaming a model.
 
 ## Cross-validation across data sources
 

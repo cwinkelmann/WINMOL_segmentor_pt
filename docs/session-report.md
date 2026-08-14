@@ -154,7 +154,10 @@ run, and **all six had validation F1 exactly 0.0000**.
 
 Bachsee_north was used as the validation site. It is 100% amber pixels (November beech
 canopy) against ~20% elsewhere, and a previous holdout of it scored exactly 0.0000 — a fact
-recorded in the study's own spec, in the section on risks, about the *test* slot.
+recorded in the study's own spec, in the section on risks, about the *test* slot. (Measured
+since: the colour is not the main cause. Its canopy is closed, so stem-vs-background
+luminance is −0.17 of a tile standard deviation against +0.89 at Kaufland — the stems are
+not visible. See `scale-augmentation-loso.md`.)
 
 With validation pinned at zero, checkpoint selection and the LR schedule run on a signal
 carrying no information. **The 10× spread across arms is selection luck, not extraction
