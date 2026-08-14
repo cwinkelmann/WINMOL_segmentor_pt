@@ -103,8 +103,36 @@ Green is ground truth, red is prediction; on most tiles there is no red at all �
 collapse in its extreme form. The fold remains a **tie** for arm comparison, but for a
 different reason than "hard data": both arms are equally outside their training domain.
 
-**Actionable:** strong hue/saturation augmentation is the obvious candidate fix and is
-untested here. Failing that, this site should never be the held-out one.
+#### Strong hue augmentation fixes it — +64.6 F1
+
+If Bachsee fails only because no training site is amber, randomising hue should remove the
+colour shortcut and force the model onto structure. Tested: 12 UNet runs, 3 paired seeds,
+arms differing **only** in `HueSaturationValue` limits, both re-run so nothing is inherited.
+
+| arm | hue | sat | val | p |
+|---|---:|---:|---:|---:|
+| base | ±20 | ±30 | ±20 | 0.5 |
+| **strong** | **±90** (any hue) | ±60 | ±30 | 0.9 |
+
+| fold | base | strong | delta | signs |
+|---|---:|---:|---:|:--:|
+| **Bachsee_north** (out of domain) | 0.042 | **0.688** | **+0.646** | 3/3 |
+| Kaufland (in domain) | 0.708 | 0.690 | −0.017 | 0/3 |
+
+Per seed on Bachsee: 0.0000 / 0.0639 / 0.0619 → 0.6660 / 0.7059 / 0.6916.
+
+**The failure mode inverts.** The base arm's precision is 0.87–1.00 with **recall
+0.00–0.03** — it predicts essentially nothing. Strong moves recall to 0.58–0.66 at
+precision 0.76–0.79. Note 0.688 also exceeds the 0.62 that training on Bachsee's *own*
+west half achieved, so the other three sites do contain the information; the model simply
+could not reach it through the colour gap.
+
+**Cost:** −1.7 F1 in domain (3/3 seeds, |t| 1.6). That is a real cost and small enough to
+be worth paying for anything expected to meet a new acquisition or season.
+
+**This retires the standing advice** that a site holdout is impossible on this corpus.
+It is not; it needs strong colour augmentation. Untested: whether a milder setting (hue 45)
+keeps the gain without the in-domain cost, and whether this transfers to spruce and pine. Failing that, this site should never be the held-out one.
 
 ### Kaufland is the informative clean holdout
 

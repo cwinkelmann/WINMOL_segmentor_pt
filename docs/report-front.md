@@ -79,8 +79,12 @@ Campus_Oberheide (leaf-off February) **-0.045**, Kaufland (high summer) **+0.005
 the two Campus folds lose the identical 800 tiles, so tile count does not explain the
 ordering. The out-of-domain site is the corpus's phenological diversity, not noise. Bachsee is the corpus's only autumn-phenology
 site, so when it is held out nothing in training has shown the model a stem against orange
-foliage. Strong hue/saturation augmentation is the obvious untested fix; failing that, this
-site should never be the held-out one.
+foliage. **Strong hue augmentation fixes it.** Randomising hue over the full circle
+(`--aug-hue-shift 90 --aug-sat-shift 60 --aug-hsv-p 0.9`) takes the Bachsee holdout from
+**F1 0.042 to 0.688** (3/3 seeds) for **−1.7 F1** in domain (Kaufland, 3/3 seeds). The base
+arm predicts almost nothing there — precision 0.87–1.00, recall 0.00–0.03; the strong arm
+reaches recall 0.58–0.66. This retires the standing advice that a site holdout is
+impossible on this corpus.
 
 An earlier claim in this repo that fold F1 is monotone in stem contrast came from the
 luminance-only statistic and is **withdrawn**.
