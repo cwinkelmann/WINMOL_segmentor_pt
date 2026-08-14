@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 OUT=${1:-docs/WINMOL-report.pdf}
 PARTS=(
   docs/report-front.md
+  docs/data-inventory.md
   docs/reder-method-gaps-closed.md
   docs/scale-augmentation-results.md
   docs/scale-augmentation-loso.md
