@@ -1,0 +1,33 @@
+{
+ "label": "Kaufland-jitter-s2",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-nobachsee/Kaufland-jitter-s2//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.6342392906339697,
+   "precision": 0.7434553262071657,
+   "recall": 0.5530015429709478,
+   "tiles": 388,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.7099463606104047,
+   "precision": 0.8383352081083103,
+   "recall": 0.6156596874946269,
+   "tiles": 388,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.7225453306919284,
+   "precision": 0.8416369115259613,
+   "recall": 0.6329788544807622,
+   "tiles": 388,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

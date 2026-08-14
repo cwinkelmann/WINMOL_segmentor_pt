@@ -1,0 +1,33 @@
+{
+ "label": "Kaufland-fixed-s2",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-nobachsee/Kaufland-fixed-s2//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.5980926545455734,
+   "precision": 0.7486666660610531,
+   "recall": 0.4979445935219388,
+   "tiles": 388,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.698192690142437,
+   "precision": 0.8399904057363597,
+   "recall": 0.5973541014941761,
+   "tiles": 388,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.7130842284380808,
+   "precision": 0.8478953656058577,
+   "recall": 0.615260823931427,
+   "tiles": 388,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

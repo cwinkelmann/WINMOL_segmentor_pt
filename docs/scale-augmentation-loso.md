@@ -135,6 +135,38 @@ summarised. Note the y-scales differ by an order of magnitude between folds.
 | ![Kaufland](figures/loso-Kaufland.png) | ![Campus_Oberheide](figures/loso-Campus_Oberheide.png) |
 | ![Campus](figures/loso-Campus.png) | ![Bachsee_north](figures/loso-Bachsee_north.png) |
 
+## Does Bachsee_north belong in training? Yes — tested
+
+Before it was understood as domain shift, Bachsee looked like 800 tiles of unlearnable
+noise sitting in ~20–29% of every training set. So the folds were re-run with Bachsee
+**excluded from training entirely** (3 folds x 2 arms x 3 seeds = 18 UNet runs, everything
+else identical). Paired within fold, arm and seed, at 1.00x:
+
+| fold (acquisition) | train tiles | F1 with Bachsee | without | delta | signs |
+|---|---:|---:|---:|---:|:--:|
+| Kaufland (Jul, summer green) | 4000 -> 3200 | 0.6901 | 0.6953 | **+0.005** | 5/6 |
+| Campus_Oberheide (Feb, leaf-off) | 2788 -> 1988 | 0.6793 | 0.6338 | **-0.045** | 0/6 |
+| Campus (Oct, autumn) | 2788 -> 1988 | 0.5277 | 0.4324 | **-0.095** | 0/6 |
+
+Overall **-0.045 F1**, 5 of 18 paired comparisons positive. **Removing Bachsee hurts.**
+
+**Declared confound:** dropping the site also drops 800 training tiles, so Campus and
+Campus_Oberheide lose 29% of their data and Kaufland 20%. Quantity alone would predict the
+direction. It does not predict the *ordering*: Campus and Campus_Oberheide lose the
+**identical** 800 tiles from identical 2788-tile sets, yet Campus loses twice as much F1.
+What separates them is phenological distance from Bachsee's November amber — Campus was
+flown in October, Campus_Oberheide in leaf-off February, Kaufland in high summer, and the
+damage falls in exactly that order.
+
+So the out-of-domain site is not noise to be removed; it is the nearest thing the corpus
+has to phenological diversity, and the sites that resemble it depend on it most. In a
+corpus with under 1 ha of labelled stem, discarding an acquisition is expensive.
+
+The arm comparison is unaffected in direction: jitter's curve stays flatter in 3/3 folds
+without Bachsee (-0.0142, -0.0450, -0.0012), though at 1.00x it now loses on the two
+Campus folds and wins only on Kaufland — consistent with those folds simply having less
+data to work with.
+
 ## What the holdout costs
 
 | | within-site (pooled blocks) | site holdout |

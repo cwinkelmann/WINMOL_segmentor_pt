@@ -70,7 +70,14 @@ are wrong.
 | Is the site learnable at all? | **Yes.** Trained on 252 tiles from its own west half and tested on the spatially separated east half: **F1 0.6203**. |
 
 **252 of its own tiles beat 3,588 tiles from every other site by 53 F1 points.** The data
-is sound; the failure is **domain shift**. Bachsee is the corpus's only autumn-phenology
+is sound; the failure is **domain shift**.
+
+Re-running the folds with Bachsee **excluded from training** (18 runs) confirms it belongs
+there: overall **-0.045 F1**, 5 of 18 paired comparisons positive. The damage is ordered by
+phenological distance from Bachsee's November amber — Campus (October) **-0.095**,
+Campus_Oberheide (leaf-off February) **-0.045**, Kaufland (high summer) **+0.005** — and
+the two Campus folds lose the identical 800 tiles, so tile count does not explain the
+ordering. The out-of-domain site is the corpus's phenological diversity, not noise. Bachsee is the corpus's only autumn-phenology
 site, so when it is held out nothing in training has shown the model a stem against orange
 foliage. Strong hue/saturation augmentation is the obvious untested fix; failing that, this
 site should never be the held-out one.

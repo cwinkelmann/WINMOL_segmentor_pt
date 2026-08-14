@@ -1,0 +1,33 @@
+{
+ "label": "Campus_Oberheide-fixed-s3",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-nobachsee/Campus_Oberheide-fixed-s3//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.6142612433381006,
+   "precision": 0.8345077506992861,
+   "recall": 0.4859954483259704,
+   "tiles": 800,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.6284155120851269,
+   "precision": 0.8494952086473753,
+   "recall": 0.4986441994467211,
+   "tiles": 800,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.5836379699934757,
+   "precision": 0.8387402823513741,
+   "recall": 0.4475238741945482,
+   "tiles": 800,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

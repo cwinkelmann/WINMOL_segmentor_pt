@@ -1,0 +1,33 @@
+{
+ "label": "Campus-jitter-s3",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-nobachsee/Campus-jitter-s3//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.38401755292987044,
+   "precision": 0.5223791143335975,
+   "recall": 0.30360284534353404,
+   "tiles": 800,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.4495490925078133,
+   "precision": 0.5894897979236107,
+   "recall": 0.36330342984829267,
+   "tiles": 800,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.41449740289762166,
+   "precision": 0.6362872179654433,
+   "recall": 0.3073609818122295,
+   "tiles": 800,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

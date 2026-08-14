@@ -1,0 +1,33 @@
+{
+ "label": "Campus_Oberheide-jitter-s3",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-nobachsee/Campus_Oberheide-jitter-s3//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.6306766543967145,
+   "precision": 0.7695233493894974,
+   "recall": 0.5342761074900428,
+   "tiles": 800,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.6314629026244309,
+   "precision": 0.781732809873203,
+   "recall": 0.5296500322698963,
+   "tiles": 800,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.5888587280479587,
+   "precision": 0.7684229558008814,
+   "recall": 0.47731928469693086,
+   "tiles": 800,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}
