@@ -59,14 +59,13 @@ It does **not** replace matching the training scale to the serving scale — tha
 
 ## What is not settled
 
-- **Bachsee_north returns F1 < 0.13 for every model ever trained here.** Long recorded as a
-  colour-domain failure; the imagery shows a closed canopy with the stems beneath it, and
-  stem-vs-background contrast there is **−0.17** of a tile standard deviation against
-  **+0.89** at Kaufland. Whether the labels are also misregistered against this
-  orthomosaic — its annotations are EPSG:25833 and its ortho EPSG:32633, a datum pair that
-  diverges ~0.5 m — is **under test and not yet established**. A first attempt to measure
-  it in tile-pixel space was invalid, because tiles are cut at random rotations and a
-  constant world offset therefore appears at a different pixel offset in every tile.
+- **Bachsee_north returns F1 < 0.13 for every model ever trained here.** Long recorded as
+  a colour-domain failure. It is better described as an **occlusion** failure: the canopy
+  is closed and the stems lie beneath it, so stem-vs-background contrast is **+0.12**
+  against **+0.80** at Kaufland. Its labels were suspected of misregistration — annotations
+  in EPSG:25833, orthomosaic in EPSG:32633 — but measured on the orthomosaic's own grid
+  **every site peaks at zero offset**, so the labels are correctly placed and the datum
+  mismatch is harmless. The site is a genuine limit of the imagery, not a data defect.
 - **The site holdout rests on one informative fold.** Of four beech sites, two are the same
   forest 4.4 years apart (33% footprint overlap) and one is Bachsee_north.
 - **Label scarcity.** Under 1 ha of stem is labelled in total; beech is near exhausted and

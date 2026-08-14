@@ -74,10 +74,39 @@ fold is a **tie**, not evidence for or against jitter, and its per-scale differe
 ratios of noise. Had these four folds been averaged, this one would have moved the mean
 while carrying no information.
 
-It also raises a labelling question worth putting to whoever digitised it: if the stems
-cannot be seen in the orthomosaic, the annotations must have come from somewhere else —
-field survey, or another flight. Tiles are traceable via `tiles.jsonl` and
-`scripts/locate_tile.py`.
+#### The labels are not misplaced — checked
+
+If the stems are barely visible, the obvious suspicion is that the polygons came from
+elsewhere and are misregistered. Bachsee_north invites it: its annotations are
+**EPSG:25833** and its orthomosaic **EPSG:32633**, the same UTM zone on different datums,
+a pair that has diverged ~0.5 m through plate motion. `docs/training-data-from-annotations.md`
+records the mismatch as a known defect.
+
+Tested with `scripts/check_registration.py`, which rasterises the polygons onto the
+orthomosaic's **own unrotated grid** and slides them over a grid of world offsets, looking
+for where stem pixels are brightest against their surroundings:
+
+| site | stems / ortho CRS | contrast at zero | bright peak | verdict |
+|---|---|---:|---|---|
+| Bachsee_north | 25833 / 32633 **mismatch** | **+0.118** | (0.00, 0.00) m | registered |
+| Campus | 32633 / 32633 | +0.384 | (0.00, 0.00) m | registered |
+| Campus_Oberheide | 25833 / 25833 | +0.811 | (0.00, 0.00) m | registered |
+| Kaufland | 25833 / 25833 | +0.797 | (0.00, 0.02) m | registered |
+
+**Every site peaks at zero offset.** The CRS mismatch is real but harmless — the pipeline's
+`transform_geom` applies the datum shift, leaving a residual under 4 cm. So the labels are
+correctly drawn *and* correctly placed; Bachsee's stems are simply 7× fainter than
+Kaufland's (+0.118 against +0.797 at zero shift, native resolution).
+
+Two traps this measurement had to avoid, both of which produced a confident wrong answer
+first:
+
+- **Measuring in tile-pixel space.** Training tiles are cut at random rotations, so a
+  constant world offset lands at a different pixel offset in every tile and averaging
+  smears it away. A first pass this way appeared to show a 0.53 m shift that did not exist.
+- **Ranking by |contrast|.** A stem's shadow lies a stem-width away and gives strong
+  *negative* contrast, so the largest absolute response is usually the shadow. That
+  reported Campus — which peaks at zero — as offset by 0.41 m.
 
 ### Kaufland is the informative clean holdout
 

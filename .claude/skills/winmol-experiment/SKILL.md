@@ -58,7 +58,10 @@ overlap at all.
 > stem-minus-background luminance is **−0.17** of a tile standard deviation there against
 > **+0.89** at Kaufland, and fold F1 is monotone in that statistic across all four beech
 > sites. The stems are largely not visible, so no model recovers them — the fold is
-> uninformative rather than hard. Check `scripts/site_gallery.py` before blaming a model.
+> uninformative rather than hard. Its labels were checked for misregistration and are
+> **correctly placed** (every beech site peaks at zero offset on the orthomosaic's own
+> grid), despite an EPSG:25833/32633 datum mismatch. Check `scripts/site_gallery.py` and
+> `scripts/check_registration.py` before blaming a model.
 
 ## Cross-validation across data sources
 
