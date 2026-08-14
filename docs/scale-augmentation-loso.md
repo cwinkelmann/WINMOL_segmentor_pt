@@ -130,9 +130,38 @@ could not reach it through the colour gap.
 **Cost:** −1.7 F1 in domain (3/3 seeds, |t| 1.6). That is a real cost and small enough to
 be worth paying for anything expected to meet a new acquisition or season.
 
+#### It is an interaction, not a dose — milder settings fail
+
+`base` and `strong` differ in four knobs at once, so two further arms decompose it (24 runs
+total, same 3 seeds):
+
+| arm | hue | sat | val | p | Bachsee | delta vs base | Kaufland | delta |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| base | ±20 | ±30 | ±20 | 0.5 | 0.042 | — | 0.708 | — |
+| **mid45** | ±45 | ±60 | ±30 | 0.9 | 0.177 | +0.135 | 0.705 | −0.002 |
+| **hueonly** | ±90 | ±30 | ±20 | 0.5 | 0.261 | +0.219 | 0.707 | −0.001 |
+| **strong** | ±90 | ±60 | ±30 | 0.9 | **0.688** | **+0.646** | 0.690 | −0.017 |
+
+Neither ingredient works alone. A **full hue circle at the default probability** reaches
+only 0.261, and **half the hue range with the full probability and saturation** reaches
+0.177 — while both together reach 0.688. The gain is roughly 3× what either part
+contributes, so this is an interaction and not a dose-response curve: the model needs both
+a hue range wide enough to reach amber *and* a probability high enough that it cannot fall
+back on the unshifted half of the data.
+
+Per-seed Bachsee: mid45 0.203/0.113/0.216, hueonly 0.182/0.428/0.172 (note the spread —
+0.428 on one seed, so hueonly is unstable as well as insufficient).
+
+The in-domain cost scales with the same combination: −0.001 (hueonly), −0.002 (mid45),
+−0.017 (strong). Buying the +0.646 costs 1.7 F1; the cheaper settings save nothing worth
+having because they do not deliver the gain.
+
+**Recommendation:** `--aug-hue-shift 90 --aug-sat-shift 60 --aug-val-shift 30
+--aug-hsv-p 0.9`. Do not soften it.
+
 **This retires the standing advice** that a site holdout is impossible on this corpus.
-It is not; it needs strong colour augmentation. Untested: whether a milder setting (hue 45)
-keeps the gain without the in-domain cost, and whether this transfers to spruce and pine. Failing that, this site should never be the held-out one.
+Untested: whether this transfers to spruce and pine, and whether p alone (hue ±20 at
+p 0.9) does anything — the two arms here vary p together with sat. Failing that, this site should never be the held-out one.
 
 ### Kaufland is the informative clean holdout
 

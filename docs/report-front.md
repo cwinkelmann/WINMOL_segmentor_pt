@@ -84,7 +84,9 @@ foliage. **Strong hue augmentation fixes it.** Randomising hue over the full cir
 **F1 0.042 to 0.688** (3/3 seeds) for **−1.7 F1** in domain (Kaufland, 3/3 seeds). The base
 arm predicts almost nothing there — precision 0.87–1.00, recall 0.00–0.03; the strong arm
 reaches recall 0.58–0.66. This retires the standing advice that a site holdout is
-impossible on this corpus.
+impossible on this corpus. It is an **interaction, not a dose**: a full hue circle at the
+default probability reaches only 0.261, and half the hue range at full probability only
+0.177, while both together reach 0.688. Do not soften the setting.
 
 An earlier claim in this repo that fold F1 is monotone in stem contrast came from the
 luminance-only statistic and is **withdrawn**.
