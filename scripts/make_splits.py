@@ -196,7 +196,8 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
             stats = sample_tiles(site["ortho"], stems, site["aoi"],
                                  os.path.join(out_dir, split), extent_m=extent,
                                  limit=caps.get(split), start_index=counters[split],
-                                 seed=seed, quiet=quiet, native_px=native_px)
+                                 seed=seed, quiet=quiet, native_px=native_px,
+                                 antialias=antialias, tile_px=tile_px)
             counters[split] = stats["next_index"]
             manifest["sites"].append({"name": name, "split": split,
                                       "tiles": stats["written"], "geometry": geom_report})
@@ -300,7 +301,8 @@ def run(config_path, out_dir, strategy, cut_axis="auto", seed=1, skip_fix=False,
             stats = sample_tiles(site["ortho"], stems, tmp,
                                  os.path.join(out_dir, split), extent_m=extent,
                                  limit=caps.get(split), start_index=counters[split],
-                                 seed=seed, quiet=quiet, native_px=native_px)
+                                 seed=seed, quiet=quiet, native_px=native_px,
+                                 antialias=antialias, tile_px=tile_px)
             counters[split] = stats["next_index"]
             entry["halves"][split] = {"aoi_m2": round(geom.area, 1),
                                       "tiles": stats["written"],
