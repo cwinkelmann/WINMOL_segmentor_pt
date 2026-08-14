@@ -238,6 +238,13 @@ def config_from_args(argv=None):
     p.add_argument("--aug-brightness-limit", type=float, default=0.2)
     p.add_argument("--aug-contrast-limit", type=float, default=0.2)
     p.add_argument("--aug-hsv-p", type=float, default=0.5)
+    # Exposed because colour is the axis our sites differ on most: hue runs 15-98 deg
+    # across the beech corpus and the one autumn site is unlearnable from the others.
+    # albumentations works in OpenCV's 0-179 hue scale, so 90 spans the full circle.
+    p.add_argument("--aug-hue-shift", type=int, default=20,
+                   help="HueSaturationValue hue_shift_limit (0-179 scale; 90 = any hue)")
+    p.add_argument("--aug-sat-shift", type=int, default=30)
+    p.add_argument("--aug-val-shift", type=int, default=20)
     p.add_argument("--multiscale", action="store_true",
                    help="multi-scale RandomSizedCrop on native-res tiles (needs a native-res "
                         "dataset, e.g. --native-px 1024 from sample_training_tiles.py)")
@@ -291,6 +298,8 @@ def config_from_args(argv=None):
         aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
+        aug_hue_shift=a.aug_hue_shift, aug_sat_shift=a.aug_sat_shift,
+        aug_val_shift=a.aug_val_shift,
         multiscale=a.multiscale, crop_min_px=a.crop_min_px, crop_max_px=a.crop_max_px,
         eval_tiling=a.eval_tiling,
         arch=a.arch, width_mult=a.width_mult, loss=a.loss,
