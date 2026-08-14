@@ -10,8 +10,12 @@ and averaging over tiles smears it away — measuring in tile-pixel space produc
 confident wrong answer here once already.
 
 The test: rasterise the stems onto the native grid, then slide that mask over a grid of
-offsets and record where stem pixels separate most strongly, in luminance, from their
-surroundings. Well-registered labels peak at (0, 0).
+offsets and record where stem pixels are *brightest* relative to their surroundings —
+stems here are bark against vegetation. Well-registered labels peak at (0, 0).
+
+Judge on the bright peak, not the largest absolute one: a stem's shadow lies a stem-width
+away and gives a strong *negative* contrast, so `argmax|contrast|` reports well-registered
+sites as offset. It did exactly that for Campus (+0.463 at zero, -0.515 at 0.41 m).
 
     python scripts/check_registration.py --ortho x.tif --stems x.shp --max-shift-m 1.5
 """
@@ -93,15 +97,23 @@ def check(ortho, stems, n=60, max_shift_m=1.5, step_px=1, half_px=220, seed=1,
     acc /= used
 
     z = shifts.index(0)
-    yi, xi = np.unravel_index(np.abs(acc).argmax(), acc.shape)
+    # Both extremes, because they mean different things. Stems in this corpus are BRIGHT
+    # (bark against vegetation), so the positive peak locates them and is what registration
+    # is judged on. The negative peak is typically the stem's own shadow, one stem-width
+    # away — using |contrast| picks that shadow up and reports a well-registered site as
+    # offset, which it did for Campus (+0.463 at zero, -0.515 at 0.41 m).
+    py, px = np.unravel_index(acc.argmax(), acc.shape)
+    ny, nx = np.unravel_index(acc.argmin(), acc.shape)
     return {"ortho": ortho, "stems": stems, "gsd_m": gsd, "windows": used,
             "stems_crs": str(src_crs), "ortho_crs": str(src.crs),
             "crs_mismatch": str(src_crs) != str(src.crs),
             "contrast_at_zero": float(acc[z, z]),
-            "peak_contrast": float(acc[yi, xi]),
-            "peak_dy_px": shifts[yi], "peak_dx_px": shifts[xi],
-            "peak_dy_m": shifts[yi] * gsd, "peak_dx_m": shifts[xi] * gsd,
-            "peak_offset_m": math.hypot(shifts[yi] * gsd, shifts[xi] * gsd)}
+            "peak_contrast": float(acc[py, px]),
+            "peak_dy_m": shifts[py] * gsd, "peak_dx_m": shifts[px] * gsd,
+            "peak_offset_m": math.hypot(shifts[py] * gsd, shifts[px] * gsd),
+            "min_contrast": float(acc[ny, nx]),
+            "min_dy_m": shifts[ny] * gsd, "min_dx_m": shifts[nx] * gsd,
+            "min_offset_m": math.hypot(shifts[ny] * gsd, shifts[nx] * gsd)}
 
 
 def main(argv=None):
@@ -125,10 +137,13 @@ def main(argv=None):
     print(f"  stems CRS {r['stems_crs']}   ortho CRS {r['ortho_crs']}"
           f"   {'MISMATCH' if r['crs_mismatch'] else 'match'}")
     print(f"  contrast at zero shift : {r['contrast_at_zero']:+.3f}")
-    print(f"  strongest contrast     : {r['peak_contrast']:+.3f} at "
+    print(f"  brightest (locates stem): {r['peak_contrast']:+.3f} at "
           f"dx {r['peak_dx_m']:+.2f} m, dy {r['peak_dy_m']:+.2f} m "
           f"(|offset| {r['peak_offset_m']:.2f} m)")
-    verdict = ("registered" if r["peak_offset_m"] <= 2 * r["gsd_m"]
+    print(f"  darkest  (usually shadow): {r['min_contrast']:+.3f} at "
+          f"dx {r['min_dx_m']:+.2f} m, dy {r['min_dy_m']:+.2f} m "
+          f"(|offset| {r['min_offset_m']:.2f} m)")
+    verdict = ("registered" if r["peak_offset_m"] <= max(0.10, 3 * r["gsd_m"])
                else f"OFFSET {r['peak_offset_m']:.2f} m")
     print(f"  verdict: {verdict}")
     if a.json_out:
