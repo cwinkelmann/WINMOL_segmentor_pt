@@ -40,14 +40,44 @@ scale-robust; the paired column counts seeds where jitter is flatter.
 Campus_Oberheide clears |t| ≥ 3 with unanimous seeds.** State this as a fold count, not a
 mean: *flatter in 4/4 folds, individually significant in 1/4.*
 
-### Bachsee_north is a dead fold
+### Bachsee_north is a dead fold — and not for the reason recorded so far
 
-F1 **0.03–0.13** for every arm and seed. It is 100% amber pixels (November beech canopy)
-against ~20% elsewhere, a colour domain nothing in training covers — the same collapse
-recorded in `docs/process.md`. Neither arm segments it, so the fold is a **tie**, not
-evidence for or against jitter, and its per-scale differences are ratios of noise. Had
-these four folds been averaged, this one would have moved the mean while carrying no
-information.
+F1 **0.03–0.13** for every arm and seed. `docs/process.md` attributes this to colour
+domain (amber November canopy). That is real — Bachsee's saturation is **0.73 against
+0.19–0.32** everywhere else — but it is not the main cause. Look at the tiles:
+
+![Colour domain by site](figures/loso-site-domains.png)
+
+Bachsee's canopy is **closed**. The stems are underneath it, glimpsed through gaps rather
+than seen. Measured as stem-minus-background luminance in units of each tile's own spread
+(`scripts/site_gallery.py`, 120 random tiles per site):
+
+| site | saturation | **stem contrast** | fold F1 @ 1.00× |
+|---|---:|---:|---:|
+| Kaufland | 0.32 | **+0.89** | 0.67 – 0.71 |
+| Campus_Oberheide | 0.25 | +0.43 | 0.68 |
+| Campus | 0.19 | +0.24 | 0.53 |
+| **Bachsee_north** | 0.73 | **−0.17** | **0.04 – 0.09** |
+
+**Fold F1 is monotone in stem contrast.** Bachsee is the only site where the sign flips:
+its labelled stems are *darker* than their surroundings and separated by a sixth of a
+standard deviation. Kaufland's are brighter by nearly a whole one.
+
+That changes the interpretation. This is not a model that fails on amber imagery — it is
+imagery in which the target is largely **not visible**, so no model can recover the labels
+from it. The predictions are near-empty, which is the recall collapse in its extreme form:
+
+![Bachsee_north examples](figures/loso-Bachsee_north-examples.png)
+
+Green is ground truth, red is prediction; on most tiles there is no red at all. So the
+fold is a **tie**, not evidence for or against jitter, and its per-scale differences are
+ratios of noise. Had these four folds been averaged, this one would have moved the mean
+while carrying no information.
+
+It also raises a labelling question worth putting to whoever digitised it: if the stems
+cannot be seen in the orthomosaic, the annotations must have come from somewhere else —
+field survey, or another flight. Tiles are traceable via `tiles.jsonl` and
+`scripts/locate_tile.py`.
 
 ### Kaufland is the informative clean holdout
 
@@ -60,11 +90,23 @@ scale on every seed**:
 | 1.00× | 2.930 | 0.6737 | 0.7065 | **+0.0328** | 3/3 | 2.61 |
 | 1.30× | 3.811 | 0.7017 | 0.7353 | **+0.0336** | 3/3 | 9.58 |
 
+![Kaufland examples](figures/loso-Kaufland-examples.png)
+
 Here jitter is worth **+3.3 F1 at the deployment scale** — an order of magnitude more than
 the +0.2 measured within-site. Note the curve *rises* with coarseness on this fold, unlike
 every other: Kaufland is the corpus's finest orthomosaic (2.09 cm/px native) and its
 densest (stem fraction 0.063 against 0.028–0.038), so its peak sits outside the sampled
 range. Its spread is therefore a lower bound.
+
+## The curves
+
+Per fold, F1 against effective ground resolution, per-seed spread drawn rather than
+summarised. Note the y-scales differ by an order of magnitude between folds.
+
+| | |
+|---|---|
+| ![Kaufland](figures/loso-Kaufland.png) | ![Campus_Oberheide](figures/loso-Campus_Oberheide.png) |
+| ![Campus](figures/loso-Campus.png) | ![Bachsee_north](figures/loso-Bachsee_north.png) |
 
 ## What the holdout costs
 
