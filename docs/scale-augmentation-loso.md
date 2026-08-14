@@ -40,73 +40,71 @@ scale-robust; the paired column counts seeds where jitter is flatter.
 Campus_Oberheide clears |t| ≥ 3 with unanimous seeds.** State this as a fold count, not a
 mean: *flatter in 4/4 folds, individually significant in 1/4.*
 
-### Bachsee_north is a dead fold — and not for the reason recorded so far
+### Bachsee_north is a domain-shift fold, not a defective one
 
-F1 **0.03–0.13** for every arm and seed. `docs/process.md` attributes this to colour
-domain (amber November canopy). That is real — Bachsee's saturation is **0.73 against
-0.19–0.32** everywhere else — but it is not the main cause. Look at the tiles:
+F1 **0.03–0.13** for every arm and seed. Three explanations were tried; the first two are
+wrong and are recorded here because each looked convincing.
 
 ![Colour domain by site](figures/loso-site-domains.png)
 
-Bachsee's canopy is **closed**. The stems are underneath it, glimpsed through gaps rather
-than seen. Measured as stem-minus-background luminance in units of each tile's own spread
-(`scripts/site_gallery.py`, 120 random tiles per site):
-
-| site | saturation | **stem contrast** | fold F1 @ 1.00× |
-|---|---:|---:|---:|
-| Kaufland | 0.32 | **+0.89** | 0.67 – 0.71 |
-| Campus_Oberheide | 0.25 | +0.43 | 0.68 |
-| Campus | 0.19 | +0.24 | 0.53 |
-| **Bachsee_north** | 0.73 | **−0.17** | **0.04 – 0.09** |
-
-**Fold F1 is monotone in stem contrast.** Bachsee is the only site where the sign flips:
-its labelled stems are *darker* than their surroundings and separated by a sixth of a
-standard deviation. Kaufland's are brighter by nearly a whole one.
-
-That changes the interpretation. This is not a model that fails on amber imagery — it is
-imagery in which the target is largely **not visible**, so no model can recover the labels
-from it. The predictions are near-empty, which is the recall collapse in its extreme form:
-
-![Bachsee_north examples](figures/loso-Bachsee_north-examples.png)
-
-Green is ground truth, red is prediction; on most tiles there is no red at all. So the
-fold is a **tie**, not evidence for or against jitter, and its per-scale differences are
-ratios of noise. Had these four folds been averaged, this one would have moved the mean
-while carrying no information.
-
-#### The labels are not misplaced — checked
-
-If the stems are barely visible, the obvious suspicion is that the polygons came from
-elsewhere and are misregistered. Bachsee_north invites it: its annotations are
-**EPSG:25833** and its orthomosaic **EPSG:32633**, the same UTM zone on different datums,
-a pair that has diverged ~0.5 m through plate motion. `docs/training-data-from-annotations.md`
-records the mismatch as a known defect.
-
-Tested with `scripts/check_registration.py`, which rasterises the polygons onto the
-orthomosaic's **own unrotated grid** and slides them over a grid of world offsets, looking
-for where stem pixels are brightest against their surroundings:
+**Not a labelling error.** Its annotations are EPSG:25833 and its orthomosaic EPSG:32633 —
+the same UTM zone on different datums, a pair that has diverged ~0.5 m through plate
+motion, and already logged as a known defect. Measured with
+`scripts/check_registration.py` on the orthomosaic's **own unrotated grid**, every beech
+site peaks at zero offset:
 
 | site | stems / ortho CRS | contrast at zero | bright peak | verdict |
 |---|---|---:|---|---|
-| Bachsee_north | 25833 / 32633 **mismatch** | **+0.118** | (0.00, 0.00) m | registered |
+| Bachsee_north | 25833 / 32633 **mismatch** | +0.118 | (0.00, 0.00) m | registered |
 | Campus | 32633 / 32633 | +0.384 | (0.00, 0.00) m | registered |
 | Campus_Oberheide | 25833 / 25833 | +0.811 | (0.00, 0.00) m | registered |
 | Kaufland | 25833 / 25833 | +0.797 | (0.00, 0.02) m | registered |
 
-**Every site peaks at zero offset.** The CRS mismatch is real but harmless — the pipeline's
-`transform_geom` applies the datum shift, leaving a residual under 4 cm. So the labels are
-correctly drawn *and* correctly placed; Bachsee's stems are simply 7× fainter than
-Kaufland's (+0.118 against +0.797 at zero shift, native resolution).
+The pipeline's `transform_geom` applies the datum shift; residual under 4 cm.
 
-Two traps this measurement had to avoid, both of which produced a confident wrong answer
-first:
+**Not invisible stems either — this was my error.** The table above measures *luminance*,
+and on that basis Bachsee looked like a closed canopy hiding its stems. It is not. Its
+stems differ from the background in **colour**, not brightness. In CIELAB over 100 random
+tiles per site:
 
-- **Measuring in tile-pixel space.** Training tiles are cut at random rotations, so a
-  constant world offset lands at a different pixel offset in every tile and averaging
-  smears it away. A first pass this way appeared to show a 0.53 m shift that did not exist.
-- **Ranking by |contrast|.** A stem's shadow lies a stem-width away and gives strong
-  *negative* contrast, so the largest absolute response is usually the shadow. That
-  reported Campus — which peaks at zero — as offset by 0.41 m.
+| site | luminance sep | chroma sep | **full Lab sep** | fold F1 |
+|---|---:|---:|---:|---:|
+| Kaufland | 0.77 | 1.98 | **2.14** | 0.71 |
+| **Bachsee_north** | 0.44 | 1.66 | **1.75** | **0.09** |
+| Campus_Oberheide | 0.56 | 1.51 | 1.70 | 0.68 |
+| Campus | 0.53 | 0.95 | **1.16** | 0.53 |
+
+Bachsee has the **second-strongest** stem/background separation in the corpus. Campus has
+the weakest and scores 0.53. An earlier claim in this repo that fold F1 is monotone in
+stem contrast came from the luminance-only statistic and is **withdrawn**.
+
+The close-ups make it plain — pale olive stems against orange canopy, labels sitting on
+them:
+
+![Bachsee stem close-ups](figures/bachsee-closeups.png)
+
+**It is domain shift, and one training run proves it.** Trained on 252 tiles from the west
+half of Bachsee and tested on the spatially separated east half (30.3 m closest approach
+against the 27.59 m floor):
+
+| training data | test | F1 | precision | recall |
+|---|---|---:|---:|---:|
+| 3,588 tiles, other sites (the LOSO fold) | Bachsee | **0.09** | — | — |
+| **252 tiles, Bachsee's own west half** | Bachsee east | **0.6203** | 0.6061 | 0.6351 |
+
+252 of its own tiles beat 3,588 of everyone else's by 53 F1 points. The signal is there,
+the labels are on it, and the site is learnable. It fails as a holdout because it is the
+corpus's **only autumn-phenology site**: held out, nothing in training has ever shown the
+model a stem against orange foliage.
+
+![Bachsee_north examples](figures/loso-Bachsee_north-examples.png)
+
+Green is ground truth, red is prediction; on most tiles there is no red at all — recall
+collapse in its extreme form. The fold remains a **tie** for arm comparison, but for a
+different reason than "hard data": both arms are equally outside their training domain.
+
+**Actionable:** strong hue/saturation augmentation is the obvious candidate fix and is
+untested here. Failing that, this site should never be the held-out one.
 
 ### Kaufland is the informative clean holdout
 

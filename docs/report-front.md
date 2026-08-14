@@ -57,17 +57,32 @@ segmentation works at all it is worth **+3.3 F1** at the deployment scale.
 It does **not** replace matching the training scale to the serving scale — that is worth
 14.6 F1 against this 0.9–3.3. Do both.
 
+## Part III — Bachsee_north is not a bad site
+
+Every model trained here scores F1 < 0.13 on Bachsee_north, and the corpus notes have long
+attributed this to its amber November canopy. Three explanations were tested; the first two
+are wrong.
+
+| checked | result |
+|---|---|
+| Are the labels misregistered? Annotations are EPSG:25833, ortho EPSG:32633 — a datum pair diverging ~0.5 m. | **No.** On the orthomosaic's own grid every beech site peaks at **zero** offset; residual under 4 cm. |
+| Are the stems invisible under closed canopy? | **No.** That came from a *luminance-only* statistic. In CIELAB, Bachsee's stem/background separation is **1.75** — second highest in the corpus, above Campus's **1.16**, and Campus scores F1 0.53. |
+| Is the site learnable at all? | **Yes.** Trained on 252 tiles from its own west half and tested on the spatially separated east half: **F1 0.6203**. |
+
+**252 of its own tiles beat 3,588 tiles from every other site by 53 F1 points.** The data
+is sound; the failure is **domain shift**. Bachsee is the corpus's only autumn-phenology
+site, so when it is held out nothing in training has shown the model a stem against orange
+foliage. Strong hue/saturation augmentation is the obvious untested fix; failing that, this
+site should never be the held-out one.
+
+An earlier claim in this repo that fold F1 is monotone in stem contrast came from the
+luminance-only statistic and is **withdrawn**.
+
 ## What is not settled
 
-- **Bachsee_north returns F1 < 0.13 for every model ever trained here.** Long recorded as
-  a colour-domain failure. It is better described as an **occlusion** failure: the canopy
-  is closed and the stems lie beneath it, so stem-vs-background contrast is **+0.12**
-  against **+0.80** at Kaufland. Its labels were suspected of misregistration — annotations
-  in EPSG:25833, orthomosaic in EPSG:32633 — but measured on the orthomosaic's own grid
-  **every site peaks at zero offset**, so the labels are correctly placed and the datum
-  mismatch is harmless. The site is a genuine limit of the imagery, not a data defect.
-- **The site holdout rests on one informative fold.** Of four beech sites, two are the same
-  forest 4.4 years apart (33% footprint overlap) and one is Bachsee_north.
+- **The site holdout rests on one informative fold.** Of four beech sites, two are the
+  same forest 4.4 years apart (33% footprint overlap) and one is Bachsee_north, which is
+  outside every training domain (below).
 - **Label scarcity.** Under 1 ha of stem is labelled in total; beech is near exhausted and
   pine has none.
 

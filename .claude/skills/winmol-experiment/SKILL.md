@@ -52,16 +52,14 @@ overlap at all.
 | enough sites (≥6) | `--strategy sites` | the stronger claim: nothing shared |
 | any | never a random tile split | oversampled tiles overlap |
 
-> *Happened here:* holding out Bachsee_north gave **F1 exactly 0.0000** for every arm.
-> Long recorded as a colour-domain failure (amber November canopy, saturation 0.73 against
-> 0.19–0.32 elsewhere). Measured later, the bigger cause is that its canopy is **closed**:
-> stem-minus-background luminance is **−0.17** of a tile standard deviation there against
-> **+0.89** at Kaufland, and fold F1 is monotone in that statistic across all four beech
-> sites. The stems are largely not visible, so no model recovers them — the fold is
-> uninformative rather than hard. Its labels were checked for misregistration and are
-> **correctly placed** (every beech site peaks at zero offset on the orthomosaic's own
-> grid), despite an EPSG:25833/32633 datum mismatch. Check `scripts/site_gallery.py` and
-> `scripts/check_registration.py` before blaming a model.
+> *Happened here:* holding out Bachsee_north gave **F1 exactly 0.0000** for every arm, and
+> later folds score under 0.13. Two explanations were recorded and both are wrong: it is
+> not a labelling error (every beech site's polygons peak at **zero** offset on the
+> orthomosaic's own grid, `scripts/check_registration.py`) and the stems are not invisible
+> (that came from a *luminance-only* statistic; in CIELAB Bachsee separates at **1.75**,
+> second best in the corpus, against Campus's 1.16). Trained on 252 tiles of its own west
+> half it scores **F1 0.62** on its east half. It is **domain shift** — the only
+> autumn-phenology site — so holding it out measures nothing about segmentation.
 
 ## Cross-validation across data sources
 

@@ -9,7 +9,7 @@ For instance on 20220212_Barnekow_5 we have very highly resolved images, see @./
 
 Assuming we would always resample 15m tiles into 512px we probably reduce performance for Barnekow. We might even loose performance on 20171016_EW_WW_Campus too. SOme insights are collected here @/Users/christian/work/work/WINMOL_segmentor_pt/docs/preprocessing-comparison.md
 
-Are the implementation modernisations benefiting or hurting performance?, can we test that on our newly retrieved orthomosaics?
+Are the implementation modernisations benefiting or hurting performance?, can we test that on our newly retrieved orthomosaics? TODO: run a truly faithfull reimplementation of the R code and compare it to the current implementation.
 
 ------
 Section for ideas of Claude
