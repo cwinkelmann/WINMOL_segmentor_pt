@@ -1,0 +1,33 @@
+{
+ "label": "Bachsee_north-fixed-s1",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-scale-v2/Bachsee_north-fixed-s1//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.10235104886773051,
+   "precision": 0.8565462528329243,
+   "recall": 0.0544273613938292,
+   "tiles": 800,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.2680493814005987,
+   "precision": 0.8649228274901997,
+   "recall": 0.158600779779145,
+   "tiles": 800,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.3360851819331917,
+   "precision": 0.8394628343609948,
+   "recall": 0.21010017361558841,
+   "tiles": 800,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

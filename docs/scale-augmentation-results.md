@@ -158,7 +158,10 @@ Two questions worth answering next, in order:
 1. **Does a wider range keep paying?** The corpus spans 1.58–6.39 cm/px, a 4× range,
    against the 1.7× tested here. The UNet curve is still falling at both ends of the sweep,
    so ±30% is unlikely to be where the gain stops.
-2. **Does it survive a site holdout?** These splits share sites. Scale robustness within
-   known forests is a weaker claim than scale robustness on new ground, and every
-   domain-shift result in this project has been a recall collapse — the same failure mode
-   jitter is fixing here.
+2. **Does it survive a site holdout?** ~~These splits share sites.~~ **Answered** —
+   see [`scale-augmentation-loso.md`](scale-augmentation-loso.md). Flatter in 4/4 folds,
+   and worth **+3.3 F1 at the deployment scale** on the one clean holdout where the model
+   segments at all. Two of the four folds turned out not to be site holdouts (Campus and
+   Campus_Oberheide are the same forest 4.4 years apart, 33% footprint overlap) and one
+   was dead (Bachsee_north, F1 < 0.13 for every arm), so the new-site evidence is one
+   strong fold rather than four.
