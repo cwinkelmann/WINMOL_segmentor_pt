@@ -162,6 +162,8 @@ def main(argv=None):
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--sweep-thresholds", action="store_true",
                    help="also report F1 across thresholds (calibration check)")
+    p.add_argument("--batch", type=int, default=4,
+                   help="tiles per ONNX call; raise it when reads dominate")
     p.add_argument("--threads", type=int, default=None)
     p.add_argument("--label", default=None)
     p.add_argument("--json-out", default=None)
@@ -169,7 +171,7 @@ def main(argv=None):
 
     prob, tf, W, H, area, crs, meta = predict_plot(
         a.ortho, a.aoi, a.model, a.extent_m, a.native_px, a.ref_gsd_cm / 100.0,
-        overlap=a.overlap, threads=a.threads)
+        overlap=a.overlap, threads=a.threads, batch=a.batch)
     ths = [round(x, 2) for x in np.arange(0.2, 0.81, 0.05)] if a.sweep_thresholds else None
     rows = score(prob, tf, W, H, area, crs, a.stems, a.threshold, a.edge_buffer_m, ths)
     at = [r for r in rows if abs(r["threshold"] - a.threshold) < 1e-9] or rows
