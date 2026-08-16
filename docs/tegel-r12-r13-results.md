@@ -6,8 +6,8 @@ All numbers below are on that same held-out ground.
 
 **Headline: existing beech models already reach F1 0.76 on this new survey with no Tegel
 data at all.** Training on Tegel adds +3.5 to +6.2 F1. Fine-tuning from the beech model is
-worth nothing over training from scratch. Native-resolution extraction is **not** settled by
-these numbers and is discussed honestly below.
+worth nothing over training from scratch. And **native-resolution extraction loses to
+2.93 cm on every seed and both plots** through the deployment path — settled below.
 
 ## The data
 
@@ -96,21 +96,68 @@ Tegel tiles, the beech initialisation is not doing measurable work. This is a us
 negative: for a survey of this size, a clean run is as good as a transfer, and simpler.
 `--init-weights` was added for this arm and loads all 31,036,673 parameters or refuses.
 
-### Native resolution — NOT settled by this table
+### Native resolution — SETTLED: it loses, on both plots, on every seed
 
-The native arm trains and is scored at 1.20/1.28 cm/px, where a stem is ~2.4× thicker in
-pixels than at 2.93 cm/px. **Pixel F1 across two different ground resolutions is not a
-common yardstick** — that is the first rule in `.claude/skills/winmol-experiment`, and it
-applies here in full.
+Resolved by running both models through the **WINMOL Analyzer**, each at its own matched
+`tile_size` (15 m for the 2.93 cm models; 6.14 m on R12 and 6.55 m on R13 for the native
+models, since 512 source px is 6.14 m at 1.20 cm/px). Both predictions were scored
+identically: resampled to one 2.93 cm reference grid, masked to the plot AOI shrunk by 2 m,
+via `scripts/score_stem_map.py`. Three seeds each.
 
-What can be said: native wins on R13-P2 (+1.0 F1 over scratch) and loses on R12-P3
-(−1.3 F1) *while playing the easier exam*. That is weak evidence **against** native being
-clearly better, not evidence for it.
+| plot | 2.93 cm | native | delta | seeds favouring native |
+|---|---:|---:|---:|:--:|
+| R12-P3 | **0.7832** | 0.7653 | **-0.0178** | 0/3 |
+| R13-P2 | **0.5840** | 0.5482 | **-0.0358** | 0/3 |
 
-Settling it requires both models run over the same test-plot ground in world space, masked
-to the plot AOIs and rasterised to one common reference grid — the same rule used for any
-full-orthomosaic claim. That is built but not yet run; until it is, no ranking between
-native and 2.93 cm should be quoted.
+Per seed — R12-P3: 0.7832/0.7786/0.7877 against 0.7710/0.7464/0.7786.
+R13-P2: 0.5742/0.5952/0.5826 against 0.5506/0.5343/0.5598.
+**Native loses all six pairings.**
+
+**The mechanism is precision, and it is consistent.** Native has *higher* recall on all six
+runs and *lower* precision on all six:
+
+| | recall | precision |
+|---|---|---|
+| R12-P3 | native 0.79–0.85 vs 0.79–0.85 | native **0.71–0.73** vs 0.73–0.77 |
+| R13-P2 | native **0.70–0.74** vs 0.67–0.68 | native **0.43–0.45** vs 0.50–0.54 |
+
+More pixels per stem finds more stem — and more things that merely look like stem. The net
+is negative at both plots.
+
+It is also far more expensive: at 6.14 m tiles the Analyzer processed **676 tiles per plot
+against 11**, roughly 60× the inference for a worse result.
+
+**Recommendation: extract at the serving scale (2.93 cm/px), not native**, even where the
+imagery is 2.4× finer and even though the Analyzer's `tile_size` can be changed to match.
+
+### Cross-validation of the harness
+
+The world-space evaluator built for this comparison (`scripts/plot_inference.py`) and the
+Analyzer are independent implementations — different tiling, different stitching, different
+codebase. On the same model and plot they agree to **0.001 F1** (0.7842 vs 0.7832), which
+is why the numbers above can be trusted.
+
+### Tile-level F1 flatters — by a lot on the sparse plot
+
+The same models score very differently depending on whether you measure on sampled tiles or
+over the whole AOI:
+
+| | tile-level | world-space, whole AOI |
+|---|---:|---:|
+| 2.93 cm @ R12-P3 | 0.7988 | 0.7832 |
+| 2.93 cm @ R13-P2 | 0.6696 | **0.5840** |
+
+Training tiles are sampled with a minimum stem fraction, so tile-level scoring
+over-represents stem-rich ground and never asks the model about the empty areas where its
+false positives live. On R13-P2 that is worth **8.6 F1** of optimism. Deployment numbers
+should come from AOI-masked world-space scoring.
+
+### The superseded framing
+
+The tile-level table above scores the native arm on its own 1.20/1.28 cm tiles, where a
+stem is ~2.4× thicker in pixels — a different exam, and not a valid comparison. On that
+easier exam native appeared to win R13-P2 and lose R12-P3. The world-space result above
+supersedes it: on a common grid native loses both.
 
 ## Deviation from the pre-registered spec
 
