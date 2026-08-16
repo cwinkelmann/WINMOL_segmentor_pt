@@ -1,3 +1,8 @@
+> **Correction (2026-08-14).** Any claim here resting on "the earlier native+multiscale arm
+> lost" is void: that arm was validated on Bachsee_north, whose F1 is pinned near zero.
+> See [`preprocessing-comparison.md`](preprocessing-comparison.md) and
+> [`tegel-r12-r13-results.md`](tegel-r12-r13-results.md).
+
 The goal is to build a segmentation model which works the best on unseen data.
 
 

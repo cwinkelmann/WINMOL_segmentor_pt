@@ -1,5 +1,13 @@
 # Does synthetic pretraining help a beech stem segmenter?
 
+> **Correction (2026-08-14).** This document's explanation of the F1 0.0000 site holdout —
+> that Bachsee_north's amber canopy is an unseen colour domain and its labels may be
+> unusable — is **wrong**. Its labels are correctly registered, its stems are the
+> second-most separable in the corpus in CIELAB, it reaches F1 0.62 trained on its own west
+> half, and **strong hue augmentation takes the holdout from 0.042 to 0.688**. The
+> synthetic-pretraining measurements below stand; the diagnosis does not.
+> See [`scale-augmentation-loso.md`](scale-augmentation-loso.md).
+
 Short answer: **no.** This page originally reported +1.1 F1; a later, corrected repeat
 measured **−0.2 to −1.4**. Both sets of runs are kept below, with the reason the first
 set is void.
@@ -21,6 +29,7 @@ set is void.
 > Stage 1 still learns the synthetic sets easily (val F1 0.887–0.903). The features do not
 > transfer. **Treat the numbers below as the record of how the question was first
 > answered, not as the answer.**
+
 
 ## Why the question matters here
 

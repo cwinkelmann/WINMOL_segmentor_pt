@@ -1,5 +1,12 @@
 # Building training data from the WINMOL annotation corpus
 
+> **Note (2026-08-14).** The defect list below — mixed CRS, the typo'd duplicate Bachsee
+> layer, species case variants, no DEMs — is verified and current. But "one site per split
+> produced F1 exactly 0.0000" is **not** evidence about the data: that site is learnable
+> (F1 0.62 on itself) and strong hue augmentation lifts the holdout to 0.688.
+> See [`scale-augmentation-loso.md`](scale-augmentation-loso.md).
+
+
 How to turn `/…/Winmol/training_data` — orthomosaics plus hand-digitized stem
 polygons — into the `train/train{N}.jpeg` + `mask/mask{N}.gif` pairs the loader
 expects, and what is wrong with the corpus before you start.

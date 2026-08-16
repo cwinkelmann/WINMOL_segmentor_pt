@@ -1,6 +1,13 @@
 
 # Training-preprocessing comparison — results
 
+> **Correction (2026-08-14).** **Arm C (native + multiscale) is void.** Bachsee_north was
+> the validation site and its F1 is pinned near zero, so checkpoint selection, the LR
+> schedule and early stopping all ran on a signal carrying no information — the spread
+> across arms is selection luck, not extraction. Do not cite arm C either way. Native
+> resolution is re-tested properly in
+> [`tegel-r12-r13-results.md`](tegel-r12-r13-results.md) with a frozen test set.
+
 Design: `docs/superpowers/specs/2026-08-10-preprocessing-comparison-design.md`.
 **Status: complete.** 21 runs — 9 extraction, 5 capacity, 3 synthetic (rerun after a
 validation fix voided the first pass), 3 DINOv3 decoder, 1 of which failed and is marked so.
