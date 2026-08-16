@@ -5,8 +5,13 @@ description: Use when running the WINMOL Analyzer on an orthomosaic — testing 
 
 # Running the WINMOL Analyzer
 
-Repo: `/Users/christian/hnee/WINMOL_Analyzer`. This is the deployment path — a model that
+Repo: `/Users/christian/hnee/WINMOL_Analyzer` on the Mac, and the same checkout on **T14**
+at `/home/christian/hnee/WINMOL_Analyzer`. This is the deployment path — a model that
 scores well on tiles but poorly here has not actually improved anything.
+
+**Run it on T14, not the Mac.** Inference is minutes of sustained load and the Mac is not
+a compute box. T14 also holds every orthomosaic on its storage mount, so there is usually
+nothing to transfer.
 
 ## The CLI contract
 
