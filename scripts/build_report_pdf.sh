@@ -14,6 +14,7 @@ PARTS=(
   docs/reder-method-gaps-closed.md
   docs/scale-augmentation-results.md
   docs/scale-augmentation-loso.md
+  docs/tegel-r12-r13-results.md
   docs/process.md
 )
 for f in "${PARTS[@]}"; do [ -f "$f" ] || { echo "missing: $f" >&2; exit 1; }; done

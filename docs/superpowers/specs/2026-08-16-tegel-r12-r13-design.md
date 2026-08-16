@@ -29,11 +29,17 @@ stands are genuinely mixed:
 |---|---:|
 | beech | 897 |
 | pine | **153** |
-| birch | 112 |
+| *(no species)* | 121 |
+| birch | 120 |
 | ash | 41 |
-| oak | 11 |
-| poplar | 4 |
-| unlabelled | 121 |
+| oak | 16 |
+| poplar (3 spellings) | 16 |
+| hornbeam | 12 |
+| spruce | 7 |
+| silver fir | 1 |
+
+*(Counts corrected after writing: the first version summed only the top four species per
+plot and undercounted birch, oak and poplar.)*
 
 **153 pine polygons** where the corpus previously had none in a pine stand.
 

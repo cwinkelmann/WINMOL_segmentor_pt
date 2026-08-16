@@ -7,9 +7,10 @@ CRS units (m²). Source tree: `/Volumes/storage/Datasets/Winmol/training_data/WI
 
 ## The headline number
 
-**0.98 ha of labelled stem exists in total**, across 8 annotated sites. 29 orthomosaics
-are held; **21 of them have no stem annotations at all**. Labelling, not imagery, is the
-binding constraint on this project.
+**1.18 ha of labelled stem exists in total** — 0.98 ha across 8 annotated sites in the main
+GIS tree, plus 0.20 ha from the Tegel Revier 12/13 surveys (section 6). 31 orthomosaics are
+held; **21 of them have no stem annotations at all**. Labelling, not imagery, is the binding
+constraint on this project.
 
 ## 1. Orthomosaics — all 29
 
@@ -145,7 +146,32 @@ is what makes any tile traceable back to the ground via `scripts/locate_tile.py`
 Kaufland yields only 388 tiles because its AOI is 5,393 m² and a 19.512 m footprint holds
 13.80 m in from every edge.
 
-## 6. Defects to handle
+## 6. Tegel Revier 12 / 13 — added 2025-07, measured 2026-08-16
+
+Two surveys held separately from the GIS tree above, digitised as five sample plots.
+Detail and results in [`tegel-r12-r13-results.md`](tegel-r12-r13-results.md).
+
+| ortho | acquisition | GSD | size | CRS | bands |
+|---|---|---:|---:|---|---|
+| Revier 12 `result_Res1.2_webp.tif` | 2025-07 | **1.20 cm** | 339k × 334k px, 12 GB | EPSG:32633 | RGBA |
+| Revier 13 `result_Res1.3_COG.tif` | 2025-07 | **1.28 cm** | 393k × 335k px, 19 GB | EPSG:32633 | RGB |
+
+| plot | polygons | stem area | AOI |
+|---|---:|---:|---:|
+| R12-P1 | 178 | 215 m² | 14,913 m² |
+| R12-P2 | 552 | 891 m² | 23,080 m² |
+| R12-P3 | 299 | 501 m² | 8,692 m² |
+| R13-P1 | 232 | 248 m² | 8,865 m² |
+| R13-P2 | 123 | 141 m² | 13,436 m² |
+| **total** | **1,384** | **1,996 m² = 0.20 ha** | |
+
+**This raises the corpus from 0.98 ha to 1.18 ha of labelled stem, +20%**, and adds the
+first substantial pine (153 polygons), birch (120) and ash (41) annotations. Labels are
+`EPSG:25833` against `EPSG:32633` orthos; registration verified at zero offset on all
+plots. Species names are free text with the same variant problem as the older corpus
+(`POPLAR` / `WHITE POPLAR` / `SILVER POPLAR`).
+
+## 7. Defects to handle
 
 - **Mixed CRS.** Campus and Bachsee north/south orthos are EPSG:32633; everything else is
   EPSG:25833 — the same UTM zone on different datums, so a silent mismatch shifts masks by
