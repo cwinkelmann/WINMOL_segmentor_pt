@@ -74,3 +74,11 @@ def test_crs_mismatch_is_reported(tmp_path):
     tif, shp = _site(tmp_path)
     r = check(tif, shp, n=4, max_shift_m=0.3, half_px=120)
     assert r["crs_mismatch"] is False
+
+
+@pytest.mark.parametrize("step", [1, 3, 4, 7])
+def test_shift_grid_always_contains_zero(tmp_path, step):
+    """Zero shift is the reference; a grid that steps over it has no baseline at all."""
+    tif, shp = _site(tmp_path, shift_px=0, shadow=False)
+    r = check(tif, shp, n=4, max_shift_m=0.6, step_px=step, half_px=120)
+    assert "contrast_at_zero" in r and r["contrast_at_zero"] == r["contrast_at_zero"]

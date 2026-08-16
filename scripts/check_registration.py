@@ -63,8 +63,12 @@ def check(ortho, stems, n=60, max_shift_m=1.5, step_px=1, half_px=220, seed=1,
     tree = STRtree(geoms)
     rng = np.random.default_rng(seed)
 
+    # The grid must contain 0 — it is the reference the verdict is measured against.
+    # range(-max_px, max_px+1, step) misses it whenever step does not divide max_px,
+    # so build it outward from zero instead.
     max_px = int(round(max_shift_m / gsd))
-    shifts = list(range(-max_px, max_px + 1, step_px))
+    k = max(1, max_px // max(1, step_px))
+    shifts = [i * step_px for i in range(-k, k + 1)]
     acc = np.zeros((len(shifts), len(shifts)))
     used = 0
 
