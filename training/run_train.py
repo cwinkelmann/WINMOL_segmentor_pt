@@ -148,6 +148,32 @@ def _seed_everything(cfg):
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 
+def load_init_weights(model, path):
+    """Start from an existing model's weights instead of random init.
+
+    Fine-tuning onto a new survey does not need the two-stage path, which retrains stage 1
+    from scratch and throws away a model we already have. Loads strictly and reports what
+    it loaded: a silently partial load (wrong arch, wrong width) would train something that
+    is neither the pretrained model nor a clean baseline, and would still produce a
+    plausible number.
+    """
+    sd = torch.load(path, map_location="cpu", weights_only=True)
+    if isinstance(sd, dict) and "state_dict" in sd:
+        sd = sd["state_dict"]
+    # strict=False forgives missing/unexpected KEYS but still raises on a shape mismatch,
+    # which is how a same-named different-width model slips past a keys-only check.
+    try:
+        missing, unexpected = model.load_state_dict(sd, strict=False)
+    except RuntimeError as e:
+        raise SystemExit(f"--init-weights {path} does not match this architecture: {e}")
+    if missing or unexpected:
+        raise SystemExit(
+            f"--init-weights {path} does not match this architecture: "
+            f"{len(missing)} missing, {len(unexpected)} unexpected parameters "
+            f"(first missing: {missing[:3]}, first unexpected: {unexpected[:3]})")
+    return sum(p.numel() for p in model.parameters())
+
+
 def run_training(cfg):
     _validate_export(cfg)                        # fail fast before training
     _seed_everything(cfg)
@@ -158,6 +184,9 @@ def run_training(cfg):
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
                         encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult,
                         block_order=cfg.block_order)
+    if getattr(cfg, "init_weights", None):
+        n = load_init_weights(model, cfg.init_weights)
+        print(f"initialised {n:,} parameters from {cfg.init_weights}")
     train_one_run(model, train_loader, val_loader, cfg)
     val_metrics = evaluate(model, val_loader)   # on training device
     _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
@@ -241,6 +270,8 @@ def config_from_args(argv=None):
     # Exposed because colour is the axis our sites differ on most: hue runs 15-98 deg
     # across the beech corpus and the one autumn site is unlearnable from the others.
     # albumentations works in OpenCV's 0-179 hue scale, so 90 spans the full circle.
+    p.add_argument("--init-weights", default=None,
+                   help="start from this .pt state_dict (fine-tune) instead of random init")
     p.add_argument("--aug-hue-shift", type=int, default=20,
                    help="HueSaturationValue hue_shift_limit (0-179 scale; 90 = any hue)")
     p.add_argument("--aug-sat-shift", type=int, default=30)
@@ -298,6 +329,7 @@ def config_from_args(argv=None):
         aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
+        init_weights=a.init_weights,
         aug_hue_shift=a.aug_hue_shift, aug_sat_shift=a.aug_sat_shift,
         aug_val_shift=a.aug_val_shift,
         multiscale=a.multiscale, crop_min_px=a.crop_min_px, crop_max_px=a.crop_max_px,
