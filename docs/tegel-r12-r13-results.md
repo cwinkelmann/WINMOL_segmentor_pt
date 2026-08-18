@@ -130,6 +130,33 @@ against 11**, roughly 60× the inference for a worse result.
 **Recommendation: extract at the serving scale (2.93 cm/px), not native**, even where the
 imagery is 2.4× finer and even though the Analyzer's `tile_size` can be changed to match.
 
+### New model vs the published WINMOL model, through the Analyzer
+
+All four models run through the Analyzer at `tile_size 15` and scored identically —
+resampled to one 2.93 cm reference grid, masked to the plot AOI shrunk by 2 m.
+
+| model | R12-P3 | R13-P2 |
+|---|---:|---:|
+| **published** — Reder `SpecDS_Beech_512` (2023-02-28) | 0.7435 | 0.5715 |
+| **ours, beech corpus** — BeechScale666 UNet, no Tegel data | 0.7404 | 0.5252 |
+| **ours, Tegel from scratch** (3-seed mean) | **0.7832** | 0.5840 |
+| **ours, Tegel fine-tuned** | 0.7811 | **0.5930** |
+
+**The published model out-transfers our own beech-corpus model.** It matches it on R12-P3
+(0.7435 vs 0.7404) and beats it by **4.6 F1** on R13-P2 (0.5715 vs 0.5252). Our beech models
+are trained on four sites at the correct serving scale, with jitter, and still do not
+transfer better than the published one to a new survey. The advantage we measured
+*within* our corpus does not carry to new ground.
+
+Two things this does not mean. It is not a like-for-like architecture comparison — the
+published model is a different training corpus (including sites we do not hold, such as
+Quesenbank) as well as a different pipeline. And it is a single plot pair; the two plots
+disagree in magnitude.
+
+**What does help is local data.** Training on Tegel beats the published model by **+4.0 F1**
+on R12-P3 and **+2.2** on R13-P2. The gain comes from labelling the survey you intend to
+run on, not from a better-scaled general corpus.
+
 ### Cross-validation of the harness
 
 The world-space evaluator built for this comparison (`scripts/plot_inference.py`) and the
