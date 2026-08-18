@@ -31,32 +31,35 @@ def test_arch_exports_and_serves_nhwc(tmp_path, arch, encoder, monkeypatch):
     assert out.min() >= -1e-4 and out.max() <= 1.0 + 1e-4
 
 
+def tmp_onnx_path():
+    import tempfile, pathlib
+    return pathlib.Path(tempfile.mkdtemp()) / "dpt.onnx"
+
+
 def test_dpt_cannot_yet_export_onnx():
     """Pin DPT's known limitation so we notice the day it lifts.
 
-    DPT's ViT encoder is built for a fixed 384 (or 224) input and asserts on anything
-    else. `dynamic_img_size=True` lets it take our 512 tiles by interpolating the
-    position embeddings — but timm does that with antialiased bicubic, and
-    `aten::_upsample_bicubic2d_aa` has no ONNX lowering at opset 17 through 20.
+    DPT's ViT encoder is built for a fixed 384 (or 224) input; `dynamic_img_size=True`
+    lets it take our 512 tiles by interpolating the position embeddings.
 
-    Exporting at the encoder's native 384 does work, but produces fixed 384 spatial dims,
-    which the contract rejects (it allows 512 or symbolic, not a different fixed size),
-    and a ~485 MB artifact for 122M parameters.
+    The blocker has MOVED. It used to be that timm's antialiased bicubic interpolation
+    (`aten::_upsample_bicubic2d_aa`) had no ONNX lowering at opset 17, so export raised
+    outright. With a newer torch the export now succeeds — but the graph it produces has
+    a FIXED output batch axis ([1, 1, 512, 512]) while the contract requires a symbolic
+    one, and the artifact is ~486 MB for 122M parameters.
 
-    So DPT is trainable and comparable, but not servable through the current contract.
-    If this test starts failing, DPT became exportable and belongs in the parametrization
-    above.
+    So DPT is still trainable and comparable, but not servable through the contract. This
+    asserts the *production* path (export_to_onnx) rejects it, whatever the current
+    reason. If this test starts failing, DPT became servable and belongs in the
+    parametrization above.
     """
-    import io
-
-    import torch
-
     from training.model_factory import build_model
+    from winmol_unet.export import export_to_onnx
 
     model = build_model("dpt", encoder_weights=None).eval()
-    with pytest.raises(torch.onnx.errors.UnsupportedOperatorError,
-                       match="_upsample_bicubic2d_aa"):
-        torch.onnx.export(model, torch.zeros(1, 3, 512, 512), io.BytesIO(),
-                          opset_version=17, input_names=["input"],
-                          output_names=["output"],
-                          dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}})
+    with pytest.raises(Exception) as excinfo:
+        export_to_onnx(model, str(tmp_onnx_path()))
+    msg = str(excinfo.value)
+    assert ("batch axis must be dynamic" in msg          # current: fixed output batch
+            or "_upsample_bicubic2d_aa" in msg           # historical: no opset-17 lowering
+            or ("Resize" in msg and "17" in msg)), f"DPT failed for a new reason: {msg[:300]}"

@@ -28,7 +28,7 @@ jobs:
           python -m pip install -U pip
           # the CPU wheel index keeps the install ~2 GB smaller and the runner has no GPU
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install -e ".[train,dev]"
+          pip install -e ".[train,dev,geo]"
 
       - name: Show environment
         run: pip list | grep -iE "^(torch|onnx|numpy|albumentations|segmentation)" || true

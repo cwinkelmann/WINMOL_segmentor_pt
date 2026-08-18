@@ -110,7 +110,10 @@ def split_ids(image_dir, mask_dir, val_fraction, seed):
     shuffled = ids[:]
     rng.shuffle(shuffled)
     n_val = max(1, int(round(len(shuffled) * val_fraction)))
-    return sorted(shuffled[n_val:]), sorted(shuffled[:n_val])   # train_ids, val_ids
+    # sort with _sort_key, not plain sorted(): ids are strings now, so the default
+    # ordering would put '10' before '2' and disagree with _paired_ids.
+    return (sorted(shuffled[n_val:], key=_sort_key),
+            sorted(shuffled[:n_val], key=_sort_key))          # train_ids, val_ids
 
 
 def train_val_split(image_dir, mask_dir, val_fraction, seed, img_size=512, transform=None,

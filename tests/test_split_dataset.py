@@ -35,7 +35,7 @@ def test_split_materializes_and_matches_train_val_split(tmp_path):
 
     # the materialized VAL set holds exactly the same original tiles as train_val_split's val
     mat_val_ids = {_id_of(dst / "val" / "train" / f) for f in os.listdir(dst / "val" / "train")}
-    assert mat_val_ids == set(va.ids)
+    assert mat_val_ids == {int(i) for i in va.ids}   # dataset ids are string stems
 
     # both splits are loader-ready and disjoint, covering all 10 pairs
     mtr = StemDataset(str(dst / "train" / "train"), str(dst / "train" / "mask"))

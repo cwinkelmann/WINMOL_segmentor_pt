@@ -25,12 +25,21 @@ def export_to_onnx(model, path):
     model = model.eval()
     wrapped = _WithSigmoid(model).eval()
     dummy = torch.zeros(1, IN_CHANNELS, IMG_SIZE, IMG_SIZE)
-    torch.onnx.export(
-        wrapped, dummy, path,
+    kwargs = dict(
         input_names=[INPUT_NAME], output_names=[OUTPUT_NAME],
         dynamic_axes=DYNAMIC_AXES, opset_version=OPSET,
         do_constant_folding=True,
     )
+    # torch >= 2.5 defaults to the dynamo exporter, which warns that `dynamic_axes` is
+    # "not recommended" and then silently ignores it for some architectures — segformer
+    # came out as [1, 1, 512, 512], a FIXED batch, which the contract rejects and which
+    # would break batched serving. The contract requires a symbolic batch axis, so pin
+    # the TorchScript exporter that honours dynamic_axes. Remove once the dynamo path
+    # respects it (validate_onnx_model below is what would catch the regression).
+    import inspect
+    if "dynamo" in inspect.signature(torch.onnx.export).parameters:
+        kwargs["dynamo"] = False
+    torch.onnx.export(wrapped, dummy, path, **kwargs)
     validate_onnx_model(onnx.load(path))
     return path
 
