@@ -57,6 +57,17 @@ segmentation works at all it is worth **+3.3 F1** at the deployment scale.
 It does **not** replace matching the training scale to the serving scale — that is worth
 14.6 F1 against this 0.9–3.3. Do both.
 
+## Part IV — Deployed on the Tegel surveys
+
+Both orthomosaics (16.3 and 21.6 km²) run end to end through the Analyzer with our model
+and with the published one: **8,323 / 25,238 stems** against the published model's
+**6,483 / 20,141**, plus a diameter every 50 cm along each stem. Restricted to the frozen
+test plots the full run reproduces the plot-level scores to within 0.5 F1, so the pipeline
+is consistent from tile to full survey.
+
+Counts alone are not evidence of quality — outside the five annotated plots nothing was
+digitised, so extra detections there cannot be judged.
+
 ## Part III — Bachsee_north is not a bad site
 
 Every model trained here scores F1 < 0.13 on Bachsee_north, and the corpus notes have long
