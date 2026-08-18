@@ -186,6 +186,39 @@ stem is ~2.4× thicker in pixels — a different exam, and not a valid compariso
 easier exam native appeared to win R13-P2 and lose R12-P3. The world-space result above
 supersedes it: on a common grid native loses both.
 
+## Reproducibility: the whole pipeline rebuilt and retrained identically
+
+After the NAS mount on T14 dropped and was restored, both datasets were re-extracted and
+all six models retrained from scratch. Every run reproduced its original to four decimal
+places:
+
+| seed | 2.93 cm rerun | 2.93 cm original | native rerun | native original |
+|---|---:|---:|---:|---:|
+| s1 | 0.7727 | 0.7727 | 0.7651 | 0.7651 |
+| s2 | 0.7726 | 0.7726 | 0.7393 | 0.7393 |
+| s3 | 0.7770 | 0.7770 | 0.7688 | 0.7688 |
+
+Precision and recall match as well, 6/6.
+
+This is a stronger check than a rerun of the same command, because several things changed
+between the two passes and all had to be right at once:
+
+- **A different storage path** — the NAS was remounted with `cifs-utils` freshly installed
+  and different mount options (SMB 3.1.1). A resampling or byte-level difference in how the
+  imagery was read would have moved the numbers.
+- **A different extraction code path** — the rerun used `scripts/extract_parallel.py`, five
+  concurrent processes merged with renumbering, against the original's single-process
+  `make_splits`. A tile-index collision or a dropped plot in the merge would have shown up
+  here.
+- **Different hosts** for tiling and training than the first pass.
+
+Before training, the tile sets were also compared directly: identical centres and rotations
+in every split, 2330/500/1000 and 2400/500/1000.
+
+So the parallel extractor is verified against the serial one not only on tile counts and
+coordinates but on the models those tiles produce — and the ranking below holds on freshly
+extracted data.
+
 ## Deviation from the pre-registered spec
 
 The spec said the fine-tune would use strong hue augmentation
