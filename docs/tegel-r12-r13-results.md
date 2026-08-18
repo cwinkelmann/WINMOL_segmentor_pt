@@ -225,13 +225,31 @@ The plot-level numbers above are cut from 155–181 m windows. This is the whole
 every tile of both orthomosaics, through the Analyzer, for our Tegel model and the published
 one.
 
-| | R12 (16.3 km²) | R13 (21.6 km²) |
+| | R12 | R13 |
 |---|---:|---:|
+| rectangular extent | 16.3 km² | 21.6 km² |
+| **actually imaged** (footprint of valid pixels) | **5.15 km²** | **10.33 km²** |
+| fill of the rectangle | **33.8%** | **51.1%** |
 | tiles at `tile_size 15` | 75,072 | 99,231 |
 | **new model** — stems | **8,323** | **25,238** |
 | **published model** — stems | 6,483 | 20,141 |
 | difference | **+28%** | **+25%** |
 | new-model nodes (a diameter every 50 cm) | 75,256 | 232,383 |
+
+**Quote densities against the imaged area, not the rectangle.** These orthomosaics are
+flight strips, not filled rectangles — R12 covers only a third of its bounding box. Using
+the rectangle understates stem density threefold:
+
+| | stems/km² imaged | stems/km² if you use the bbox |
+|---|---:|---:|
+| R12, new model | **1,616** | 546 |
+| R13, new model | **2,442** | 1,248 |
+
+The exact outlines are `R{12,13}_footprint.gpkg` (one polygon, ~59k vertices, no holes),
+produced with `gdal_footprint -ovr 3`, plus a full-resolution validity raster
+`R12_valid_mask.tif` from the alpha band. It also means roughly **two-thirds of the R12
+inference was spent on empty pixels** — masking to the footprint first would cut the
+full-orthomosaic run substantially.
 
 **More stems is not itself evidence of a better model.** Outside the five sample plots
 nothing was digitised, so those extra detections cannot be judged — scoring the whole raster
