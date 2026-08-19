@@ -12,7 +12,7 @@ merges the results. The merge is the part that needs care: each part numbers its
 `tiles.jsonl` carries the old `n`, which must be rewritten to match or provenance points at
 the wrong tile.
 
-    python scripts/extract_parallel.py --config sites.json --out DS --jobs 5
+    python prepare.py --jobs N --config sites.json --out DS --jobs 5
 """
 import argparse
 import json
@@ -39,8 +39,14 @@ def _part_configs(cfg_path, work_dir):
     return out
 
 
-def _run_parts(parts, work_dir, strategy, jobs, python=None):
-    """Launch the per-site extractions, at most `jobs` at a time."""
+def _run_parts(parts, work_dir, strategy, jobs, python=None,
+               seed=1, cut_axis="auto", skip_fix=False):
+    """Launch the per-site extractions, at most `jobs` at a time.
+
+    seed / cut_axis / skip_fix are forwarded to every worker. They were previously dropped,
+    which made --jobs a correctness knob rather than a speed one: the same config extracted
+    with --jobs 1 and --jobs 4 produced different tiles, silently.
+    """
     python = python or sys.executable
     running, results = [], []
 
@@ -58,7 +64,10 @@ def _run_parts(parts, work_dir, strategy, jobs, python=None):
         outdir = os.path.join(work_dir, name)
         log = os.path.join(work_dir, f"{name}.log")
         cmd = [python, "-m", "winmol_unet.geo.splits",
-               "--config", cfg, "--out", outdir, "--strategy", strategy]
+               "--config", cfg, "--out", outdir, "--strategy", strategy,
+               "--seed", str(seed), "--cut-axis", cut_axis]
+        if skip_fix:
+            cmd.append("--skip-fix")
         with open(log, "w") as lf:
             running.append((name, subprocess.Popen(cmd, stdout=lf, stderr=lf), log))
         print(f"  started {name}")
@@ -128,13 +137,19 @@ def main(argv=None):
     p.add_argument("--jobs", type=int, default=4)
     p.add_argument("--python", default=None, help="interpreter for the workers")
     p.add_argument("--keep-parts", action="store_true")
+    # Forwarded to the workers. Anything that changes what gets sampled belongs here, or
+    # --jobs stops being a pure speed knob.
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--cut-axis", default="auto", choices=("auto", "ns", "ew"))
+    p.add_argument("--skip-fix", action="store_true")
     a = p.parse_args(argv)
 
     work = os.path.join(a.out, "_parts")
     os.makedirs(work, exist_ok=True)
     parts = _part_configs(a.config, work)
     print(f"extracting {len(parts)} sites, {a.jobs} at a time")
-    _run_parts(parts, work, a.strategy, a.jobs, a.python)
+    _run_parts(parts, work, a.strategy, a.jobs, a.python,
+               seed=a.seed, cut_axis=a.cut_axis, skip_fix=a.skip_fix)
     print("merging:")
     counts = merge(work, [n for n, _ in parts], a.out)
     if not a.keep_parts:

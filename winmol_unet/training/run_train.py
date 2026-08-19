@@ -26,12 +26,17 @@ from .train import train_one_run
 
 
 def _worker_init(_):
-    # Reseed the albumentations transform per worker so augmentation streams are
-    # distinct across workers (its per-Compose RNG is not reached by torch's base seed).
+    # Reseed the per-worker RNGs that torch's base seed does not reach. Workers fork after
+    # the dataset is built, so anything seeded in __init__ is identical in every worker
+    # and would replay the same stream N times over.
     info = torch.utils.data.get_worker_info()
+    seed = info.seed % (2 ** 31 - 1)
     tf = getattr(info.dataset, "transform", None)
     if tf is not None:
-        tf.set_random_seed(info.seed % (2 ** 31 - 1))
+        tf.set_random_seed(seed)              # albumentations Compose has its own RNG
+    rng = getattr(info.dataset, "_mosaic_rng", None)
+    if rng is not None:
+        rng.seed(seed)                        # mosaic partner draws
 
 
 def _eval_dataset(image_dir, mask_dir, cfg, ids=None):

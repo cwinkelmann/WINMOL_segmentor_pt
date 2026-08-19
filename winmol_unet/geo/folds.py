@@ -18,7 +18,7 @@ The held-out site appears in exactly one split, so a fold cannot leak by constru
 there is no shared ground to leak across. Within the training sites, leak-freedom is the
 block buffer's job and is verified separately from `tiles.jsonl`.
 
-    python scripts/compose_folds.py --site-all DS/site_all --site-tv DS/site_tv \\
+    python prepare.py --compose-folds --site-all DS/site_all --site-tv DS/site_tv \\
         --out DS/folds --folds Campus Campus_Oberheide Bachsee_north Kaufland
 """
 import argparse

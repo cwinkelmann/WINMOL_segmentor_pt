@@ -71,8 +71,11 @@ class StemDataset(Dataset):
         # here than in most projects — tiles are oversampled and overlap, so leakage is
         # already the failure mode the split strategy exists to prevent.
         self.mosaic_p = mosaic_p
-        # Own RNG rather than the global one: DataLoader workers fork, and numpy's global
-        # state would then hand every worker the same partner tiles.
+        # Own RNG rather than the global one, so a mosaic stream is reproducible from
+        # cfg.seed alone. NOTE this does not by itself de-correlate DataLoader workers:
+        # they fork after __init__, so every worker inherits the SAME Random(seed) and
+        # would draw the same partner sequence. run_train._worker_init reseeds it per
+        # worker, the way it already does for the albumentations Compose.
         self._mosaic_rng = random.Random(seed)
 
     def __len__(self):

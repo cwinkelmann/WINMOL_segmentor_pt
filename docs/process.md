@@ -75,5 +75,5 @@ because GEOS aborts on the first set operation touching an invalid ring.
 |---|---|
 | corpus | `/Volumes/storage/Datasets/Winmol/training_data/WINMOL_Trainings_Data/GIS` |
 | derived tiles | `data/` in this repo, git-ignored, regenerable from `configs/*.json` |
-| training | carrot `/raid/cwinkelmann/winmol` — check GPUs are free before launching |
+| training | the GPU box (`$WINMOL_CARROT`) — check GPUs are free before launching, and pin them with `--gpus '"device=4,5,6"'` rather than taking the whole machine |
 | Analyzer | `~/hnee/WINMOL_Analyzer`, needs Python ≥ 3.10 |

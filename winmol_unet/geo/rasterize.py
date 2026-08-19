@@ -1,6 +1,6 @@
 """Rasterize polygon stem annotations onto an orthomosaic's grid.
 
-    python scripts/rasterize_annotations.py --shapefile stems.shp --ortho ortho.tif \
+    python prepare.py --rasterize --shapefile stems.shp --ortho ortho.tif \
         --out stem_map.tif [--instances inst.tif] [--species GFI RBU] [--id-field id]
 
 The WINMOL training shapefiles hold one traced polygon per stem, with `id` and

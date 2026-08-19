@@ -1,6 +1,6 @@
 """Command-line entry points.
 
-The four root-level scripts (`prepare.py`, `train.py`, `infer.py`, `test.py`) are thin
+The four root-level scripts (`prepare.py`, `train.py`, `infer.py`, `evaluate.py`) are thin
 wrappers around the `main(argv)` functions here. Keeping the implementations inside the
 package is what lets the same commands work after `pip install` via the console scripts
 declared in pyproject.toml — a bare script at the repo root is not importable once the

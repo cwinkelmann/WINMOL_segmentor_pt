@@ -129,8 +129,14 @@ def main(argv=None):
     if args.config:
         if args.jobs > 1:
             from winmol_unet.geo import parallel
-            return parallel.main(["--config", args.config, "--out", args.out,
-                                  "--strategy", args.strategy, "--jobs", str(args.jobs)])
+            # Forward everything that affects WHAT is sampled, not just how fast: --jobs
+            # must not change the result.
+            forwarded = ["--config", args.config, "--out", args.out,
+                         "--strategy", args.strategy, "--jobs", str(args.jobs),
+                         "--seed", str(args.seed), "--cut-axis", args.cut_axis]
+            if args.skip_fix:
+                forwarded.append("--skip-fix")
+            return parallel.main(forwarded)
         from winmol_unet.geo.splits import run
         run(args.config, args.out, args.strategy, cut_axis=args.cut_axis,
             seed=args.seed, skip_fix=args.skip_fix, quiet=args.quiet)

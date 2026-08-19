@@ -94,6 +94,14 @@ RECIPES = {
     # recommended. Before any claim rests on it, run it through the winmol-experiment
     # procedure: paired seeds against `robust`, leave-one-site-out, reported as a fold
     # count rather than a mean.
+    #
+    # And it is NOT "robust plus one knob", so do not treat a robust-vs-mosaic run as a
+    # single-variable comparison. A.Mosaic emits `img_size` (512), and the RandomSizedCrop
+    # that follows samples 394-666 from that — a range whose upper half exceeds the image
+    # it is cropping. Each mosaic cell is also a downscaled tile rather than a native one.
+    # The scale distribution therefore differs from `robust` in more than the mosaic step.
+    # Fixing that properly means making Mosaic emit the native tile size, which needs the
+    # dataset to tell the pipeline what that is — worth doing before anyone measures this.
     "mosaic": {**_MULTISCALE, **_ROTATE, "crop_min_px": 394, "crop_max_px": 666,
                "aug_hue_shift": 90, "aug_sat_shift": 60, "aug_val_shift": 30,
                "aug_hsv_p": 0.9, "mosaic_p": 0.5},

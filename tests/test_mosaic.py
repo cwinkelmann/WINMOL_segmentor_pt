@@ -27,7 +27,12 @@ def _dataset(tmp_path, n=8, **kw):
     for i in range(1, n + 1):
         Image.fromarray(rng.integers(0, 255, (64, 64, 3), dtype="uint8")).save(
             img_dir / f"train{i}.jpeg")
-        m = np.zeros((64, 64), dtype="uint8"); m[10:40, 10:20] = 255
+        # A DISTINCT mask per tile: the stripe moves with i. Tiles that are byte-identical
+        # make every provenance assertion vacuous -- a leak, a duplicated primary and a
+        # correct draw all look the same. This is what lets the tests below check identity
+        # rather than just count.
+        m = np.zeros((64, 64), dtype="uint8")
+        m[10:40, (2 * i) % 50:(2 * i) % 50 + 6] = 255
         Image.fromarray(m).save(mask_dir / f"mask{i}.gif")
     return StemDataset(str(img_dir), str(mask_dir), img_size=64, **kw)
 
@@ -72,20 +77,36 @@ def test_partners_never_leave_this_datasets_ids(tmp_path):
     invisible in the tensors and would show up only as an inflated validation score.
     """
     ds = _dataset(tmp_path, n=8, mosaic_p=1.0, seed=1)
-    ds.ids = ds.ids[:4]                    # pretend this is the val half
-    for _ in range(20):
-        partners = ds._mosaic_partners(0)
-        assert len(partners) == 3
-    # every id the sampler can reach is one of this dataset's own
-    reachable = {ds.ids[j] for j in range(len(ds.ids))}
-    assert reachable == set(ds.ids[:4])
+    held_out = set(ds.ids[4:])             # pretend these are the train half
+    ds.ids = ds.ids[:4]                    # ...and this dataset is the val half
+
+    # Compare the ACTUAL returned partners against the tiles of the held-out half. Each
+    # fixture tile has a distinct mask, so identity is checkable from the pixels.
+    import numpy as np
+    forbidden = {ds._load_mask(n).tobytes() for n in held_out}
+    seen = 0
+    for _ in range(30):
+        for part in ds._mosaic_partners(0):
+            assert part["mask"].tobytes() not in forbidden, \
+                "a mosaic partner came from outside this dataset's split"
+            seen += 1
+    assert seen > 0, "no partners were drawn, so nothing was actually checked"
 
 
 def test_partners_exclude_the_primary_tile(tmp_path):
+    """The primary tile must not also appear as one of its own partners.
+
+    Checked on the returned arrays, not on the count: a 2x2 mosaic of four copies of one
+    tile is a zoom-out, not an augmentation, and would be invisible in a length assertion.
+    """
     ds = _dataset(tmp_path, n=8, mosaic_p=1.0, seed=1)
     for i in range(len(ds.ids)):
-        picks = ds._mosaic_partners(i)
-        assert len(picks) == 3
+        primary = ds._load_mask(ds.ids[i]).tobytes()
+        for _ in range(10):
+            picks = ds._mosaic_partners(i)
+            assert len(picks) == 3
+            assert all(p["mask"].tobytes() != primary for p in picks), \
+                f"tile {i} was returned as its own mosaic partner"
 
 
 def test_a_single_tile_dataset_does_not_crash(tmp_path):

@@ -15,7 +15,7 @@ a single pass leaves seams exactly where a stem crosses a tile edge.
 Scoring is masked to the AOI shrunk by `--edge-buffer-m`, because a tile centred near the
 boundary sees unannotated ground outside it, and stems there are real but undigitised.
 
-    python infer.py --ortho x.tif --aoi aoi.gpkg --stems stems.gpkg \\
+    python infer.py --model m.onnx --ortho x.tif --aoi aoi.gpkg --out pred.tif \\
         --model m.onnx --extent-m 19.512 --ref-gsd-cm 2.9297
 """
 import argparse
