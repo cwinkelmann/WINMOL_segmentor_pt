@@ -36,6 +36,13 @@ Read the correction banner at the top of each before using any number from it.
 | [`data_training_concept.md`](data_training_concept.md) | The planning framing. | Any claim resting on the lost native arm. |
 | [`training-data-from-annotations.md`](training-data-from-annotations.md) | The defect list — mixed CRS, typo'd duplicate layer, species variants. All verified. | The "one per split gives F1 0.0000" framing as evidence about the data. |
 
+## Supporting
+
+| document | covers |
+|---|---|
+| [`FEATURES.md`](FEATURES.md) | What the package does, feature by feature. |
+| [`report-front.md`](report-front.md) | Executive summary + PDF metadata. Not standalone — it is the first section of `WINMOL-report.pdf`. |
+
 ## Specifications
 
 Written **before** their experiments, as pre-registrations. They are not updated to match

@@ -160,7 +160,7 @@ Two questions worth answering next, in order:
    so ±30% is unlikely to be where the gain stops.
 2. **Does it survive a site holdout?** ~~These splits share sites.~~ **Answered** —
    see [`scale-augmentation-loso.md`](scale-augmentation-loso.md). Flatter in 4/4 folds,
-   and worth **+3.3 F1 at the deployment scale** on the one clean holdout where the model
+   and worth **+1.1 / +3.3 / +5.5 F1 across the three seeds** (mean +3.3, 3/3 positive, |t| = 2.6 — below the |t| >= 3 bar used elsewhere here, so the direction is reliable and the magnitude is not) on the one clean holdout where the model
    segments at all. Two of the four folds turned out not to be site holdouts (Campus and
    Campus_Oberheide are the same forest 4.4 years apart, 33% footprint overlap) and one
    was dead (Bachsee_north, F1 < 0.13 for every arm), so the new-site evidence is one

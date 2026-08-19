@@ -176,8 +176,8 @@ scale on every seed**:
 
 ![Kaufland examples](figures/loso-Kaufland-examples.png)
 
-Here jitter is worth **+3.3 F1 at the deployment scale** — an order of magnitude more than
-the +0.2 measured within-site. Note the curve *rises* with coarseness on this fold, unlike
+Here jitter is worth **+1.1 / +3.3 / +5.5 F1 across the three seeds** (mean +3.3, 3/3 positive, |t| = 2.6 — below the |t| >= 3 bar used elsewhere here, so the direction is reliable and the magnitude is not) at the deployment scale — an order of magnitude more than
+the +0.2 measured within-site, though on a single plot. Note the curve *rises* with coarseness on this fold, unlike
 every other: Kaufland is the corpus's finest orthomosaic (2.09 cm/px native) and its
 densest (stem fraction 0.063 against 0.028–0.038), so its peak sits outside the sampled
 range. Its spread is therefore a lower bound.
@@ -251,5 +251,6 @@ would have been arbitrary — which is the argument for reporting all four.
 
 The within-site recommendation stands and is mildly strengthened: jitter never hurt in any
 fold, flattened the curve in all four, and on the one clean holdout where segmentation
-works at all it was worth +3.3 F1 at the deployment scale. But calling this "validated
+works at all it gained accuracy (per-seed +1.1/+3.3/+5.5 F1; direction consistent,
+magnitude poorly determined). But calling this "validated
 across sites" would overstate a corpus with one informative holdout fold.
