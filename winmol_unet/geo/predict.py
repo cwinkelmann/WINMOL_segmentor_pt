@@ -40,7 +40,12 @@ def _grid(bounds, ref_gsd):
 def predict_plot(ortho, aoi, model, extent_m=None, native_px=None, ref_gsd=0.029297,
                  img_size=512, overlap=0.5, threshold=0.5, batch=4, threads=None,
                  quiet=False):
-    """Probability raster over the AOI, plus its transform. Returns (prob, tf, w, h, meta)."""
+    """Probability raster over the AOI on a common reference grid.
+
+    Returns (prob, tf, W, H, area, crs, meta) -- seven values. `crs` is the source
+    ortho's CRS; `meta` carries tile counts and the three GSDs, and deliberately does
+    NOT repeat crs or area.
+    """
     import onnxruntime as ort
     import rasterio
     from PIL import Image

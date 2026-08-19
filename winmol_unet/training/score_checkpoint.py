@@ -22,8 +22,12 @@ from winmol_unet.training.model_factory import build_model
 
 
 def score(model_path, arch, test_data_dir, encoder=None, batch_size=16, device="cuda",
-          img_size=512, num_workers=4):
-    model = build_model(arch, encoder=encoder, encoder_weights=None)
+          img_size=512, num_workers=4, width_mult=1.0):
+    # width_mult must match what the checkpoint was trained at: a .pt is a bare state_dict,
+    # so the architecture is rebuilt from these arguments and a mismatch fails on the first
+    # load_state_dict with a wall of size-mismatch errors. The release ships width-0.5
+    # models, so this is not a hypothetical.
+    model = build_model(arch, encoder=encoder, encoder_weights=None, width_mult=width_mult)
     # weights_only=True: these are our own exports, and a plain state_dict needs no pickle
     # of arbitrary objects. torch flips this default in a later release anyway.
     state = torch.load(model_path, map_location="cpu", weights_only=True)

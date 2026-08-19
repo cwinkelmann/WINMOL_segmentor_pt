@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 import numpy as np
+import onnx
 import pytest
 
 rasterio = pytest.importorskip("rasterio")
@@ -134,3 +135,100 @@ def test_prepare_refuses_an_incomplete_single_site_invocation(tmp_path):
 
     with pytest.raises(SystemExit):
         main(["--out", str(tmp_path / "DS")])
+
+
+# --- end-to-end: prepare -> train -> infer -> evaluate --------------------------------
+# The four entry points are call sites, and --help exercises only argparse. Two Critical
+# bugs shipped past a --help-only test: infer.py unpacked predict_plot's 7-tuple as 5, and
+# evaluate.py fed a list (geo.predict.score) and a tuple (score_checkpoint.score) into a
+# dict splat. Both raise on the first real invocation. These tests drive the real paths.
+
+def _tiny_dataset(dst, n=6):
+    """A loader-convention dataset small enough to train on in seconds."""
+    import numpy as np
+    from PIL import Image
+    (dst / "train").mkdir(parents=True); (dst / "mask").mkdir(parents=True)
+    rng = np.random.default_rng(0)
+    for i in range(1, n + 1):
+        Image.fromarray(rng.integers(0, 255, (64, 64, 3), dtype="uint8")).save(
+            dst / "train" / f"train{i}.jpeg")
+        m = np.zeros((64, 64), dtype="uint8"); m[20:44, 28:36] = 255
+        Image.fromarray(m).save(dst / "mask" / f"mask{i}.gif")
+    return dst
+
+
+@pytest.fixture(scope="module")
+def trained(tmp_path_factory):
+    """Train a tiny UNet once and reuse its ONNX across the tests below."""
+    torch = pytest.importorskip("torch")
+    from winmol_unet.cli.train import main
+
+    root = tmp_path_factory.mktemp("e2e")
+    ds = _tiny_dataset(root / "ds")
+    out = root / "run"
+    assert main(["--data-dir", str(ds), "--out-dir", str(out), "--arch", "unet",
+                 "--width-mult", "0.25", "--epochs", "1", "--batch-size", "2",
+                 "--device", "cpu", "--seed", "1"]) == 0
+    assert (out / "model.onnx").exists(), "training did not export ONNX"
+    return {"onnx": str(out / "model.onnx"), "pt": str(out / "model.pt"), "ds": str(ds)}
+
+
+def test_train_exports_a_contract_conformant_onnx(trained):
+    from winmol_unet.contract import validate_onnx_model
+    validate_onnx_model(onnx.load(trained["onnx"]))
+
+
+def test_evaluate_tile_mode_emits_a_flat_metric_dict(trained, capsys, monkeypatch):
+    """Regression for the tuple/list splat: --label must not raise, and the payload
+    must be a flat mapping rather than a list or a (metrics, n) pair."""
+    monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
+    from winmol_unet.cli.evaluate import main
+    assert main(["--model", trained["onnx"], "--data-dir", trained["ds"],
+                 "--label", "e2e"]) == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["label"] == "e2e"
+    assert {"f1", "precision", "recall"} <= set(payload)
+    assert all(not isinstance(v, list) for v in payload.values())
+
+
+def test_evaluate_checkpoint_mode_emits_a_flat_metric_dict(trained, capsys):
+    """score_checkpoint returns (metrics, n_tiles); the CLI must flatten it."""
+    pytest.importorskip("torch")
+    from winmol_unet.cli.evaluate import main
+    assert main(["--model", trained["pt"], "--data-dir", trained["ds"], "--arch", "unet",
+                 "--width-mult", "0.25",   # must match what the checkpoint was trained at
+                 "--device", "cpu", "--label", "ckpt"]) == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["label"] == "ckpt"
+    assert {"f1", "precision", "recall"} <= set(payload)
+
+
+def test_infer_writes_a_georeferenced_raster(site, trained, tmp_path, monkeypatch):
+    """Regression for the 7-tuple unpack AND the silently-missing CRS: a stem map with
+    crs=None is not georeferenced, which is the entire point of the output."""
+    monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
+    from winmol_unet.cli.infer import main
+
+    out = tmp_path / "pred.tif"
+    assert main(["--model", trained["onnx"], "--ortho", site["ortho"],
+                 "--aoi", site["aoi"], "--out", str(out),
+                 "--extent-m", "15", "--threshold", "0.5", "--quiet"]) == 0
+    with rasterio.open(out) as src:
+        assert src.crs is not None, "output raster has no CRS"
+        assert src.crs.to_string() == CRS
+        assert src.count == 1 and src.dtypes[0] == "float32"
+    assert (tmp_path / "pred_mask.tif").exists(), "--threshold did not write the mask"
+
+
+def test_evaluate_geospatial_mode_scores_against_the_ground(site, trained, tmp_path,
+                                                            capsys, monkeypatch):
+    monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
+    from winmol_unet.cli.evaluate import main
+    assert main(["--model", trained["onnx"], "--ortho", site["ortho"],
+                 "--aoi", site["aoi"], "--stems", site["stems"],
+                 "--extent-m", "15", "--edge-buffer-m", "0", "--label", "geo",
+                 "--quiet"]) == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["label"] == "geo"
+    assert {"f1", "precision", "recall"} <= set(payload)
+    assert 0.0 <= payload["f1"] <= 1.0

@@ -65,13 +65,12 @@ def main(argv=None):
 
     from winmol_unet.geo.predict import predict_plot
 
-    prob, tf, W, H, meta = predict_plot(
+    prob, tf, W, H, _area, crs, _meta = predict_plot(
         args.ortho, args.aoi, args.model,
         extent_m=None if args.native_px else args.extent_m,
         native_px=args.native_px, ref_gsd=args.ref_gsd_cm / 100.0,
         overlap=args.overlap, batch=args.batch, threads=args.threads, quiet=args.quiet)
 
-    crs = meta.get("crs") if isinstance(meta, dict) else None
     profile = dict(driver="GTiff", width=W, height=H, count=1, dtype="float32",
                    crs=crs, transform=tf, compress="deflate")
     with rasterio.open(args.out, "w", **profile) as dst:

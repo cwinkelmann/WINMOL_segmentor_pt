@@ -52,6 +52,10 @@ def build_parser():
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--arch", default="unet", help="tile mode with a .pt: architecture to rebuild")
     p.add_argument("--encoder", default=None)
+    p.add_argument("--width-mult", type=float, default=1.0,
+                   help="tile mode with a .pt: channel-width scale the checkpoint was "
+                        "trained at. A .pt is a bare state_dict, so this must match or the "
+                        "load fails. Irrelevant for .onnx, which carries its own shapes.")
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--device", default="auto")
     p.add_argument("--label", default=None, help="name for this run in the output")
@@ -60,7 +64,26 @@ def build_parser():
     return p
 
 
+def _normalise(metrics):
+    """The three scorers return three shapes; the CLI emits one.
+
+    geo.predict.score returns a LIST of per-threshold dicts (one entry unless sweeping);
+    training.score_checkpoint.score returns (metrics, n_tiles); score_onnx returns a plain
+    dict. Emitting them unchanged produced a TypeError on --label and a nonsense
+    [{...}, 12] payload, because a list is not a mapping.
+    """
+    if isinstance(metrics, tuple) and len(metrics) == 2 and isinstance(metrics[0], dict):
+        body, n = metrics
+        return {**body, "tiles": n}
+    if isinstance(metrics, list):
+        if len(metrics) == 1:
+            return dict(metrics[0])
+        return {"sweep": metrics}          # a real threshold sweep: keep every entry
+    return dict(metrics)
+
+
 def _emit(metrics, args):
+    metrics = _normalise(metrics)
     if args.label:
         metrics = {"label": args.label, **metrics}
     print(json.dumps(metrics, indent=2, sort_keys=True))
@@ -118,4 +141,4 @@ def main(argv=None):
     from winmol_unet.training.score_checkpoint import score as score_checkpoint
     return _emit(score_checkpoint(args.model, args.arch, args.data_dir,
                                   encoder=args.encoder, batch_size=args.batch_size,
-                                  device=args.device), args)
+                                  device=args.device, width_mult=args.width_mult), args)
