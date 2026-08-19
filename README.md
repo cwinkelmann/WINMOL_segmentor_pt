@@ -106,8 +106,69 @@ python prepare.py --compose-folds --site-all ALL --site-tv TV \
 python prepare.py --rasterize --stems site.shp --ortho site.tif --out stem_map.tif
 ```
 
-`configs/sites.example.json` documents the config format, including the `block_size_m`
-constraint.
+### The site config
+
+`--config` takes a JSON file listing the sites to sample and the settings shared across
+them. A copy with comments is at `configs/sites.example.json`.
+
+```json
+{
+  "extent_m": 15.0,
+  "tile_px": 512,
+  "split_fractions": {"train": 0.7, "val": 0.15, "test": 0.15},
+  "split_seed": 1,
+  "caps": {"train": 2000, "val": 400, "test": 400},
+
+  "sites": [
+    {
+      "name": "Campus",
+      "ortho": "/path/to/20171016_EW_WW_Campus_ortho.tif",
+      "stems": "/path/to/20171016_EW_WW_Campus.shp",
+      "aoi":   "/path/to/20171016_EW_WW_Campus_AOE.shp",
+      "block_size_m": 140
+    }
+  ]
+}
+```
+
+**Top-level keys** — all optional except `sites`:
+
+| key | default | what it does |
+|---|---|---|
+| `sites` | *required* | the list described below |
+| `extent_m` | `10.24` | tile footprint in metres. Effective GSD is `extent_m / tile_px`. |
+| `native_px` | *unset* | cut this many pixels at the ortho's **own** resolution instead. Overrides `extent_m`. |
+| `tile_px` | `512` | output tile side. Larger than 512 only makes sense with `--multiscale` training, which crops them. |
+| `caps` | `{train:2000, val:400, test:400}` | maximum tiles per split, **across all sites** |
+| `split_fractions` | `{train:0.7, val:0.15, test:0.15}` | how blocks are apportioned (`blocks` strategy) |
+| `split_seed` | `1` | seed for the block→split assignment |
+| `block_size_m` | *unset* | fallback block size for sites that don't set their own |
+| `block_splits` | all three | which splits a site may contribute to |
+| `antialias` | `"auto"` | resampler. `auto` = PIL bicubic; `on`/`off` = skimage order-3. This selects the *resampler*, not just anti-aliasing — measured 3.16 grey levels between `auto` and skimage, vs 0.006 between skimage on and off. |
+
+**Per-site keys:**
+
+| key | required | what it does |
+|---|---|---|
+| `name` | yes | used for output paths and in `tiles.jsonl` provenance |
+| `ortho` | yes | orthomosaic GeoTIFF |
+| `stems` | yes | digitised stem polygons |
+| `aoi` | yes | the windthrow polygon. Sampling never leaves it. |
+| `split` | for `--strategy sites` | which split this whole site becomes |
+| `block_size_m` | for `--strategy blocks` | overrides the top-level value |
+| `block_splits` | no | restrict this site to certain splits |
+| `whole_split` | no | under `blocks`, contribute this site wholesale to one split instead of block-splitting it — for sites too small to block |
+| `halves` | no | under `halve`, which two splits the halves become (default `["train", "test"]`) |
+
+**Choosing `block_size_m`.** It must comfortably exceed `extent_m × √2`, the rotated
+tile's half-diagonal on either side of a shared block edge. Below that, tiles drawn on
+opposite sides of a boundary can overlap and the split leaks. At the 15 m default that
+means blocks well above ~21 m; the reference corpus uses 100–140 m. A site whose blocks all
+vanish under the inward buffer contributes nothing, and `prepare.py` raises rather than
+letting the split quietly shrink.
+
+Which keys matter depends on the strategy: `sites` reads each site's `split`, while
+`blocks` and `halve` derive their own and ignore it.
 
 ### Split strategies
 
