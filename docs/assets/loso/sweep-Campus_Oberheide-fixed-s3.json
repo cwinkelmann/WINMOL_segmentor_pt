@@ -1,0 +1,33 @@
+{
+ "label": "Campus_Oberheide-fixed-s3",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-scale-v2/Campus_Oberheide-fixed-s3//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.6310397372060174,
+   "precision": 0.8337625273849397,
+   "recall": 0.5076167286284784,
+   "tiles": 800,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.6675265106016013,
+   "precision": 0.7909964824998453,
+   "recall": 0.5773980218977024,
+   "tiles": 800,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.6290773999559749,
+   "precision": 0.7526631841654453,
+   "recall": 0.5403525893051856,
+   "tiles": 800,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

@@ -21,7 +21,7 @@ is a *modernized adaptation of the R model, not a layer-exact clone* — see
 | Output size vs input | Smaller (388 for 572) | Identical (256) | **Identical (512×512)** |
 | Skip connections | encoder maps **cropped** before concat | direct concatenate | **direct concatenate** (`torch.cat([enc, up], dim=1)`) |
 | Batch normalization | **None** | after every conv **and** every up-conv (22 BN) | **after every conv, but NOT after up-conv (18 BN)** |
-| Normalization order | Conv → ReLU | Conv → ReLU → BN | **Conv → BN → ReLU** (modern default) |
+| Normalization order | Conv → ReLU | Conv → ReLU → BN | **Conv → BN → ReLU** (modern default; **+1.1 F1**, 5/5 seeds) |
 | Conv bias | Yes | **`use_bias = FALSE`** | **`bias=False`** (BN β subsumes it) |
 | Dropout | only at end of contracting path | one per block (0.1), between the two convs | **one per block (`Dropout2d`, 0.1), between the two convs** |
 | Downsampling | 2×2 max-pool | 2×2 max-pool | **2×2 max-pool** |
@@ -41,7 +41,9 @@ The R `model_UNet.R` is the reference the port adapts; these are the deliberate 
 
 1. **Normalization order — Conv→BN→ReLU vs R's Conv→ReLU→BN.** R fuses ReLU into
    `layer_conv_2d` then applies `batch_normalization`; the port uses the modern
-   Conv→BN→ReLU. A genuinely different operation; both are common.
+   Conv→BN→ReLU. A genuinely different operation; both are common. **Measured: worth
+   +1.1 F1 and +2.9 recall, negative in 0 of 5 paired seeds** — see the ablation table
+   below. Switchable with `--block-order relu_bn` to reproduce R.
 2. **No BatchNorm after ConvTranspose.** R inserts a BN after each of the 4
    up-convolutions (before the skip concat); the port omits them — **18 BN vs R's 22**.
 3. **E7 decoder block uses 256 filters**, correcting R's `filters = 265` transposed-digit
@@ -57,7 +59,8 @@ The R `model_UNet.R` is the reference the port adapts; these are the deliberate 
    (non-differentiable → the loss effectively trains on BCE alone). The port uses an
    un-thresholded soft F1 so the term genuinely contributes gradient — a documented
    improvement (design spec §8). Reported metrics still use the hard-rounded 0.5-threshold
-   F1, matching R.
+   F1, matching R. **See "The `k_round` finding" below for why this is not a cosmetic
+   difference, and for the ablation that isolates it.**
 
 ## Unchanged from the original (all three implementations)
 
@@ -86,7 +89,7 @@ epochs/stage cap). The R U-Net trains at 256×256 (its native size); the PyTorch
 `results/r_vs_pytorch_lrfix/`.
 
 ### Held-out TestDS — the primary comparison
-
+TODO one test with R but 512
 | Model | Params | Precision | Recall | **F1 (Dice)** | IoU† | Train (min) |
 |-------|-------:|----------:|-------:|--------------:|-----:|------------:|
 | **R U-Net (Keras, 256)** | 31.0M | 0.7619 | 0.7259 | **0.7388** | 0.586 | — |
@@ -107,8 +110,106 @@ The table above reflects each model **as deployed** — R ships at 256×256, thi
 ONNX contract) — so it mixes an architecture difference with a resolution difference. For a verdict
 on the *port itself* the next table controls for resolution.
 
-### The strictly fair comparison — same architecture family, same 256×256
+### The `k_round` finding — R's F1 term never reaches the optimiser
 
+R's training loss is written as `binary_crossentropy + (1 - F1)`, but `controlling.R`
+computes that F1 from `k_round(y_pred)`. **Rounding has zero gradient almost everywhere**,
+so the entire F1 term contributes nothing to the update: R trains on BCE alone, and has
+always done so. The term is real in the *reported* loss value and absent from the
+*optimisation*.
+
+This is verified rather than asserted —
+`tests/test_loss_selection.py::test_a_rounded_f1_term_has_no_gradient` builds R's exact
+expression in torch, calls `.backward()`, and asserts the gradient is empty or all-zero.
+
+Two consequences:
+
+- **`BCE + (1 - soft_F1)` is a genuinely different objective, not a reimplementation.**
+  The soft F1 term is the one modernisation that changes what the optimiser sees.
+- **It is the natural explanation for the recall gain.** A soft-F1 term penalises false
+  negatives and false positives symmetrically through the F1 denominator, whereas BCE on a
+  corpus that is ~95% background is dominated by the majority class and rewards
+  withholding. The R model's profile (P 0.7619 / R 0.7259) against the port's
+  (P 0.7265 / R 0.7677) at the same 256×256 is exactly the shape that predicts.
+
+To isolate it, `--loss {bce_soft_f1,bce}` selects between the port's objective and R's
+effective one, with everything else held fixed. `bce` is the honest stand-in for R because
+it is what R's gradient actually contains.
+
+Paired over seeds on SpecDS -> TestDS, `--deterministic`, everything else fixed:
+
+| metric | mean diff (soft − bce) | sign agreement | paired t | verdict |
+|---|---:|---|---:|---|
+| **recall** | **+0.0377** | 4/4 | +4.86 | **separable** |
+| **precision** | **−0.0253** | 0/4 | −5.47 | **separable** |
+| F1 | +0.0058 | 3/4 | +1.91 | not separable |
+
+**The soft-F1 term buys 3.8 points of recall and costs 2.5 of precision, netting no
+measurable F1 change.** Every seed agrees on the direction of both. It is a trade, not a
+free gain — take it when a missed stem costs more than a false one, which is the usual
+case here because the vectoriser downstream cannot recover a stem the segmenter never
+marked.
+
+#### Confirmed in R itself
+
+The same test run inside the R/Keras stack, `LOSS=f1` against
+`LOSS=bce` (`loss_binary_crossentropy` alone) with `tensorflow::set_random_seed(1)` on both
+arms, 8 epochs at 256×256:
+
+| epoch | `LOSS=f1` — P / R / F1 | `LOSS=bce` — P / R / F1 | val_loss f1 | val_loss bce | gap |
+|---|---|---|---:|---:|---:|
+| 1 | 0.0492 / 0.9130 / 0.0930 | identical | 8.1591 | 7.2521 | — |
+| 2 | 0.4733 / 0.6648 / 0.5457 | identical | 0.6134 | 0.1577 | 0.4557 |
+| 3 | 0.6154 / 0.6444 / 0.6145 | identical | 0.5028 | 0.1162 | 0.3866 |
+| 4 | 0.7117 / 0.6146 / 0.6467 | identical | 0.4495 | 0.0948 | 0.3547 |
+| 5 | 0.5894 / 0.7988 / 0.6722 | identical | 0.4262 | 0.0977 | 0.3285 |
+| 6 | 0.6825 / 0.7364 / 0.7008 | identical | 0.3846 | 0.0843 | 0.3003 |
+
+**Deleting the F1 term from R's loss changes nothing except the printed loss value**, and
+the gap between the two `val_loss` columns is `1 - F1` at every epoch — the term being
+reported while contributing no gradient. Reproduce with `LOSS` and `SEED` on the R
+container entrypoint (`docker/run_training.R` in `WINMOL_segmentor`).
+
+The root cause is reusing a *metric* as a loss term: `F1Score_loss` calls the `F1Score`
+metric, and metrics threshold by design (`k_round`). Losses must not.
+
+### Every modernisation, paired over 5 seeds
+
+Each row is one change with everything else held fixed, both arms trained on the same
+seeds so the seed's contribution cancels in the per-seed difference. UNet, 40 epochs,
+SpecDS -> TestDS, `--deterministic`. `scripts/paired_ablation.py` reports the per-seed
+differences and a paired t; it refuses a verdict when the sign flips across seeds.
+
+| change | ΔF1 | Δrecall | sign agreement (F1) | paired t | verdict |
+|---|---:|---:|---|---:|---|
+| **Conv→BN→ReLU** instead of R's Conv→ReLU→BN | **+0.0106** | **+0.0292** | 5/5 | 7.44 | **keep — real gain** |
+| **soft-F1 loss term** instead of R's rounded one | +0.0058 | +0.0377 | 3/4 | 1.91 | keep for recall; F1 flat |
+| **label smoothing**, ε=0.1 in a 2 px edge band | **−0.0048** | +0.0041 | 5/5 negative | −4.74 | **do not** |
+
+Per-seed F1 differences for the ordering change: −0.0144, −0.0129, −0.0105, −0.0063,
+−0.0090 (R minus port; negative means R is worse). Never once positive across five seeds,
+at identical parameter count — 31,036,673 either way — so this is the ordering and nothing
+else. **It is the one modernisation that is a straight gain rather than a trade.**
+
+Label smoothing was tried because the disagreement analysis found false negatives **1.59×
+enriched** within 2 px of an annotation edge (70.3% against a 44.2% baseline, on stems
+averaging 7.8 px wide). The diagnosis was right and the intervention still failed: softening
+the target there removes the gradient that pushed the model to commit at edges, recall
+barely moves, and F1 drops on every seed. Filling annotation holes was ruled out before
+running anything — holes are 0.19% of stem area and account for 0.0% of false negatives.
+
+#### Why five seeds and `--deterministic`
+
+Two runs with **bit-identical gradients** (`bce` and `bce_hard_f1`) first measured **2.0 F1
+apart**, because cuDNN picks algorithms by autotuning and a seed alone does not pin that.
+With `--deterministic` the within-arm spread across five different seeds falls to
+0.45–0.96 F1. Most of what looked like seed variance was kernel selection.
+
+That matters for reading every other number in this repo: **unpaired single-run differences
+below ~1 F1 point are not interpretable**, and the three effects above are 0.5–1.1 points.
+They are only readable because the design is paired.
+
+### The strictly fair comparison — same architecture family, same 256×256
 The *same* PyTorch U-Net was also trained end-to-end at **256×256** through the identical two-stage
 pipeline (172 min full run), so R-256 vs PyTorch-256 isolates framework + the architectural/loss
 deltas with resolution held fixed. Source: `results/r_vs_pytorch_lrfix/ablation_results.json`.

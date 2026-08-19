@@ -19,7 +19,7 @@ pytest tests/test_two_stage.py::test_two_stage_trains_both_stages_and_exports   
 pytest -k onnx                   # by keyword
 ```
 
-The `.venv/` here runs Python 3.9 with torch 2.8 + tensorflow 2.20 installed. Many tests train small models and are slow (minutes); the suite runs several architectures.
+Use the conda env **`WINMOL_segmentor_pt`** (`~/opt/anaconda3/envs/WINMOL_segmentor_pt/bin/python`, Python 3.11) — it runs the repo, the WINMOL Analyzer and Keras-2 `.hdf5` loads from one interpreter. The old `.venv/` was Python 3.9 and has been removed: it could not import the Analyzer at all (`utils/IO.py` uses `str | None`, needing 3.10+). Many tests train small models and are slow (minutes); the suite runs several architectures.
 
 ### Training / tooling entry points
 
@@ -54,3 +54,47 @@ python scripts/benchmark_architectures.py --gen-data-dir <GEN> --spec-data-dir <
 - Tests are TDD-first and are the executable spec (contract parity, export/serve, two-stage handoff). Add/adjust tests before changing behavior. Keep them **hermetic** (synthetic data in `tmp_path`, `encoder_weights=None` for smp archs to avoid downloads).
 - ONNX parity/serve tests pin the CPU EP via the `WINMOL_ONNX_FORCE_CPU` env var — CoreML/CUDA compute in fp16 and are not bit-exact; use CPU for exact fp32 comparisons.
 - `pyproject.toml` scopes filterwarnings; keep exports/warnings clean rather than re-adding noise.
+
+## Running experiments — use the `winmol-experiment` skill
+
+Any claim that one configuration beats another goes through
+`.claude/skills/winmol-experiment/SKILL.md`. It is short, and every rule in it exists
+because its absence already produced a wrong result in this repo:
+
+- **Name the yardstick before training.** Arms trained on different data are scored on
+  different exams. A modal- and an amodal-trained model each scored against their own
+  labels are not comparable; three preprocessing arms with different footprints are not
+  comparable on F1. For full-pipeline claims the yardstick is full-orthomosaic inference
+  **masked to the AOI** — outside the windthrow polygon stems are real but undigitised, so
+  scoring the whole raster punishes the better model hardest.
+- **Verify leak-freedom numerically** from `tiles.jsonl`, not by assertion. Oversampled
+  tiles overlap; a random tile split leaks.
+- **Sanity-check metrics before trusting them.** AP outside [0,1], file-size comparisons
+  that break on external data, and skeleton endpoints dominated by outline spurs have all
+  produced confidently wrong conclusions here. Pin any metric you rely on with a test.
+- **Cross-validate across data sources** — leave-one-site-out by default; report every
+  fold; state superiority as a fold count, never a mean.
+- **Random figures by default.** A selected figure must be labelled as selected and shown
+  alongside a random sample.
+- **Reports render from JSON copied verbatim from `test_results.md`** and compute no
+  metrics, so they cannot drift from what training reported.
+
+Datasets carry `tiles.jsonl` (source ortho, world centre, rotation, GSD, stem fraction);
+`scripts/locate_tile.py --tile N --crop out.png` re-cuts a tile's footprint at native
+resolution, which is what settles most label questions.
+
+## Running the Analyzer — use the `winmol-analyzer` skill
+
+`.claude/skills/winmol-analyzer/SKILL.md` covers the sibling repo at
+`/Users/christian/hnee/WINMOL_Analyzer`: the five-positional-argument CLI contract, handing
+a trained ONNX over, and full-orthomosaic evaluation against a rasterised stem map.
+
+Two things from it are worth knowing even without reading it:
+
+- **`tile_size` is a scale knob, not a performance knob.** The Analyzer cuts
+  `ceil(tile_size / pixel_size)` pixels and resizes to 512, so the model's effective ground
+  resolution is `tile_size / 512` — 2.93 cm/px at the default 15 m, independent of the
+  orthomosaic's own resolution. A fixed-scale model loses 5.2 F1 across ±30% zoom, so check
+  this before blaming a model for inconsistent results.
+- **Evaluate inside the AOI only.** Outside the windthrow polygon stems are real but
+  undigitised; scoring the whole raster counts correct detections as false positives.

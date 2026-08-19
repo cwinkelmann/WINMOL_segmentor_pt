@@ -58,3 +58,44 @@ def test_two_stage_trains_both_stages_and_exports(tmp_path):
     # separate per-stage TensorBoard dirs
     assert os.path.isdir(tmp_path / "log" / "stage1")
     assert os.path.isdir(tmp_path / "log" / "stage2")
+
+
+def test_two_stage_stage2_validates_on_the_given_val_dir(tmp_path, monkeypatch):
+    """--val-data-dir must reach stage 2, not be silently replaced by a random split.
+
+    It was ignored: stage 2 called _build_loaders without the val dirs, which falls back
+    to split_ids() over the spec tiles. That is a different signal from the single-stage
+    runs it gets compared against (in-training-distribution, ~5 F1 points higher) and a
+    leaky one, because the tile samplers oversample and adjacent tiles overlap. Selecting
+    checkpoints on it makes a two-stage run non-comparable to a single-stage baseline.
+    """
+    gen, spec, val = tmp_path / "gen", tmp_path / "spec", tmp_path / "val"
+    _ds(gen); _ds(spec); _ds(val, n=4)
+    out = tmp_path / "out"
+    cfg = TrainConfig(
+        data_dir="", gen_data_dir=str(gen), spec_data_dir=str(spec),
+        val_data_dir=str(val),
+        checkpoint_dir=str(tmp_path / "ck"), log_dir=str(tmp_path / "log"),
+        pt_out=str(out / "m.pt"), hdf5_out=str(out / "m.hdf5"),
+        keras_out=str(out / "m.keras"), onnx_out=str(out / "m.onnx"),
+        epochs=1, batch_size=2, device="cpu", arch="deeplabv3plus",
+        encoder_weights=None, cache_dataset=False,
+    )
+
+    seen = []
+    import training.run_train as rt
+    real = rt._build_loaders
+
+    def spy(image_dir, mask_dir, c, transform, val_image_dir=None, val_mask_dir=None):
+        seen.append((image_dir, val_image_dir))
+        return real(image_dir, mask_dir, c, transform, val_image_dir, val_mask_dir)
+
+    monkeypatch.setattr(rt, "_build_loaders", spy)
+    run_two_stage(cfg)
+
+    stage1, stage2 = seen
+    assert stage1 == (cfg.gen_image_dir, None), "stage 1 validates on its own generated split"
+    assert stage2 == (cfg.spec_image_dir, cfg.val_image_dir), \
+        "stage 2 must validate on --val-data-dir, the same held-out split single-stage uses"
+    # 4 tiles in the val dir, all of them -> the fixed split, not a fraction of spec's 6
+    assert len(seen) == 2

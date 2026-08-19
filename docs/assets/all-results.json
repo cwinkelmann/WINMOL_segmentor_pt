@@ -1,0 +1,702 @@
+{
+ "aa-20260810": {
+  "aa-off": {
+   "arch": "hrnet",
+   "f1": 0.8511,
+   "loss": 0.2199,
+   "precision": 0.8503,
+   "recall": 0.8519,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAA_off/test",
+   "test_tiles": 343
+  },
+  "aa-on": {
+   "arch": "hrnet",
+   "f1": 0.8406,
+   "loss": 0.2358,
+   "precision": 0.8419,
+   "recall": 0.8393,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAA_on/test",
+   "test_tiles": 343
+  }
+ },
+ "amodal-20260807": {
+  "hrnet-amodal": {
+   "arch": "hrnet",
+   "f1": 0.7819,
+   "loss": 0.3208,
+   "precision": 0.7902,
+   "recall": 0.7737,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAmodal/test",
+   "test_tiles": 570
+  }
+ },
+ "amodal2-20260807": {
+  "hrnet-amodal2": {
+   "arch": "hrnet",
+   "f1": 0.7818,
+   "loss": 0.3169,
+   "precision": 0.7727,
+   "recall": 0.7911,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAmodal2/test",
+   "test_tiles": 570
+  }
+ },
+ "balanced-20260810": {
+  "A-r15-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.5038,
+   "loss": 0.644,
+   "precision": 0.7221,
+   "recall": 0.3869,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBalR15/test",
+   "test_tiles": 900
+  },
+  "A-r15-unet": {
+   "arch": "unet",
+   "f1": 0.0646,
+   "loss": 1.0719,
+   "precision": 0.8639,
+   "recall": 0.0335,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBalR15/test",
+   "test_tiles": 900
+  },
+  "B-fixed-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.6872,
+   "loss": 0.4483,
+   "precision": 0.8236,
+   "recall": 0.5896,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBalFixed/test",
+   "test_tiles": 900
+  },
+  "B-fixed-unet": {
+   "arch": "unet",
+   "f1": 0.3635,
+   "loss": 0.8439,
+   "precision": 0.7544,
+   "recall": 0.2395,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBalFixed/test",
+   "test_tiles": 900
+  },
+  "C-native-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.168,
+   "loss": 0.9588,
+   "precision": 0.6018,
+   "recall": 0.0976,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBalNative/test",
+   "test_tiles": 2400
+  },
+  "C-native-unet": {
+   "arch": "unet",
+   "f1": 0.1227,
+   "loss": 1.0116,
+   "precision": 0.6714,
+   "recall": 0.0675,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBalNative/test",
+   "test_tiles": 2400
+  }
+ },
+ "beech-20260807": {
+  "A-beech-only": {
+   "arch": "unet",
+   "f1": 0.0,
+   "loss": 1.4231,
+   "precision": 0.0,
+   "recall": 0.0,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechDS/val_split",
+   "test_tiles": 1000
+  },
+  "B-synth-pretrained": {
+   "arch": "unet",
+   "f1": 0.0,
+   "loss": 1.4668,
+   "precision": 0.0,
+   "recall": 0.0,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechDS/val_split",
+   "test_tiles": 1000
+  }
+ },
+ "beech-20260811": {
+  "beech-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7197,
+   "loss": 0.3843,
+   "precision": 0.7329,
+   "recall": 0.707,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAll/test",
+   "test_tiles": 666
+  },
+  "beech-hrnet-in": {
+   "arch": "hrnet",
+   "f1": 0.7298,
+   "loss": 0.3741,
+   "precision": 0.7292,
+   "recall": 0.7303,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAll/test",
+   "test_tiles": 666
+  },
+  "beech-segformer-b2": {
+   "arch": "segformer",
+   "f1": 0.7153,
+   "loss": 0.391,
+   "precision": 0.7358,
+   "recall": 0.6959,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAll/test",
+   "test_tiles": 666
+  },
+  "beech-unet": {
+   "arch": "unet",
+   "f1": 0.6877,
+   "loss": 0.4264,
+   "precision": 0.7086,
+   "recall": 0.668,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechAll/test",
+   "test_tiles": 666
+  }
+ },
+ "big-20260807": {
+  "dpt-A": {
+   "arch": "dpt",
+   "f1": 0.4917,
+   "loss": 0.7118,
+   "precision": 0.5438,
+   "recall": 0.4487,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  },
+  "dpt-B": {
+   "arch": "dpt",
+   "f1": 0.5361,
+   "loss": 0.6511,
+   "precision": 0.5779,
+   "recall": 0.4999,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  },
+  "sfb2-A": {
+   "arch": "segformer",
+   "f1": 0.7806,
+   "loss": 0.317,
+   "precision": 0.781,
+   "recall": 0.7803,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  },
+  "sfb2-B": {
+   "arch": "segformer",
+   "f1": 0.7588,
+   "loss": 0.3534,
+   "precision": 0.7276,
+   "recall": 0.7927,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  }
+ },
+ "blocks-20260807": {
+  "A-beech-only": {
+   "arch": "unet",
+   "f1": 0.7638,
+   "loss": 0.3418,
+   "precision": 0.7626,
+   "recall": 0.765,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  },
+  "B-synth-pretrained": {
+   "arch": "unet",
+   "f1": 0.7748,
+   "loss": 0.3276,
+   "precision": 0.7785,
+   "recall": 0.7712,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  }
+ },
+ "halved-20260808": {
+  "hrnet-imagenet": {
+   "arch": "hrnet",
+   "f1": 0.796,
+   "loss": 0.3065,
+   "precision": 0.8155,
+   "recall": 0.7775,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechHalved/test",
+   "test_tiles": 1000
+  },
+  "hrnet-scratch": {
+   "arch": "hrnet",
+   "f1": 0.802,
+   "loss": 0.2967,
+   "precision": 0.8217,
+   "recall": 0.7832,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechHalved/test",
+   "test_tiles": 1000
+  },
+  "unet": {
+   "arch": "unet",
+   "f1": 0.7696,
+   "loss": 0.3405,
+   "precision": 0.7999,
+   "recall": 0.7416,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechHalved/test",
+   "test_tiles": 1000
+  }
+ },
+ "hrnet-20260807": {
+  "A-beech-only": {
+   "arch": "hrnet",
+   "f1": 0.7856,
+   "loss": 0.3104,
+   "precision": 0.7852,
+   "recall": 0.786,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  },
+  "B-synth-pretrained": {
+   "arch": "hrnet",
+   "f1": 0.787,
+   "loss": 0.3124,
+   "precision": 0.7972,
+   "recall": 0.777,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  }
+ },
+ "native-20260810": {
+  "hrnet-multiscale": {
+   "arch": "hrnet",
+   "f1": 0.37,
+   "loss": 1.0035,
+   "precision": 0.5444,
+   "recall": 0.2802,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechNative1024/test",
+   "test_tiles": 1068
+  },
+  "unet-multiscale": {
+   "arch": "unet",
+   "f1": 0.2943,
+   "loss": 0.9947,
+   "precision": 0.3401,
+   "recall": 0.2595,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechNative1024/test",
+   "test_tiles": 1068
+  }
+ },
+ "pretrained-20260807": {
+  "dpt": {
+   "arch": "dpt",
+   "f1": 0.4671,
+   "loss": 0.7401,
+   "precision": 0.476,
+   "recall": 0.4585,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  },
+  "hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7898,
+   "loss": 0.3062,
+   "precision": 0.7906,
+   "recall": 0.7891,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  },
+  "sfb0": {
+   "arch": "segformer",
+   "f1": 0.7773,
+   "loss": 0.3235,
+   "precision": 0.7748,
+   "recall": 0.7798,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  },
+  "sfb2": {
+   "arch": "segformer",
+   "f1": 0.7855,
+   "loss": 0.3132,
+   "precision": 0.7741,
+   "recall": 0.7973,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  }
+ },
+ "r15-20260810": {
+  "hrnet-r15": {
+   "arch": "hrnet",
+   "f1": 0.6974,
+   "loss": 0.4616,
+   "precision": 0.8058,
+   "recall": 0.6147,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechR15/test",
+   "test_tiles": 900
+  },
+  "unet-r15": {
+   "arch": "unet",
+   "f1": 0.7003,
+   "loss": 0.4475,
+   "precision": 0.7079,
+   "recall": 0.6928,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechR15/test",
+   "test_tiles": 900
+  }
+ },
+ "segformer-20260807": {
+  "A-beech-only": {
+   "arch": "segformer",
+   "f1": 0.7788,
+   "loss": 0.3217,
+   "precision": 0.7883,
+   "recall": 0.7694,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  },
+  "B-synth-pretrained": {
+   "arch": "segformer",
+   "f1": 0.7833,
+   "loss": 0.3182,
+   "precision": 0.7871,
+   "recall": 0.7796,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechBlocks/test",
+   "test_tiles": 570
+  }
+ },
+ "sites-20260809": {
+  "hrnet-imagenet": {
+   "arch": "hrnet",
+   "f1": 0.6901,
+   "loss": 0.4738,
+   "precision": 0.8328,
+   "recall": 0.5892,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechSites/test",
+   "test_tiles": 900
+  },
+  "hrnet-scratch": {
+   "arch": "hrnet",
+   "f1": 0.7253,
+   "loss": 0.4226,
+   "precision": 0.8017,
+   "recall": 0.6622,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechSites/test",
+   "test_tiles": 900
+  },
+  "unet": {
+   "arch": "unet",
+   "f1": 0.6699,
+   "loss": 0.5041,
+   "precision": 0.7829,
+   "recall": 0.5854,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechSites/test",
+   "test_tiles": 900
+  }
+ },
+ "specds-20260810": {
+  "spec-blender-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7616,
+   "loss": 0.3381,
+   "precision": 0.7765,
+   "recall": 0.7473,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-convnext": {
+   "arch": "convnext",
+   "f1": 0.7536,
+   "loss": 0.3442,
+   "precision": 0.7441,
+   "recall": 0.7634,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-convnext-in": {
+   "arch": "convnext",
+   "f1": 0.7682,
+   "loss": 0.354,
+   "precision": 0.7922,
+   "recall": 0.7457,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-convnextv2": {
+   "arch": "convnext",
+   "f1": 0.7518,
+   "loss": 0.3623,
+   "precision": 0.7741,
+   "recall": 0.7306,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7567,
+   "loss": 0.3416,
+   "precision": 0.7605,
+   "recall": 0.753,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-hrnet-in": {
+   "arch": "hrnet",
+   "f1": 0.7665,
+   "loss": 0.3335,
+   "precision": 0.759,
+   "recall": 0.7743,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-sd-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7612,
+   "loss": 0.3385,
+   "precision": 0.7601,
+   "recall": 0.7623,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-segformer": {
+   "arch": "segformer",
+   "f1": 0.7408,
+   "loss": 0.3641,
+   "precision": 0.7481,
+   "recall": 0.7337,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-segformer-b2-in": {
+   "arch": "segformer",
+   "f1": 0.7539,
+   "loss": 0.349,
+   "precision": 0.7616,
+   "recall": 0.7464,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-segformer-b5-in": {
+   "arch": "segformer",
+   "f1": 0.7466,
+   "loss": 0.3596,
+   "precision": 0.7337,
+   "recall": 0.76,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  },
+  "spec-unet": {
+   "arch": "unet",
+   "f1": 0.7586,
+   "loss": 0.3399,
+   "precision": 0.7261,
+   "recall": 0.7941,
+   "test_data_dir": "/raid/cwinkelmann/winmol/data/TestDS",
+   "test_tiles": 117
+  }
+ },
+ "v2-20260810": {
+  "A-r15-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.5702,
+   "loss": 0.6541,
+   "precision": 0.8487,
+   "recall": 0.4294,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "A-r15-segformer": {
+   "arch": "segformer",
+   "f1": 0.5756,
+   "loss": 0.6268,
+   "precision": 0.8764,
+   "recall": 0.4285,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "A-r15-unet": {
+   "arch": "unet",
+   "f1": 0.376,
+   "loss": 0.8818,
+   "precision": 0.8561,
+   "recall": 0.2409,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-convnext-dinov3": {
+   "arch": "convnext",
+   "f1": 0.6499,
+   "loss": 0.5309,
+   "precision": 0.8411,
+   "recall": 0.5295,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-convnext-fpn": {
+   "arch": "fpn",
+   "f1": 0.5286,
+   "loss": 0.6744,
+   "precision": 0.8827,
+   "recall": 0.3773,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-convnext-in": {
+   "arch": "convnext",
+   "f1": 0.7195,
+   "loss": 0.4304,
+   "precision": 0.8776,
+   "recall": 0.6097,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-convnext-pan": {
+   "arch": "pan",
+   "f1": 0.0,
+   "loss": 629.4826,
+   "precision": 0.0,
+   "recall": 0.0,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-convnextv2": {
+   "arch": "convnext",
+   "f1": 0.6185,
+   "loss": 0.5908,
+   "precision": 0.8498,
+   "recall": 0.4861,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7229,
+   "loss": 0.4109,
+   "precision": 0.8181,
+   "recall": 0.6475,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-hrnet-in": {
+   "arch": "hrnet",
+   "f1": 0.7218,
+   "loss": 0.4099,
+   "precision": 0.8563,
+   "recall": 0.6238,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-segformer": {
+   "arch": "segformer",
+   "f1": 0.6623,
+   "loss": 0.4994,
+   "precision": 0.7973,
+   "recall": 0.5663,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-segformer-b2-in": {
+   "arch": "segformer",
+   "f1": 0.7041,
+   "loss": 0.4381,
+   "precision": 0.7933,
+   "recall": 0.633,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-segformer-b5-in": {
+   "arch": "segformer",
+   "f1": 0.7188,
+   "loss": 0.4172,
+   "precision": 0.8081,
+   "recall": 0.6473,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "B-fix-unet": {
+   "arch": "unet",
+   "f1": 0.641,
+   "loss": 0.5176,
+   "precision": 0.8689,
+   "recall": 0.5079,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "C-nat-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.616,
+   "loss": 0.543,
+   "precision": 0.8013,
+   "recall": 0.5003,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "C-nat-segformer": {
+   "arch": "segformer",
+   "f1": 0.5283,
+   "loss": 0.6506,
+   "precision": 0.8317,
+   "recall": 0.3871,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "C-nat-unet": {
+   "arch": "unet",
+   "f1": 0.5647,
+   "loss": 0.6044,
+   "precision": 0.8553,
+   "recall": 0.4215,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "D-blender-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7343,
+   "loss": 0.3962,
+   "precision": 0.8126,
+   "recall": 0.6698,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "D-sd-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7147,
+   "loss": 0.4289,
+   "precision": 0.8269,
+   "recall": 0.6293,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "D-sd-unet": {
+   "arch": "unet",
+   "f1": 0.6766,
+   "loss": 0.4753,
+   "precision": 0.8402,
+   "recall": 0.5663,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "D2-blender-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7091,
+   "loss": 0.4345,
+   "precision": 0.8369,
+   "recall": 0.6151,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "D2-sd-hrnet": {
+   "arch": "hrnet",
+   "f1": 0.7205,
+   "loss": 0.4107,
+   "precision": 0.8237,
+   "recall": 0.6403,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  },
+  "D2-sd-unet": {
+   "arch": "unet",
+   "f1": 0.6374,
+   "loss": 0.524,
+   "precision": 0.8544,
+   "recall": 0.5083,
+   "test_data_dir": "/raid/cwinkelmann/winmol/datasets/BeechV2Fixed/test",
+   "test_tiles": 900
+  }
+ }
+}

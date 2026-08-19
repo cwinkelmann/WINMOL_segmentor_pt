@@ -3,6 +3,28 @@
 PyTorch re-implementation of the WINMOL tree-stem segmentation U-Net, with model
 export to ONNX and Keras (`.hdf5` / native `.keras`) for use in the WINMOL Analyzer.
 
+## Results and reports
+
+**[`docs/WINMOL-report.pdf`](docs/WINMOL-report.pdf)** — everything measured here, assembled
+for reading end to end. Rebuild it with `scripts/build_report_pdf.sh`; it renders from the
+documents below, so it cannot drift from them.
+
+**[`docs/README.md`](docs/README.md)** — index of every document, each marked *current* or
+*superseded*. Several early results were later refuted; that index says which, so nothing
+gets re-cited by mistake.
+
+The four findings that most change how you use this repo:
+
+| finding | where |
+|---|---|
+| **Scale dominates.** Effective GSD is `tile_size / 512`, a user-set knob — matching it to the training scale was worth **+14.6 F1**. | [`process.md`](docs/process.md) |
+| **±30% footprint jitter** flattens the accuracy-vs-scale curve at no cost at the serving scale. | [`scale-augmentation-results.md`](docs/scale-augmentation-results.md) |
+| **Strong hue augmentation** takes a held-out site from **F1 0.042 to 0.688**; site holdouts are viable now. | [`scale-augmentation-loso.md`](docs/scale-augmentation-loso.md) |
+| **The published method's composite loss does not train** — it calls the rounded metric, so the model trains on plain BCE. | [`reder-method-gaps-closed.md`](docs/reder-method-gaps-closed.md) |
+
+Experiment designs are pre-registered in [`docs/superpowers/specs/`](docs/superpowers/specs)
+*before* the runs; deviations are recorded in the matching results document.
+
 ## Install
 
 ```bash
@@ -40,6 +62,22 @@ The release re-hosts *only* the ONNX (the HDF5 stay on Zenodo), each flavour in 
   `unet_w05_int8_cpu.onnx` (**10× faster CPU, lossless**) and `unet_w05_fp16_gpu.onnx` (GPU, lossless).
 - **Zenodo flavours as ONNX** — `model_UNet_<FLAVOUR>_512{.onnx,_fp16.onnx,_int8.onnx}`: converted
   from the Zenodo HDF5 (numerically identical) and quantized **post-training** (no retraining).
+
+**Models trained on the newer data — GitHub Release [`models-v2`](../../releases/tag/models-v2).**
+Same ONNX contract, so they drop into the Analyzer unchanged. Two families, each the best of
+three seeds, each scored on its own held-out ground (**the two families are not comparable to
+each other** — see [`docs/tegel-r12-r13-results.md`](docs/tegel-r12-r13-results.md)):
+
+- **Four-site beech corpus** (Campus, Campus_Oberheide, Bachsee_north, Kaufland) trained with
+  ±30% scale jitter — `model_HRNet_Beech4Site_512_jitter` (F1 0.787) and
+  `model_UNet_Beech4Site_512_jitter` (F1 0.783).
+- **Tegel R12/R13** (July 2025 survey) — `model_UNet_TegelR12R13_512_scratch` (F1 0.777) and
+  `..._finetune` (F1 0.789, initialised from the beech UNet). The beech models already reach
+  **F1 0.76 zero-shot** on the Tegel test plots, so training on Tegel is worth +3.5 to +6.2 F1.
+
+fp32 (macOS/CoreML) / `_fp16` (GPU) / `_int8` (CPU) as in v1, except HRNet, which has no int8:
+the smp decoder's symbolic shapes fail ORT static quantisation. Build and publish with
+`scripts/fetch_release_v2.sh` then `scripts/deploy_models_to_release.py --set v2`.
 
 ### Retraining / reproducing
 
@@ -119,6 +157,25 @@ python scripts/build_dataset.py --src /path/to/raw --dst /path/to/ready
 
 It pairs by shared key, renames to sequential `train{i}`/`mask{i}`, and binarizes masks
 (any pixel > 0 → foreground). Source is never mutated.
+
+**Building a dataset from orthomosaics + digitized stems** — if you are starting from
+the WINMOL GIS corpus (a `*_ortho.tif`, a stem-polygon shapefile and a `*_AOE.shp`
+windthrow area) rather than from image/mask folders, install `pip install -e ".[geo]"`
+and use:
+
+```bash
+python scripts/inventory_training_data.py --root /path/to/training_data   # what pairs, what is broken
+python scripts/sample_training_tiles.py --ortho <site>_ortho.tif \
+  --stems <site>.shp --aoi <site>_AOE.shp --out /path/to/ready
+```
+
+`sample_training_tiles.py` reproduces the sampling of the original R generator: random
+rotated 15 m footprints drawn **inside the digitized windthrow area**, heavily
+oversampled, and rejected unless stems cover at least 0.5% of the tile. Stems cover only
+about 1% of a site, so a regular grid yields near-empty tiles. See
+[docs/training-data-from-annotations.md](docs/training-data-from-annotations.md) for what
+the corpus contains, why the area polygon is not optional, and the CRS and species-code
+defects to expect.
 
 **Fixed train/val split** — by default training does a deterministic 80/20 split of
 `--data-dir` (controlled by `TrainConfig.val_fraction`/`seed`, defaults 0.2/1 — not

@@ -1,0 +1,33 @@
+{
+ "label": "Kaufland-jitter-s2",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-scale-v2/Kaufland-jitter-s2//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.618463214512019,
+   "precision": 0.7498665538257296,
+   "recall": 0.5262461397404516,
+   "tiles": 388,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.7052422939234073,
+   "precision": 0.819856334596676,
+   "recall": 0.6187433838462455,
+   "tiles": 388,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.7324857626737262,
+   "precision": 0.8299044970366699,
+   "recall": 0.655535424838612,
+   "tiles": 388,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

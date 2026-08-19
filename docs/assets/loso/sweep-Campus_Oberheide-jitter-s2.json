@@ -1,0 +1,33 @@
+{
+ "label": "Campus_Oberheide-jitter-s2",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-scale-v2/Campus_Oberheide-jitter-s2//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.6604464586011847,
+   "precision": 0.7470787293756819,
+   "recall": 0.5918183891343202,
+   "tiles": 800,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.6780095786995698,
+   "precision": 0.7471118543298398,
+   "recall": 0.6206079691617017,
+   "tiles": 800,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.6530282827061735,
+   "precision": 0.7376068726004316,
+   "recall": 0.5858509683022305,
+   "tiles": 800,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

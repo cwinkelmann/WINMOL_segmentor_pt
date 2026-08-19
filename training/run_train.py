@@ -125,15 +125,68 @@ def _run_test(model, cfg):
     return m
 
 
+def _seed_everything(cfg):
+    """Seed torch/numpy/python and, on request, pin cuDNN to deterministic kernels.
+
+    `torch.manual_seed` alone is not enough on GPU: cuDNN picks algorithms by
+    autotuning, and non-deterministic reductions make two runs of the *same* code
+    diverge. Measured here: `bce` and `bce_hard_f1` have bit-identical gradients and
+    still landed 2.0 F1 apart. Without `deterministic`, a seed is a label, not a
+    guarantee.
+    """
+    import random
+
+    import numpy as np
+    random.seed(cfg.seed)
+    np.random.seed(cfg.seed)
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
+    if getattr(cfg, "deterministic", False):
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+
+def load_init_weights(model, path):
+    """Start from an existing model's weights instead of random init.
+
+    Fine-tuning onto a new survey does not need the two-stage path, which retrains stage 1
+    from scratch and throws away a model we already have. Loads strictly and reports what
+    it loaded: a silently partial load (wrong arch, wrong width) would train something that
+    is neither the pretrained model nor a clean baseline, and would still produce a
+    plausible number.
+    """
+    sd = torch.load(path, map_location="cpu", weights_only=True)
+    if isinstance(sd, dict) and "state_dict" in sd:
+        sd = sd["state_dict"]
+    # strict=False forgives missing/unexpected KEYS but still raises on a shape mismatch,
+    # which is how a same-named different-width model slips past a keys-only check.
+    try:
+        missing, unexpected = model.load_state_dict(sd, strict=False)
+    except RuntimeError as e:
+        raise SystemExit(f"--init-weights {path} does not match this architecture: {e}")
+    if missing or unexpected:
+        raise SystemExit(
+            f"--init-weights {path} does not match this architecture: "
+            f"{len(missing)} missing, {len(unexpected)} unexpected parameters "
+            f"(first missing: {missing[:3]}, first unexpected: {unexpected[:3]})")
+    return sum(p.numel() for p in model.parameters())
+
+
 def run_training(cfg):
     _validate_export(cfg)                        # fail fast before training
-    torch.manual_seed(cfg.seed)
+    _seed_everything(cfg)
     transform = build_augmentation(cfg)         # seeded internally via cfg.seed
     train_loader, val_loader = _build_loaders(
         cfg.image_dir, cfg.mask_dir, cfg, transform,
         val_image_dir=cfg.val_image_dir, val_mask_dir=cfg.val_mask_dir)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
-                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult)
+                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult,
+                        block_order=cfg.block_order)
+    if getattr(cfg, "init_weights", None):
+        n = load_init_weights(model, cfg.init_weights)
+        print(f"initialised {n:,} parameters from {cfg.init_weights}")
     train_one_run(model, train_loader, val_loader, cfg)
     val_metrics = evaluate(model, val_loader)   # on training device
     _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
@@ -145,10 +198,11 @@ def run_two_stage(cfg):
     """Two-stage fine-tune: train on GenDS (stage 1), then fine-tune the same model
     on SpecDS (stage 2). Final metrics + export come from the stage-2 (species) model."""
     _validate_export(cfg)                        # fail fast before either stage
-    torch.manual_seed(cfg.seed)
+    _seed_everything(cfg)
     transform = build_augmentation(cfg)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
-                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult)
+                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult,
+                        block_order=cfg.block_order)
     # ONE optimizer shared across both stages (Adam moment estimates carry over, as they do in
     # the R pipeline's single compiled optimizer), BUT the learning rate is reset to cfg.lr at
     # the start of stage 2 — mirroring the R fix `k_set_value(optimizer$lr, BASE_LR)`. Without
@@ -166,7 +220,14 @@ def run_two_stage(cfg):
 
     for g in opt.param_groups:                   # reset LR for stage 2 (mirrors R's k_set_value)
         g["lr"] = cfg.lr
-    spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform)
+    # Stage 2 must validate on the SAME held-out split as single-stage runs, or its
+    # checkpoint selection is not comparable to theirs. Omitting these fell back to
+    # split_ids() — a random split of the spec tiles, which is both a different signal
+    # (in-training-distribution, so ~+5 F1 higher) and a leaky one, since the samplers
+    # oversample and adjacent tiles overlap. `--val-data-dir` was silently ignored here.
+    spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform,
+                                          val_image_dir=cfg.val_image_dir,
+                                          val_mask_dir=cfg.val_mask_dir)
     train_one_run(model, spec_train, spec_val, cfg, patience=cfg.patience_stage2,
                   ckpt_name="best_stage2.pt", log_dir=os.path.join(cfg.log_dir, "stage2"),
                   optimizer=opt)
@@ -206,17 +267,43 @@ def config_from_args(argv=None):
     p.add_argument("--aug-brightness-limit", type=float, default=0.2)
     p.add_argument("--aug-contrast-limit", type=float, default=0.2)
     p.add_argument("--aug-hsv-p", type=float, default=0.5)
+    # Exposed because colour is the axis our sites differ on most: hue runs 15-98 deg
+    # across the beech corpus and the one autumn site is unlearnable from the others.
+    # albumentations works in OpenCV's 0-179 hue scale, so 90 spans the full circle.
+    p.add_argument("--init-weights", default=None,
+                   help="start from this .pt state_dict (fine-tune) instead of random init")
+    p.add_argument("--aug-hue-shift", type=int, default=20,
+                   help="HueSaturationValue hue_shift_limit (0-179 scale; 90 = any hue)")
+    p.add_argument("--aug-sat-shift", type=int, default=30)
+    p.add_argument("--aug-val-shift", type=int, default=20)
     p.add_argument("--multiscale", action="store_true",
                    help="multi-scale RandomSizedCrop on native-res tiles (needs a native-res "
-                        "dataset, e.g. the 1024px BAMFORESTS tiles)")
+                        "dataset, e.g. --native-px 1024 from sample_training_tiles.py)")
     p.add_argument("--crop-min-px", type=int, default=400, help="multiscale: min crop side")
     p.add_argument("--crop-max-px", type=int, default=1024, help="multiscale: max crop side")
     p.add_argument("--eval-tiling", action="store_true",
                    help="deterministic native-res grid tiling for val/test (full coverage)")
-    p.add_argument("--arch", default="unet", help="unet|deeplabv3plus|hrnet")
+    p.add_argument("--arch", default="unet",
+                   help="unet|deeplabv3plus|hrnet|segformer|convnext|fpn|pan|dpt")
     p.add_argument("--width-mult", type=float, default=1.0,
                    help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
-    p.add_argument("--encoder", default="resnet34", help="smp encoder (deeplabv3plus)")
+    p.add_argument("--encoder", default=None,
+                   help="smp encoder; default is per-arch (e.g. mit_b0 for segformer, mit_b2/b3/b5 for larger)")
+    p.add_argument("--label-smoothing", type=float, default=0.0,
+                   help="pull targets toward 0.5 near mask edges (0 = off)")
+    p.add_argument("--smooth-band-px", type=int, default=2,
+                   help="edge band width; 0 applies global smoothing instead")
+    p.add_argument("--block-order", default="bn_relu", choices=("bn_relu", "relu_bn"),
+                   help="UNet only. relu_bn is R's Conv->ReLU->BN order")
+    p.add_argument("--seed", type=int, default=1,
+                   help="torch/split/augmentation seed. Vary it for replicates: two runs "
+                        "with identical gradients measured 2.0 F1 apart without this.")
+    p.add_argument("--deterministic", action="store_true",
+                   help="cuDNN deterministic kernels + fixed algorithm choice. Slower, but "
+                        "without it same-seed runs still diverge on GPU.")
+    p.add_argument("--loss", default="bce_soft_f1", choices=("bce_soft_f1", "bce", "bce_hard_f1"),
+                   help="bce = what R effectively optimises (its F1 term is rounded, "
+                        "so it has no gradient)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     p.add_argument("--export-keras", action="store_true",
                    help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
@@ -242,16 +329,65 @@ def config_from_args(argv=None):
         aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
         aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
+        init_weights=a.init_weights,
+        aug_hue_shift=a.aug_hue_shift, aug_sat_shift=a.aug_sat_shift,
+        aug_val_shift=a.aug_val_shift,
         multiscale=a.multiscale, crop_min_px=a.crop_min_px, crop_max_px=a.crop_max_px,
         eval_tiling=a.eval_tiling,
-        arch=a.arch, width_mult=a.width_mult,
+        arch=a.arch, width_mult=a.width_mult, loss=a.loss,
+        seed=a.seed, deterministic=a.deterministic, block_order=a.block_order,
+        label_smoothing=a.label_smoothing, smooth_band_px=a.smooth_band_px,
         encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,
     )
 
 
+def write_run_config(cfg, argv=None, path=None):
+    """Record what this run actually was, next to what it produced.
+
+    Without this a finished run cannot be audited: `test_results.md` names only the
+    dataset and the architecture, so a question like "did seed 1 really use the same
+    crop range?" has no answer in the artifacts. Provenance that lives only in the
+    launching shell is gone the moment the shell is.
+    """
+    import dataclasses
+    import json
+    import socket
+    import subprocess
+    import sys
+    from datetime import datetime, timezone
+
+    out_dir = path or os.path.dirname(cfg.onnx_out) or "."
+    os.makedirs(out_dir, exist_ok=True)
+
+    def _git(*args):
+        try:
+            return subprocess.run(("git", *args), cwd=os.path.dirname(os.path.abspath(__file__)),
+                                  capture_output=True, text=True, timeout=10,
+                                  check=True).stdout.strip()
+        except Exception:
+            return None                       # a run outside a checkout is still a valid run
+
+    dirty = _git("status", "--porcelain")
+    payload = {
+        "config": dataclasses.asdict(cfg),
+        "argv": list(argv if argv is not None else sys.argv),
+        "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "host": socket.gethostname(),
+        "git_commit": _git("rev-parse", "HEAD"),
+        "git_dirty": bool(dirty) if dirty is not None else None,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "torch": torch.__version__,
+    }
+    p = os.path.join(out_dir, "run_config.json")
+    with open(p, "w") as f:
+        json.dump(payload, f, indent=1, default=str)
+    return p
+
+
 def main():
     cfg = config_from_args()
+    write_run_config(cfg)
     result = run_two_stage(cfg) if (cfg.gen_data_dir and cfg.spec_data_dir) else run_training(cfg)
     print(result)
 

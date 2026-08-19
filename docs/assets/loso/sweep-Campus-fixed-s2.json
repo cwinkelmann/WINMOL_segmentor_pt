@@ -1,0 +1,33 @@
+{
+ "label": "Campus-fixed-s2",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-scale-v2/Campus-fixed-s2//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.43518186113530016,
+   "precision": 0.5390482692919539,
+   "recall": 0.36487583391808126,
+   "tiles": 800,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.4977681509616711,
+   "precision": 0.6249616479853685,
+   "recall": 0.4135928684445628,
+   "tiles": 800,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.4892412980427982,
+   "precision": 0.6856321495152914,
+   "recall": 0.38030704690588973,
+   "tiles": 800,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

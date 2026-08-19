@@ -18,7 +18,12 @@ class TrainConfig:
     img_size: int = 512
     val_fraction: float = 0.2
     patience: int = 5
+    loss: str = "bce_soft_f1"   # or 'bce' — what R effectively optimises
+    block_order: str = "bn_relu"  # or 'relu_bn' — R's Conv->ReLU->BN order
+    label_smoothing: float = 0.0  # pull targets toward 0.5 near mask edges
+    smooth_band_px: int = 2       # 0 = global smoothing instead of edge-only
     seed: int = 1
+    deterministic: bool = False   # cuDNN deterministic kernels; needed for replicates
     device: str = "auto"   # auto -> mps, then cuda, then cpu
     wandb: bool = False
     wandb_project: Optional[str] = None
@@ -33,6 +38,7 @@ class TrainConfig:
     aug_hsv_p: float = 0.5
     # HueSaturationValue magnitudes (albumentations defaults; the benchmark lowers
     # them to mirror the R input_pipeline.R random_hue/random_saturation ranges).
+    init_weights: str | None = None
     aug_hue_shift: int = 20
     aug_sat_shift: int = 30
     aug_val_shift: int = 20
@@ -40,7 +46,7 @@ class TrainConfig:
     pt_out: Optional[str] = None
     arch: str = "unet"                       # unet | deeplabv3plus | hrnet
     width_mult: float = 1.0                  # UNet channel-width scale (1.0 = full; <1 = smaller/faster)
-    encoder: str = "resnet34"                # smp encoder (deeplabv3plus)
+    encoder: Optional[str] = None            # smp encoder; None = per-arch default
     encoder_weights: Optional[str] = None    # None (no download) or "imagenet"
     export_keras: bool = False               # also emit Keras .hdf5/.keras (UNet only)
     cache_dataset: bool = True               # in-memory resize cache; off for large sets

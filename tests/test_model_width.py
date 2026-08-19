@@ -48,3 +48,31 @@ def test_arbitrary_width_mult_builds_and_forwards():
         with torch.no_grad():
             y = net(torch.randn(1, 3, 64, 64))
         assert y.shape == (1, 1, 64, 64), f"width_mult={m}"
+
+
+def test_block_order_switches_conv_norm_activation():
+    """`relu_bn` reproduces R's Conv -> ReLU -> BN; `bn_relu` is the modern default.
+
+    Same parameter count either way, so a comparison isolates the ordering rather than
+    capacity. R fuses ReLU into layer_conv_2d then applies batch_normalization.
+    """
+    import torch
+
+    from winmol_unet.model import UNet
+
+    a = UNet(block_order="bn_relu")
+    b = UNet(block_order="relu_bn")
+    assert [type(l).__name__ for l in a.enc1.c1] == ["Conv2d", "BatchNorm2d", "ReLU"]
+    assert [type(l).__name__ for l in b.enc1.c1] == ["Conv2d", "ReLU", "BatchNorm2d"]
+    assert sum(p.numel() for p in a.parameters()) == sum(p.numel() for p in b.parameters())
+    with torch.no_grad():
+        assert b.eval()(torch.zeros(1, 3, 512, 512)).shape == (1, 1, 512, 512)
+
+
+def test_unknown_block_order_is_rejected():
+    import pytest
+
+    from winmol_unet.model import UNet
+
+    with pytest.raises(ValueError, match="block_order"):
+        UNet(block_order="relu_only")

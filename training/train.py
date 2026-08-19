@@ -6,7 +6,7 @@ import torch
 
 from .device import resolve_device
 from .evaluate import evaluate
-from .losses import bce_soft_f1_loss
+from .losses import LOSSES, bce_soft_f1_loss, soften_targets
 from .run_logger import RunLogger
 
 
@@ -18,6 +18,9 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
     # mirroring the R pipeline which compiles one optimizer once for both cost_train stages.
     # When None (single-stage) a fresh Adam is created.
     patience = cfg.patience if patience is None else patience
+    loss_fn = LOSSES[getattr(cfg, "loss", "bce_soft_f1")]
+    eps = getattr(cfg, "label_smoothing", 0.0)
+    band = getattr(cfg, "smooth_band_px", 2)
     log_dir = cfg.log_dir if log_dir is None else log_dir
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
     ckpt = os.path.join(cfg.checkpoint_dir, ckpt_name)
@@ -39,7 +42,8 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
             for img, mask in train_loader:
                 img, mask = img.to(device), mask.to(device)
                 opt.zero_grad()
-                loss = bce_soft_f1_loss(model(img), mask)
+                # soft targets for the loss only; metrics stay on the hard mask
+                loss = loss_fn(model(img), soften_targets(mask, eps, band))
                 loss.backward()
                 opt.step()
                 running += loss.item()

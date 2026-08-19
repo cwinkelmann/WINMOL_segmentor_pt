@@ -107,7 +107,9 @@ def test_split_ids_partitions_disjointly(tmp_path):
     _native_ds(tmp_path, n=10, size=16)
     train_ids, val_ids = split_ids(str(tmp_path / "train"), str(tmp_path / "mask"), 0.2, 1)
     assert set(train_ids).isdisjoint(val_ids)
-    assert sorted(train_ids + val_ids) == list(range(1, 11))
+    # ids are the raw filename stems (strings) so published sets like `train_100_1.jpeg`
+    # load unrenamed; the partition property is what matters, not the type.
+    assert sorted(train_ids + val_ids, key=int) == [str(i) for i in range(1, 11)]
     assert len(val_ids) == 2                              # round(10 * 0.2)
 
 

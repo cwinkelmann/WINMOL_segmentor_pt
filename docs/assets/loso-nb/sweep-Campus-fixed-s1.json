@@ -1,0 +1,33 @@
+{
+ "label": "Campus-fixed-s1",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-nobachsee/Campus-fixed-s1//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.3350717785585775,
+   "precision": 0.5113282510756566,
+   "recall": 0.24917898934684424,
+   "tiles": 800,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.41335412037915215,
+   "precision": 0.5930073458190003,
+   "recall": 0.3172441288288158,
+   "tiles": 800,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.43961867865562126,
+   "precision": 0.6830478534002337,
+   "recall": 0.32411013511219317,
+   "tiles": 800,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

@@ -5,7 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "winmol_unet"
 version = "0.1.0"
-requires-python = ">=3.9"
+# 3.11+: the analyzer this ships into uses `str | None` annotations (3.10+), and
+# the 3.9 venv could not import it at all. The working environment is the conda
+# env `WINMOL_segmentor_pt` (3.11), which runs the repo, the analyzer and the
+# Keras-2 model loads from one interpreter.
+requires-python = ">=3.11"
 dependencies = [
     # onnxruntime >=1.19 is the first release that supports numpy 2.x; with the older
     # >=1.16 floor pip could pair numpy 2.x (allowed below) with an onnxruntime that
@@ -30,6 +34,9 @@ torch = ["torch>=2.0", "onnxscript>=0.1"]
 keras = ["tensorflow>=2.13"]
 train = ["torch>=2.0", "onnxscript>=0.1", "torchvision>=0.15", "pillow>=9", "tensorboard>=2.10", "albumentations>=2.0", "segmentation-models-pytorch>=0.5"]
 wandb = ["wandb>=0.16", "python-dotenv>=1.0"]
+# Reading orthomosaics and digitized stem annotations. Kept out of [train] so the
+# training and ONNX-serving paths never pull GDAL: only scripts/ needs these.
+geo = ["rasterio>=1.3", "fiona>=1.9", "shapely>=2.0", "pillow>=9"]
 dev = ["pytest>=7"]
 
 [tool.setuptools]

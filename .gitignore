@@ -7,3 +7,8 @@ dist/
 *.egg-info/
 output/
 results/
+
+# Derived training tiles. Built from the corpus on /Volumes/storage/Datasets/Winmol;
+# regenerate with scripts/make_splits.py rather than committing (a beech dataset is
+# ~1 GB of jpeg/gif, and it is reproducible from the config + the source shapefiles).
+/data/

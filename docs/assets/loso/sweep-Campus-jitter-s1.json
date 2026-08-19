@@ -1,0 +1,33 @@
+{
+ "label": "Campus-jitter-s1",
+ "model": "/raid/cwinkelmann/winmol/runs/loso-scale-v2/Campus-jitter-s1//model.onnx",
+ "rows": [
+  {
+   "crop_px": 394,
+   "f1": 0.5001210197853025,
+   "precision": 0.554403380095465,
+   "recall": 0.4555204195205742,
+   "tiles": 800,
+   "gsd_cm": 2.254495703125,
+   "ratio": 0.76953125
+  },
+  {
+   "crop_px": 512,
+   "f1": 0.5828750292318217,
+   "precision": 0.6389984595585483,
+   "recall": 0.5358142956133193,
+   "tiles": 800,
+   "gsd_cm": 2.9297,
+   "ratio": 1.0
+  },
+  {
+   "crop_px": 666,
+   "f1": 0.586699740189237,
+   "precision": 0.7010505019201682,
+   "recall": 0.5044217683627358,
+   "tiles": 800,
+   "gsd_cm": 3.810898828125,
+   "ratio": 1.30078125
+  }
+ ]
+}

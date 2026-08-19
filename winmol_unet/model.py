@@ -25,23 +25,37 @@ import torch.nn as nn
 from .contract import IN_CHANNELS, OUT_CHANNELS
 
 
+def _conv_block(in_ch, out_ch, order="bn_relu"):
+    """One conv unit in either normalisation order.
+
+    ``bn_relu``  Conv -> BN -> ReLU, the modern default and this port's original.
+    ``relu_bn``  Conv -> ReLU -> BN, what R does: ``layer_conv_2d(activation='relu')``
+                 followed by ``layer_batch_normalization()``.
+
+    Both keep ``bias=False`` — R sets ``use_bias = FALSE`` in either case, and BN's beta
+    subsumes the bias regardless of which side of the activation it sits on.
+    """
+    conv = nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False)
+    if order == "relu_bn":
+        return nn.Sequential(conv, nn.ReLU(inplace=True), nn.BatchNorm2d(out_ch))
+    if order == "bn_relu":
+        return nn.Sequential(conv, nn.BatchNorm2d(out_ch), nn.ReLU(inplace=True))
+    raise ValueError(f"block_order must be 'bn_relu' or 'relu_bn', got {order!r}")
+
+
+# kept for callers that imported it before block_order existed
 def _conv_bn_relu(in_ch, out_ch):
-    # use_bias=False because BatchNorm follows (matches R: use_bias=FALSE)
-    return nn.Sequential(
-        nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
-        nn.BatchNorm2d(out_ch),
-        nn.ReLU(inplace=True),
-    )
+    return _conv_block(in_ch, out_ch, "bn_relu")
 
 
 class _DoubleConv(nn.Module):
-    """conv-bn-relu -> dropout -> conv-bn-relu (matches R block layout)."""
+    """conv-norm-act -> dropout -> conv-norm-act (matches R block layout)."""
 
-    def __init__(self, in_ch, out_ch, dropout):
+    def __init__(self, in_ch, out_ch, dropout, order="bn_relu"):
         super().__init__()
-        self.c1 = _conv_bn_relu(in_ch, out_ch)
+        self.c1 = _conv_block(in_ch, out_ch, order)
         self.drop = nn.Dropout2d(p=dropout)
-        self.c2 = _conv_bn_relu(out_ch, out_ch)
+        self.c2 = _conv_block(out_ch, out_ch, order)
 
     def forward(self, x):
         return self.c2(self.drop(self.c1(x)))
@@ -63,15 +77,15 @@ class UNet(nn.Module):
     """
 
     def __init__(self, in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS, dropout=0.1,
-                 width_mult=1.0):
+                 width_mult=1.0, block_order="bn_relu"):
         super().__init__()
         w1, w2, w3, w4, w5 = (_scale_width(b, width_mult)
                               for b in (64, 128, 256, 512, 1024))
-        self.enc1 = _DoubleConv(in_channels, w1, dropout)
-        self.enc2 = _DoubleConv(w1, w2, dropout)
-        self.enc3 = _DoubleConv(w2, w3, dropout)
-        self.enc4 = _DoubleConv(w3, w4, dropout)
-        self.bottleneck = _DoubleConv(w4, w5, dropout)
+        self.enc1 = _DoubleConv(in_channels, w1, dropout, block_order)
+        self.enc2 = _DoubleConv(w1, w2, dropout, block_order)
+        self.enc3 = _DoubleConv(w2, w3, dropout, block_order)
+        self.enc4 = _DoubleConv(w3, w4, dropout, block_order)
+        self.bottleneck = _DoubleConv(w4, w5, dropout, block_order)
         self.pool = nn.MaxPool2d(2)
 
         # Decoder input channels come from the actual forward-time concat
