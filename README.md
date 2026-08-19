@@ -1,12 +1,340 @@
 # WINMOL Segmentor (PyTorch)
 
-PyTorch re-implementation of the WINMOL tree-stem segmentation U-Net, with model
-export to ONNX and Keras (`.hdf5` / native `.keras`) for use in the WINMOL Analyzer.
+PyTorch re-implementation of the WINMOL tree-stem segmentation U-Net. It turns a drone
+orthomosaic of a windthrow area into a map of fallen stems, and exports models as ONNX
+(and, for UNet, Keras `.hdf5`) for the WINMOL Analyzer.
 
-## Results and reports
+## Install
+
+```bash
+pip install -e ".[train,geo]"       # the usual one: training + reading orthomosaics
+pip install -e ".[train]"           # training only: torch, smp, albumentations, tensorboard
+pip install -e ".[geo]"             # rasterio, fiona, shapely — prepare / infer / evaluate
+pip install -e ".[optimize]"        # onnxconverter-common — fp16/int8 release artifacts
+pip install -e ".[train,keras]"     # + TensorFlow, for the legacy-analyzer HDF5 export
+pip install -e ".[train,wandb]"     # + Weights & Biases logging
+pip install -e "."                  # serve ONNX only: onnxruntime + numpy, no torch/TF
+```
+
+The last line is what the WINMOL Analyzer installs: `winmol_unet` serves exported ONNX
+through `OnnxSegmenter` **without** torch, TensorFlow or GDAL.
+
+---
+
+# The pipeline
+
+Four scripts at the repo root, in the order you use them. Each also installs as a console
+script — `winmol-prepare`, `winmol-train`, `winmol-infer`, `winmol-evaluate` — running the
+same code, so `python train.py …` and `winmol-train …` are interchangeable.
+
+```
+  orthomosaic + stems + AOI
+            │
+            ▼
+   prepare.py ───────────► training tiles + tiles.jsonl
+            │
+            ▼
+   train.py  ───────────► model.onnx  (+ model.pt)
+            │
+            ├──────────► infer.py    ──► georeferenced stem map (GeoTIFF)
+            │
+            └──────────► evaluate.py ──► precision / recall / F1
+```
+
+Three rules decide whether the numbers at the end mean anything. They recur below, but
+they are worth reading once up front, because each was learned by getting it wrong:
+
+- **Scale is a knob you set, not a property of your imagery.** A tile covers `--extent-m`
+  of ground and is resized to 512 px, so effective ground resolution is `extent_m / 512`
+  — 2.93 cm/px at the 15 m default, *regardless of your orthomosaic's own resolution*. It
+  must match across `prepare.py`, `infer.py` and the Analyzer's `tile_size`. Getting this
+  wrong, rather than the choice of model, is the largest single effect measured here
+  (**+14.6 F1**).
+- **Splits partition the ground, not the tile list.** Sampling oversamples heavily and cuts
+  tiles at random rotations, so tiles overlap; a random split of the tile *list* leaks
+  between train and test. Every run writes `tiles.jsonl`, so leak-freedom can be checked
+  numerically rather than assumed.
+- **Score inside the AOI.** Outside the digitised windthrow polygon the stems are real but
+  were never labelled, so scoring the whole raster counts correct detections as false
+  positives — and penalises the *better* model hardest.
+
+---
+
+## 1. `prepare.py` — orthomosaic → training tiles
+
+Turns georeferenced source data (an orthomosaic, a stem-polygon layer, and the windthrow
+AOI polygon) into the `train/`+`mask/` tile pairs the loader consumes.
+
+### How it works
+
+A regular grid over one of these sites is useless: stems cover only about **1% of the
+ground**, so most grid cells are empty and a model trained on them learns to predict
+background. `prepare.py` is a port of the original R generator and instead:
+
+1. draws a random point **inside the windthrow polygon** — never the whole ortho, because
+   outside that polygon the stems are real but were never digitised;
+2. cuts a square `--extent-m` metres across at a **uniformly random rotation**;
+3. resizes it to `--tile-px` (512), which fixes the ground resolution at `extent_m / tile_px`;
+4. **oversamples heavily** — many more windows are cut than kept;
+5. **rejects** any tile whose stem coverage is below `--min-stem-frac` (default 0.5%), or
+   which contains too much nodata collar.
+
+Stem polygons are repaired before anything else: 50 of the reference corpus's 3,842
+hand-traced outlines self-intersect, and GEOS raises on the first set operation that
+touches one — tens of thousands of tiles into a run. Pass `--skip-fix` only if your input
+is already clean.
+
+Every run writes **`tiles.jsonl`**: one record per tile with its source ortho, world
+centre, rotation, GSD and stem fraction. This is what makes a dataset auditable after the
+fact — you can verify a split is leak-free instead of trusting that it is.
+
+### Modes
+
+```bash
+# one site
+python prepare.py --ortho site.tif --stems site.shp --aoi site_AOE.shp --out data/site
+
+# several sites with leak-free splits — the usual one
+python prepare.py --config configs/sites.example.json --out data/beech \
+                  --strategy blocks [--jobs 4]
+
+# leave-one-site-out folds, composed from per-site tile sets by symlink
+python prepare.py --compose-folds --site-all ALL --site-tv TV \
+                  --fold-sites A B C --splittable A B --out folds/
+
+# just the label raster, no tiling
+python prepare.py --rasterize --stems site.shp --ortho site.tif --out stem_map.tif
+```
+
+`configs/sites.example.json` documents the config format, including the `block_size_m`
+constraint.
+
+### Split strategies
+
+`--strategy` decides how the *ground* is partitioned before any tile is cut:
+
+| strategy | what it does | use when |
+|---|---|---|
+| `blocks` | cuts each site into blocks; whole blocks go to train/val/test | the default — every site contributes to every split |
+| `halve` | cuts each site in two | few, large sites |
+| `sites` | holds entire sites out | you want to measure transfer to unseen ground |
+
+For `blocks`, `block_size_m` must comfortably exceed `extent_m × √2` — the rotated tile's
+half-diagonal either side of a shared edge — or tiles across a boundary can overlap and
+leak. Small sites may yield no usable block at all; `prepare.py` says so rather than
+silently contributing nothing.
+
+`--jobs N` extracts sites concurrently. Decoding the orthomosaic dominates the cost, and
+sites are independent, so this scales nearly linearly; the merge reassigns tile indices so
+two sites cannot overwrite each other.
+
+### Scale
+
+`--extent-m` (default 15 m) fixes the footprint, giving 2.93 cm/px at 512 px. Use
+`--native-px 1024` instead to cut at the orthomosaic's **own** resolution — this is what
+the multi-scale training recipes want, because they supply the scale variation themselves
+by cropping.
+
+---
+
+## 2. `train.py` — tiles → model
+
+Trains a segmentation model and exports it. Writes `model.pt` and `model.onnx` to
+`--out-dir` (plus `model.hdf5`/`model.keras` with `--export-keras`).
+
+The data directory must contain `train/` (`trainN.jpeg`) and `mask/` (`maskN.gif`), paired
+by the integer `N` — which is what `prepare.py` produces.
+
+```bash
+python train.py --data-dir data/beech --out-dir runs/beech \
+                --arch hrnet --recipe robust \
+                --epochs 40 --batch-size 16 --seed 1 --deterministic --device cuda
+```
+
+### Recipes
+
+`--recipe` applies a named set of augmentation defaults taken from experiments in this
+repo, so reproducing a result does not depend on remembering ten flags. **Explicit flags
+always beat the recipe**, so `--recipe robust --aug-hsv-p 0.5` is a deliberate weakening
+rather than a silent conflict.
+
+| recipe | what it is |
+|---|---|
+| `baseline` | repo defaults: flips, mild brightness/contrast, mild hue. No rotation, no multi-scale crop. |
+| `fixed` | the **control** arm of the scale experiment: multi-scale pipeline pinned to one scale (crop 512–512). |
+| `jitter` | the **treatment** arm: crop 394–666 px, i.e. ±30% footprint. Flattens the accuracy-vs-scale curve at no cost at the serving scale. |
+| `robust` | `jitter` + strong hue (±90 at p=0.9). Took a held-out site from **F1 0.042 to 0.688**. |
+| `mosaic` | `robust` + 2×2 mosaic. **UNEVALUATED** — the knob exists, nothing measures it. |
+
+`python train.py --print-recipe robust` resolves a recipe and exits without training.
+
+Two traps worth knowing before you quote a reproduction, both documented at length in
+`winmol_unet/training/recipes.py`:
+
+- **`multiscale=True` is not the jitter switch.** The `fixed` control sets it too — the
+  crop *range* is the entire independent variable.
+- **Rotation is off by default** (`--aug-rotate-p 0.0`, limit 15°), but every measured run
+  used `--aug-rotate-p 0.5 --aug-rotate-limit 180`. The recipes set this explicitly.
+
+Recipes cover **augmentation only**. The schedule the measured runs used —
+`--epochs 40 --batch-size 16 --deterministic` — must be passed yourself. Without
+`--deterministic` a seed is a label rather than a guarantee: two runs of identical code
+landed 2.0 F1 apart.
+
+### Architecture
+
+`--arch {unet,deeplabv3plus,hrnet}` (default `unet`). The latter two use
+[segmentation-models-pytorch](https://github.com/qubvel-org/segmentation_models.pytorch);
+tune `--encoder` (default `resnet34`) and `--encoder-weights` (`None`, or `imagenet` —
+needs network).
+
+**Every** architecture exports a contract-conformant `.onnx`, so all models load the same
+way through `OnnxSegmenter` and the Analyzer never inspects the architecture.
+`--width-mult 0.5` halves the channel width for ~4× fewer FLOPs, roughly flat accuracy on
+this task.
+
+### Two-stage training
+
+As in the R original: pass `--gen-data-dir` (general, stage 1) and `--spec-data-dir`
+(species, stage 2) instead of `--data-dir`. One model is built, trained on the general set
+(early-stop patience `--patience-stage1`, default 3), then fine-tuned on the species set
+(`--patience-stage2`, default 5). Final metrics and export come from the species model.
+
+To fine-tune from an existing checkpoint instead, use `--init-weights path/to/model.pt`.
+
+### Validation and test
+
+By default training takes a deterministic 80/20 split of `--data-dir`. To pin an explicit,
+shareable held-out set, materialise it once and train against it:
+
+```bash
+python scripts/split_dataset.py --src data/ready --dst data/split   # -> split/{train,val}
+python train.py --data-dir data/split/train --val-data-dir data/split/val ...
+```
+
+`--test-data-dir` adds a held-out test stage (the R `cost_eval`): after training, the final
+model is scored with no augmentation, and precision/recall/F1 are printed, logged to
+TensorBoard and written to `test_results.md` in `--out-dir`.
+
+### Multi-scale training
+
+`--multiscale` keeps tiles at native resolution and augments with **rotate → random-resized
+crop**: the full tile is rotated by an arbitrary angle, then a window of side
+`[--crop-min-px, --crop-max-px]` is cropped and resized to 512. Rotating *before* cropping
+keeps the crop on valid interior pixels, so black padding only appears near the tile edge.
+
+The sampled crop side spans the effective GSD range (`crop_max` → coarse, native → 1:1,
+`crop_min` → zoom-in), which is what makes the model robust to the Analyzer's user-set
+`tile_size`. Needs a native-resolution dataset (`prepare.py --native-px 1024`) and
+`--no-cache-dataset`.
+
+Pair it with **`--eval-tiling`**, which evaluates val/test by cutting each native tile into
+a full-coverage grid of non-overlapping 512 tiles at native resolution, instead of one
+downscaled 512 — reproducible, and matching the scale `--multiscale` trains at.
+
+Sampling *larger* tiles and letting `--multiscale` crop them is the better division of
+labour: the crop range supplies the scale and rotation variety, so the generator need not
+bake one fixed resampling into every tile. If you do that, drop the generator's own
+rotation rather than rotating twice — each rotation resamples, and two of them blur the
+stem edges the model is looking for.
+
+### Augmentation, in detail
+
+`--aug-*` applies to the **training split only**. Geometric transforms (`hflip`, `vflip`,
+`rotate`) carry image and mask together; photometric ones (`bc` = brightness/contrast,
+`hsv` = hue/saturation) touch the image only. Each `*-p` is a probability.
+
+`--mosaic-p` stitches a 2×2 grid of tiles into one training image. It is **off by default
+and unevaluated in this repo** — no paired run, no leave-one-site-out fold, no results
+document. Partner tiles are drawn only from the dataset's own split, so a mosaic cannot
+leak across a split boundary.
+
+### Practicalities
+
+- **Device** — `--device auto` (default) prefers Apple MPS, then CUDA, then CPU.
+- **Large datasets** — the resize cache is ~4 MB/pair; for thousands of pairs pass
+  `--no-cache-dataset --num-workers 4`.
+- **Logging** — metrics always go to TensorBoard (`<out-dir>/logs/`). Add `--wandb` (with
+  `--wandb-project` / `--wandb-run-name`) for Weights & Biases; put `WANDB_API_KEY` in a
+  `.env` at the repo root.
+- **Converting an existing dataset** — `python scripts/build_dataset.py --src raw --dst ready`
+  pairs arbitrary image/mask folders by shared key, renumbers them, and binarises masks.
+
+---
+
+## 3. `infer.py` — model → stem map
+
+Runs a model over an orthomosaic and writes a georeferenced probability raster.
+
+```bash
+python infer.py --model runs/beech/model.onnx --ortho site.tif --aoi site_AOE.shp \
+                --out pred.tif --extent-m 15 --overlap 0.5 [--threshold 0.5]
+```
+
+### How it works
+
+The ortho is covered with tiles of `--extent-m` ground each, resized to the model's 512 px
+input. Every tile's probability map is resampled back onto a **common world-space
+reference grid** and averaged where tiles overlap. The overlap matters: a single
+non-overlapping pass leaves seams exactly where a stem crosses a tile edge.
+
+Output is a single-band float32 GeoTIFF of stem probability. With `--threshold`, a
+thresholded `_mask.tif` is written alongside it.
+
+**`--extent-m` must match what the model was trained at.** It is a scale knob, not a
+speed knob — a fixed-scale model loses **5.2 F1 across a ±30% zoom**. If results look
+inconsistent between surveys, check this before blaming the model.
+
+`--aoi` restricts inference to the windthrow polygon. Strongly recommended for anything
+you intend to score.
+
+**Vectorising the raster into stem polylines is the WINMOL Analyzer's job**, not this
+repo's — hand the Analyzer the same `.onnx` and let it trace.
+
+---
+
+## 4. `evaluate.py` — model → precision / recall / F1
+
+Three modes, one metric implementation. Everything routes through the same code that
+produced every `test_results.md` here, so numbers drop straight into those tables.
+
+```bash
+# a) tile mode — anything prepare.py produced. Works on .onnx or .pt
+python evaluate.py --model model.onnx --data-dir data/beech/test
+
+# b) geospatial mode — predict over the AOI in world space, score there
+python evaluate.py --model model.onnx --ortho site.tif --aoi site_AOE.shp --stems site.shp
+
+# c) score an existing stem map (e.g. an Analyzer output) on the same basis
+python evaluate.py --stem-map out.tif --aoi site_AOE.shp --stems site.shp
+```
+
+### Which mode to use
+
+**Tile F1 measures the model *and the exam*.** A tile cut at 1.2 cm/px and one at
+2.93 cm/px are different exams, because a stem is ~2.4× thicker in pixels on the first. Two
+models trained at different ground resolutions therefore **cannot** be compared on their
+own tile sets — use geospatial mode, which predicts over the same ground and scores both on
+one reference grid.
+
+Tile mode is the right choice for comparing arms trained on the *same* tiles.
+
+### The AOI is not optional
+
+In geospatial mode `--aoi` is required. Outside the windthrow polygon stems are real but
+were never digitised, so scoring the whole raster counts correct detections as false
+positives — inverting the result and penalising the better model hardest.
+`--edge-buffer-m` (default 2 m) shrinks the AOI further so tiles straddling its boundary do
+not score against absent labels.
+
+`--json-out` writes the metrics as JSON; `--label` names the run in the output.
+
+---
+
+# Results and reports
 
 **[`docs/WINMOL-report.pdf`](docs/WINMOL-report.pdf)** — everything measured here, assembled
-for reading end to end. Rebuild it with `scripts/build_report_pdf.sh`; it renders from the
+for reading end to end. Rebuild with `scripts/build_report_pdf.sh`; it renders from the
 documents below, so it cannot drift from them.
 
 **[`docs/README.md`](docs/README.md)** — index of every document, each marked *current* or
@@ -24,66 +352,10 @@ The four findings that most change how you use this repo:
 
 Experiment designs are pre-registered *before* the runs, and deviations are recorded in the
 matching results document. Those pre-registrations, together with the full results archive
-(including the superseded documents and the one-off experiment scripts), live in a private
+(including superseded documents and the one-off experiment scripts), live in a private
 companion repository — this one keeps the code and the current findings.
 
-## Install
-
-```bash
-pip install -e ".[train,geo]"       # the usual one: training + reading orthomosaics
-pip install -e ".[train]"           # training only: torch, smp, albumentations, tensorboard
-pip install -e ".[geo]"             # rasterio, fiona, shapely — prepare / infer / evaluate
-pip install -e ".[optimize]"        # onnxconverter-common — fp16/int8 release artifacts
-pip install -e ".[train,keras]"     # + TensorFlow, for the legacy-analyzer HDF5 export
-pip install -e ".[train,wandb]"     # + Weights & Biases logging
-pip install -e "."                  # serve ONNX only: onnxruntime + numpy, no torch/TF
-```
-
-The last line is what the WINMOL Analyzer installs: `winmol_unet` serves exported ONNX
-through `OnnxSegmenter` **without** torch, TensorFlow or GDAL. Only add `[keras]` if you
-need the HDF5 drop-in described under [Legacy analyzer](#legacy-analyzer-hdf5-drop-in).
-
-## The four commands
-
-Everything this repo does runs through four scripts at the root. Each also installs as a
-console script (`winmol-prepare`, `winmol-train`, `winmol-infer`, `winmol-evaluate`) that
-runs identical code.
-
-```bash
-# 1. orthomosaic + digitised stems -> leak-free training tiles
-python prepare.py --config configs/sites.example.json --out data/beech --strategy blocks
-
-# 2. train, with a measured augmentation preset
-python train.py --data-dir data/beech --out-dir runs/beech --arch hrnet \
-                --recipe robust --epochs 40 --batch-size 16 --deterministic
-
-# 3. apply the model to an orthomosaic -> georeferenced stem map
-python infer.py --model runs/beech/model.onnx --ortho site.tif --aoi site_AOE.shp \
-                --out pred.tif
-
-# 4. score it — on tiles, on the ground, or an existing Analyzer stem map
-python evaluate.py --model runs/beech/model.onnx --data-dir data/beech/test
-python evaluate.py --model runs/beech/model.onnx --ortho site.tif --aoi site_AOE.shp \
-                   --stems site.shp
-```
-
-Three things decide whether the resulting numbers mean anything:
-
-- **Scale is a knob you set, not a property of your imagery.** A tile covers `--extent-m`
-  of ground and is resized to 512 px, so effective resolution is `extent_m / 512`. It must
-  match across `prepare.py`, `infer.py` and the Analyzer's `tile_size`. Getting this wrong,
-  rather than the model, is the largest single effect measured here (**+14.6 F1**).
-- **Splits partition the ground, not the tile list.** Sampling oversamples and tiles are cut
-  at random rotations, so they overlap; a random split of the tile list leaks. Every run
-  writes `tiles.jsonl`, so leak-freedom can be verified numerically instead of assumed.
-- **Score inside the AOI.** Outside the windthrow polygon stems are real but were never
-  digitised, so scoring the whole raster counts correct detections as false positives — and
-  penalises the better model hardest.
-
-`python train.py --print-recipe robust` prints exactly what a preset sets, and what it
-deliberately leaves to you (the training schedule), without training anything.
-
-## Pretrained models
+# Pretrained models
 
 **Upstream WINMOL Analyzer models — the correct ones.** The four published UNet flavours live on
 Zenodo, **DOI [10.5281/zenodo.15907576](https://doi.org/10.5281/zenodo.15907576)**
@@ -97,7 +369,7 @@ Zenodo, **DOI [10.5281/zenodo.15907576](https://doi.org/10.5281/zenodo.15907576)
 | spruce + deadwood | `model_UNet_SpecDS_Spruce_Deadwood_512_*.hdf5` | spruce + standing deadwood |
 
 They are Keras HDF5 (NHWC); convert any to a contract-conformant ONNX with
-`scripts/convert_keras_to_onnx.py` (see [Model optimization](#model-optimization--faster-cpugpu-inference)).
+`scripts/convert_keras_to_onnx.py`.
 
 **Optimised models + ONNX conversions — GitHub Release [`models-v1`](../../releases/tag/models-v1).**
 The release re-hosts *only* the ONNX (the HDF5 stay on Zenodo), each flavour in fp32 / `_fp16`
@@ -124,170 +396,28 @@ fp32 (macOS/CoreML) / `_fp16` (GPU) / `_int8` (CPU) as in v1, except HRNet, whic
 the smp decoder's symbolic shapes fail ORT static quantisation. Build and publish with
 `scripts/fetch_release_v2.sh` then `scripts/deploy_models_to_release.py --set v2`.
 
-### Retraining / reproducing
+### Reproducing them
 
-The PyTorch UNet is reproducible from the [Training](#training) workflow; the released optimised
-model was trained single-stage on SpecDS, then quantized:
+The released optimised UNet was trained single-stage, then quantized:
 
 ```bash
-# 1. train (full, or --width-mult 0.5 for the smaller/faster model)
 python train.py --arch unet --width-mult 0.5 \
   --data-dir <SpecDS> --test-data-dir <TestDS> --out-dir output/w05 --device cuda
 
-# 2. quantize the exported ONNX — no retraining (see Model optimization)
 python scripts/quantize_unet.py output/w05/model.onnx output/w05/model_int8.onnx \
   --mode static --calib-dir <SpecDS> --n-samples 128
 ```
 
-The upstream Zenodo flavours **can't be retrained** (their training imagery isn't public), but they
-can still be converted and quantized — which is exactly what the release provides.
+**A caveat on the v2 beech models.** Their exact training invocations are *not recorded*:
+those runs predate the run-config writer, and their directories hold no config, no argv in
+the logs and no shell history. The `jitter` recipe is reconstructed from a run one day
+later on the same tiles and is consistent with the published numbers — but it is evidence,
+not a transcript. A run from `--recipe jitter` reproduces the *recipe*, not the run.
 
-## Training
+The upstream Zenodo flavours **can't be retrained** (their training imagery isn't public), but
+they can still be converted and quantized — which is exactly what the release provides.
 
-The data directory must contain `train/` (jpeg images named `trainN.jpeg`) and
-`mask/` (gif masks named `maskN.gif`), paired by the integer `N`.
-
-```bash
-python train.py \
-  --data-dir /path/to/SpecDS \
-  --out-dir output/run1 \
-  --epochs 20 --batch-size 4 --device mps \
-  --aug-hflip-p 0.5 --aug-vflip-p 0.5 --aug-rotate-p 0.3 --aug-rotate-limit 20 \
-  --aug-bc-p 0.5 --aug-hsv-p 0.5 \
-  --wandb --wandb-project winmol --wandb-run-name beech-run1
-```
-
-This trains the U-Net (single stage, deterministic 80/20 train/val split) with online
-[albumentations](https://albumentations.ai/) augmentation, and writes `model.pt` and
-`model.onnx` to `--out-dir`. The Keras `model.hdf5` / `model.keras` are **not** written
-unless you pass `--export-keras` (see below) — that path additionally requires the
-`[keras]` extra.
-
-**Architecture** — `--arch {unet,deeplabv3plus,hrnet}` (default `unet`). `deeplabv3plus`
-and `hrnet` use [segmentation-models-pytorch](https://github.com/qubvel-org/segmentation_models.pytorch);
-tune `--encoder` (default `resnet34`, for `deeplabv3plus`) and `--encoder-weights`
-(`None`, or `imagenet` for a pretrained encoder — needs network). **Every** architecture
-(incl. UNet) exports a contract-conformant `.onnx` (+ `.pt`) by default, so all models load
-the same way via `OnnxSegmenter`. The Keras `.hdf5`/`.keras` mirror is UNet-specific and
-opt-in with `--export-keras` (for the unmodified-analyzer drop-in). Example:
-
-```bash
-python train.py --data-dir /path/to/SpecDS --out-dir output/deeplab \
-  --arch deeplabv3plus --encoder resnet34 --encoder-weights imagenet \
-  --epochs 20 --device mps
-```
-
-The analyzer consumes any of these transparently through `OnnxSegmenter` once its ONNX
-loading branch is in place — it never inspects the architecture.
-
-**Two-stage training** (GenDS → SpecDS fine-tune, as in the R original) — pass
-`--gen-data-dir` (general, stage 1) and `--spec-data-dir` (species, stage 2) instead of
-`--data-dir`. One model is built, trained on the general set (early-stop patience
-`--patience-stage1`, default 3), then fine-tuned on the species set (`--patience-stage2`,
-default 5); final metrics + export come from the species model.
-
-```bash
-python train.py --arch deeplabv3plus --encoder resnet34 --encoder-weights imagenet \
-  --gen-data-dir /path/to/GenDS --spec-data-dir /path/to/spruce \
-  --out-dir output/spruce2stage --epochs 20 --device mps --no-cache-dataset --num-workers 4
-```
-
-**Building a dataset** — the loader expects `train/train{N}.jpeg` + `mask/mask{N}.gif`
-(integer `N`, binary masks). Convert an arbitrary image/mask folder (non-integer names,
-palette/instance masks) with:
-
-```bash
-python scripts/build_dataset.py --src /path/to/raw --dst /path/to/ready
-```
-
-It pairs by shared key, renames to sequential `train{i}`/`mask{i}`, and binarizes masks
-(any pixel > 0 → foreground). Source is never mutated.
-
-**Building a dataset from orthomosaics + digitized stems** — if you are starting from
-the WINMOL GIS corpus (a `*_ortho.tif`, a stem-polygon shapefile and a `*_AOE.shp`
-windthrow area) rather than from image/mask folders, install `pip install -e ".[geo]"`
-and use:
-
-```bash
-python inventory_training_data.py --root /path/to/training_data   # what pairs, what is broken
-#   ^ in the private helper repo, with the rest of the experiment tooling
-python scripts/sample_training_tiles.py --ortho <site>_ortho.tif \
-  --stems <site>.shp --aoi <site>_AOE.shp --out /path/to/ready
-```
-
-`sample_training_tiles.py` reproduces the sampling of the original R generator: random
-rotated 15 m footprints drawn **inside the digitized windthrow area**, heavily
-oversampled, and rejected unless stems cover at least 0.5% of the tile. Stems cover only
-about 1% of a site, so a regular grid yields near-empty tiles. See
-`training-data-from-annotations.md` (private helper repo) for what
-the corpus contains, why the area polygon is not optional, and the CRS and species-code
-defects to expect.
-
-**Fixed train/val split** — by default training does a deterministic 80/20 split of
-`--data-dir` (controlled by `TrainConfig.val_fraction`/`seed`, defaults 0.2/1 — not
-exposed as CLI flags). To pin an explicit, shareable held-out set (e.g.
-so PyTorch and R evaluate on the same tiles), materialize it once and train against it:
-
-```bash
-python scripts/split_dataset.py --src /path/to/ready --dst /path/to/split   # -> split/{train,val}
-python train.py --data-dir /path/to/split/train \
-  --val-data-dir /path/to/split/val --arch deeplabv3plus ...
-```
-
-With `--val-data-dir`, training uses **all** of `--data-dir` for training and the given dir
-for validation (no re-splitting). The materialized `val/` matches `train_val_split` for the
-same fraction+seed.
-
-**Held-out test stage** (as in the R `cost_eval`) — pass `--test-data-dir /path/to/TestDS`
-(a `train/` + `mask/` dataset). After training (single- or two-stage), the final model is
-evaluated on it with no augmentation; precision/recall/F1 are printed, logged to TensorBoard
-(`logs/test/`), and written to `test_results.md` in `--out-dir`. Training also uses
-`ReduceLROnPlateau` (factor 0.1, patience 2) matching the R LR schedule.
-
-**Multi-scale native-fidelity training** (for native-resolution tiles larger than 512) — pass
-`--multiscale`. Instead of downscaling each tile to
-512 at load time, the loader keeps it at native resolution and augments with a **rotate →
-random-resized-crop**: the full tile is rotated by an arbitrary angle (`--aug-rotate-p` /
-`--aug-rotate-limit`, e.g. `180` for full 360°; exposed corners pad black), then a window of
-side `[--crop-min-px, --crop-max-px]` (default `400`/`1024`) is cropped and resized to 512.
-Rotating the full tile *before* cropping keeps the crop on valid interior pixels. The sampled
-crop side spans the effective GSD range (`crop_max`→coarse, native→1:1, `crop_min`→zoom-in),
-so the model becomes robust to the analyzer's user-set `tile_size`. Requires a native-res
-dataset and `--no-cache-dataset` (native tiles are too large to cache). Pair with
-`--eval-tiling` (below).
-
-Generate the larger tiles this wants with `scripts/coco_to_dataset.py`, or — from
-orthomosaics — with `scripts/sample_training_tiles.py --tile-px 1024 --extent 30`, which
-keeps the same 2.9 cm/px ground resolution over a 4× larger footprint. Sampling *larger*
-tiles and letting `--multiscale` crop them is the better division of labour: the crop range
-then supplies the scale and rotation variety, so the generator does not have to bake a single
-fixed resampling into every tile. If you do that, drop the generator's own rotation
-(`--no-rotate`) rather than rotating twice — each rotation resamples, and two of them blur
-the stem edges the model is trying to find.
-
-**Deterministic eval tiling** — `--eval-tiling` evaluates val/test by cutting each native tile
-into a full-coverage grid of non-overlapping 512 tiles (2×2 for a 1024px image) at native
-resolution, instead of one downscaled 512. Reproducible and matches the fine scale that
-`--multiscale` trains at. Applies to the val split and the `--test-data-dir` stage.
-
-**Large datasets** — the resize cache is ~4 MB/pair; for thousands of pairs pass
-`--no-cache-dataset --num-workers 4` (loads per batch with parallel workers instead of
-caching, avoiding out-of-memory).
-
-**Device** — `--device auto` (default) prefers Apple MPS, then CUDA, then CPU; or pass
-`mps` / `cuda` / `cpu` explicitly.
-
-**Augmentation** (`--aug-*`, applied on-the-fly to the training split only) — geometric
-transforms (`hflip`, `vflip`, `rotate`) are applied to image and mask together; photometric
-transforms (`bc` = brightness/contrast, `hsv` = hue/saturation) to the image only. Each
-`*-p` is a probability; rotation is off by default (`--aug-rotate-p 0.0`). Omit all `--aug-*`
-flags to use the defaults (flips + brightness/contrast + hue/saturation at `p=0.5`).
-
-**Logging** — metrics always go to TensorBoard (`<out-dir>/logs/`). Add `--wandb`
-(with `--wandb-project` / `--wandb-run-name`) to also log to Weights & Biases; put your
-`WANDB_API_KEY` in a `.env` file at the repo root (loaded automatically).
-
-## Model optimization — faster CPU/GPU inference
+# Model optimization — faster CPU/GPU inference
 
 Two independent levers speed up UNet inference while keeping the ONNX contract. Full study +
 numbers: `docs/2026-07-21-cpu-inference-speedup-results.md`.
@@ -298,24 +428,16 @@ numbers: `docs/2026-07-21-cpu-inference-speedup-results.md`.
 | **fp16** quantization | **no** (post-training) | GPU (Tensor Cores) | ~1.7× | lossless |
 | **width scaling** (`width_mult`) | yes (retrain) | CPU + GPU | ~4× FLOPs | ~flat on this task |
 
-Quantization is **post-training** — it works on any already-trained ONNX (including the upstream
-Keras flavours you can't retrain). Width scaling is the only lever that needs a retrain.
-
 ```bash
 # int8 (CPU) — static, calibrated on real tiles (no labels needed), ~3× lossless:
 python scripts/quantize_unet.py model.onnx model_int8.onnx \
   --mode static --calib-dir <StemDataset dir> --n-samples 128
 
-# fp16 (GPU) — no calibration, lossless:
+# fp16 (GPU) — no calibration, lossless (needs the [optimize] extra):
 python scripts/quantize_unet.py model.onnx model_fp16.onnx --mode fp16
 
 # smaller model (needs retraining) — half the channel width, ~4× fewer FLOPs:
 python train.py --arch unet --width-mult 0.5 --data-dir <DS> --out-dir out/w05
-
-# measure it — CPU latency+F1, and GPU latency:
-python benchmark_cpu_latency.py model.onnx model_int8.onnx --test-data-dir <TestDS> \   # helper repo
-  --threads 4 --thread-sweep 1,2,4,8
-python benchmark_gpu_latency.py --widths 1.0,0.5,0.25 --dtypes fp32,fp16   # helper repo; winmol-onnxgpu
 ```
 
 **Don't use dynamic int8** (`--mode dynamic`) for these conv nets — ORT has no fast dynamic-conv
@@ -327,6 +449,8 @@ onnxruntime-gpu + TensorRT 10) for ~**1.9× over the CUDA EP** (and 2.7× throug
 fp16. Set `WINMOL_ONNX_PROVIDERS="TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider"`;
 TensorRT builds+caches an engine on the target GPU (device/TRT-version specific — never shipped).
 GPU int8 is *not* worth it (slower than fp16 here) — keep int8 for CPU.
+
+The latency benchmarks that produced these numbers live in the private companion repo.
 
 ### Converting a Keras HDF5 model to ONNX
 
@@ -341,11 +465,10 @@ docker run --rm -e PYTHONPATH=/app -v "$PWD":/app -w /app -v <models>:/models:ro
   out/model_UNet_SpecDS_Beech_512.onnx
 ```
 
-`build_keras_onnx_models.sh` (private helper repo) runs the whole flow end-to-end (convert all flavours →
-fp16 + domain-calibrated int8 → verify F1). Publish artifacts to a GitHub Release with
-`scripts/deploy_models_to_release.py` (`--dry-run` first).
+Publish artifacts to a GitHub Release with `scripts/deploy_models_to_release.py`
+(`--dry-run` first).
 
-## Legacy analyzer (HDF5 drop-in)
+# Legacy analyzer (HDF5 drop-in)
 
 The original WINMOL Analyzer loads a Keras `.hdf5` U-Net. To produce one, install the
 `[keras]` extra and pass `--export-keras`:
@@ -365,11 +488,26 @@ change is needed.
 Two constraints, both enforced rather than documented-and-hoped:
 
 - **UNet only.** `--export-keras` with `--arch deeplabv3plus` or `hrnet` raises before
-  training starts, rather than training for an hour and then failing at export. The Keras
-  mirror is a hand-built copy of this repo's UNet and has no counterpart for other
-  architectures.
+  training starts, rather than training for an hour and then failing at export.
 - **TensorFlow is imported lazily**, only when `--export-keras` is set, so a TF-less
   environment can still train and export ONNX.
 
 For anything other than the legacy analyzer, prefer ONNX: every architecture exports a
 contract-conformant `.onnx`, and `OnnxSegmenter` serves it without torch or TensorFlow.
+
+# The ONNX contract
+
+`winmol_unet/contract.py` is the frozen interface between this repo and the Analyzer:
+
+| | |
+|---|---|
+| input | NCHW `[batch, 3, 512, 512]`, float32 in `[0,1]` |
+| output | `[batch, 1, 512, 512]`, **sigmoid baked in** — probabilities, not logits |
+| batch axis | dynamic |
+| opset | 17 |
+
+`validate_onnx_model()` enforces it at export. Spatial dims may be fixed 512 *or* symbolic
+(some decoders export symbolic shapes) — but a *wrong* fixed size is rejected. Any change
+here is breaking and requires a coordinated Analyzer update.
+
+See [`docs/2026-07-02-segmentor-pytorch-onnx-design.md`](docs/2026-07-02-segmentor-pytorch-onnx-design.md).
