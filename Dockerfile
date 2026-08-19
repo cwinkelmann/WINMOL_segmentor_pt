@@ -5,15 +5,27 @@
 #   docker build -t winmol-train --build-arg WITH_KERAS=1 .   # + TF/Keras HDF5 export (UNet)
 #
 # Train on GPU (mount data + capture outputs):
-#   docker run --gpus all \
+#
+#   --shm-size is NOT optional with --num-workers > 0. Docker gives a container 64 MB of
+#   /dev/shm, and PyTorch DataLoader workers pass batches through shared memory, so the
+#   workers are killed with "Bus error ... out of shared memory" partway into the first
+#   epoch. 8g is comfortable for --num-workers 8; --ipc=host also works.
+#
+#   docker run --gpus all --shm-size=8g \
 #     -v /path/to/data:/data -v "$PWD/output:/app/output" \
 #     winmol-train \
 #     --data-dir /data/beech --out-dir output/run --arch hrnet --recipe robust \
 #     --epochs 40 --batch-size 16 --deterministic \
 #     --device cuda --no-cache-dataset --num-workers 8
 #
-# Pin specific GPUs on a shared box (device ids are re-indexed from 0 inside):
-#   docker run --gpus '"device=4,5,6,7"' ... winmol-train --device cuda ...
+# Pin specific GPUs on a shared box (device ids are re-indexed from 0 inside, so the
+# container sees them as cuda:0..N-1 regardless of which physical ids you name):
+#   docker run --gpus '"device=4,5,6"' --shm-size=8g ... winmol-train --device cuda ...
+#
+# Verified on an 8x H100 box: builds clean, trains on pinned GPUs, exports .onnx + .pt.
+# Note prepare.py / infer.py / evaluate.py answer --help in this image but need the [geo]
+# extra to actually run -- their rasterio/fiona imports are inside main(), so --help is
+# not evidence that the geo path works. Build with a [train,geo] install if you need them.
 #
 # Convert a raw dataset first (overrides the default entrypoint):
 #   docker run --rm -v /path/to/data:/data --entrypoint python winmol-train \
