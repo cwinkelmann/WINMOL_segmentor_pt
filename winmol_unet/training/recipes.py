@@ -25,11 +25,25 @@ the published number. Recipes therefore set rotation explicitly.
 augmentation, so they stay out — but the measured runs used them and a reproduction
 needs them:
 
-    --epochs 40 --batch-size 16 --seed 1 --deterministic
+    --epochs 40 --batch-size 16 --deterministic --seed {1 or 3, see below}
 
 (lr 1e-3, dropout 0.1, patience 5, loss bce_soft_f1, block_order bn_relu, img_size 512,
 encoder_weights none are all repo defaults already.) Without `--deterministic` a seed is
 a label rather than a guarantee: two runs of the same code landed 2.0 F1 apart.
+
+The seed is not one number. The scale-augmentation and LOSO families used `--seed 1`; the
+released Tegel assets (`model_UNet_TegelR12R13_512_scratch` and `_finetune`) are `--seed 3`,
+because the release build takes the s3 arm of both. Reproducing one family with the other's
+seed gives different weights.
+
+The Tegel pair is worth one more note, since the docs read a conclusion off it: those two
+runs differ in exactly one config key, `init_weights` (the fine-tune starts from the
+released UNet beech model, `scale-aug-unet-20260813/jitter-s1/model.pt`). Same schedule,
+same LR, same augmentation. That single-variable design is what licenses the "fine-tuning
+adds nothing" reading — had the fine-tune also shortened the schedule, the comparison
+would have been confounded. Two caveats on it: the arms were built at commits seven
+minutes apart (3bdd703 and 6b6420a, both clean), and the fine-tune's initialisation makes
+it transitively depend on the one run whose own invocation is unrecorded.
 
 **Provenance caveat.** The exact invocations of the runs that produced the *published*
 models-v2 artifacts (`scale-aug-20260813/jitter-s3`, `scale-aug-unet-20260813/jitter-s1`)
@@ -88,9 +102,13 @@ RECIPES = {
 UNEVALUATED = {"mosaic"}
 
 # Printed alongside any recipe: leaving these at their defaults is the likeliest way a
-# "reproduction" quietly measures something else.
-SCHEDULE_NOTE = ("the measured runs also used --epochs 40 --batch-size 16 --seed 1 "
-                 "--deterministic; recipes cover augmentation only")
+# "reproduction" quietly measures something else. The seed is deliberately not a single
+# number — the scale-augmentation and LOSO families used seed 1, but the released Tegel
+# assets are seed 3, so quoting one value here would send anyone reproducing the other
+# family to different weights.
+SCHEDULE_NOTE = ("the measured runs also used --epochs 40 --batch-size 16 --deterministic; "
+                 "--seed varies by run (scale-aug/LOSO used 1, the released Tegel assets 3); "
+                 "recipes cover augmentation only")
 
 
 def explicit_flags(parser, argv):

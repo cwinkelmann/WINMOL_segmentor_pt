@@ -8,7 +8,7 @@ per-image or over the pooled batch.
 This uses `training.evaluate`, which is what every `test_results.md` in this repo came
 from, so the output drops straight into the same tables.
 
-    python scripts/eval_onnx.py --model models/Spruce.onnx --data-dir data/TestDS
+    python evaluate.py --model models/Spruce.onnx --data-dir data/TestDS
 """
 import argparse
 import json
@@ -17,7 +17,6 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def score(model_path, data_dir, batch_size=8, threshold=0.5, img_size=512):

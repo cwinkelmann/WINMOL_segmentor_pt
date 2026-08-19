@@ -26,6 +26,18 @@ def build_augmentation(cfg):
     multiscale = getattr(cfg, "multiscale", False)
     transforms = []
 
+    # Mosaic goes FIRST, before the multi-scale crop. The crop and every photometric
+    # transform after it then see one coherent image, exactly as they would without
+    # mosaic; putting it later would crop a single cell and silently undo the stitching.
+    # A.Mosaic reads its extra tiles from the `mosaic_metadata` key that StemDataset
+    # supplies, and those are drawn from the dataset's own split — see dataset.py.
+    if getattr(cfg, "mosaic_p", 0.0) > 0:
+        transforms.append(A.Mosaic(
+            grid_yx=tuple(getattr(cfg, "mosaic_grid_yx", (2, 2))),
+            target_size=(cfg.img_size, cfg.img_size),
+            cell_shape=(cfg.img_size, cfg.img_size),
+            p=cfg.mosaic_p))
+
     if multiscale:
         # Rotate the full native tile FIRST (any angle in +/- aug_rotate_limit; set it to 180
         # for full 360 deg coverage), then the multi-scale crop samples a window and resizes

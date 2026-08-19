@@ -54,12 +54,14 @@ def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_
     if val_image_dir is not None:
         # pre-materialized fixed split: train on all of image_dir, validate on the given dir
         train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
-                               cache=cfg.cache_dataset, resize=train_resize)
+                               cache=cfg.cache_dataset, resize=train_resize,
+                               mosaic_p=cfg.mosaic_p, seed=cfg.seed)
         val_ds = _eval_dataset(val_image_dir, val_mask_dir, cfg)
     else:
         train_ids, val_ids = split_ids(image_dir, mask_dir, cfg.val_fraction, cfg.seed)
         train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
-                               ids=train_ids, cache=cfg.cache_dataset, resize=train_resize)
+                               ids=train_ids, cache=cfg.cache_dataset, resize=train_resize,
+                               mosaic_p=cfg.mosaic_p, seed=cfg.seed)
         val_ds = _eval_dataset(image_dir, mask_dir, cfg, ids=val_ids)
     # drop_last avoids a trailing batch of 1 (breaks BatchNorm in DeepLabV3+ ASPP
     # [N,C,1,1]) — only when there is more than one batch's worth, so a tiny set
@@ -316,6 +318,10 @@ def build_parser():
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     p.add_argument("--export-keras", action="store_true",
                    help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
+    p.add_argument("--mosaic-p", type=float, default=0.0,
+                   help="probability of stitching a grid of tiles into one training image. "
+                        "UNEVALUATED in this repo -- no paired run, no LOSO fold, no results "
+                        "document. Default 0.0 (off); measure it before relying on it.")
     return p
 
 
@@ -364,6 +370,7 @@ def config_from_parsed(a, p):
         label_smoothing=a.label_smoothing, smooth_band_px=a.smooth_band_px,
         encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,
+        mosaic_p=a.mosaic_p,
     )
 
 

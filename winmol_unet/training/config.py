@@ -61,6 +61,11 @@ class TrainConfig:
     crop_min_px: int = 400                   # multiscale: min crop side sampled from the tile
     crop_max_px: int = 1024                  # multiscale: max crop side (>= native tile -> full)
     eval_tiling: bool = False                # deterministic grid tiling for val/test (native res)
+    # Mosaic: stitch a grid of tiles into one training image. UNEVALUATED here — no
+    # paired run, no LOSO fold, no results document — so it is off by default and must
+    # stay off until winmol-experiment measures it.
+    mosaic_p: float = 0.0
+    mosaic_grid_yx: tuple = (2, 2)
 
     @property
     def image_dir(self) -> str:

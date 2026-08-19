@@ -5,7 +5,7 @@ scored on *several* test sets, which otherwise means retraining. This loads the 
 .pt and runs the same `evaluate()` the training loop uses, so the numbers are produced by
 identical code and are directly comparable to any `test_results.md`.
 
-    python -m scripts.eval_checkpoint --model runs/aa-on/model.pt --arch hrnet \\
+    python evaluate.py --model runs/aa-on/model.pt --arch hrnet \\
         --test-data-dir datasets/BeechAA_off/test --label "aa-on -> off"
 """
 import argparse

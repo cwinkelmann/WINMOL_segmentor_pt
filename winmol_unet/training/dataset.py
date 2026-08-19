@@ -50,7 +50,7 @@ class StemDataset(Dataset):
     """
 
     def __init__(self, image_dir, mask_dir, img_size=512, transform=None, ids=None, cache=True,
-                 resize=True):
+                 resize=True, mosaic_p=0.0, seed=1):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.img_size = img_size
@@ -65,9 +65,45 @@ class StemDataset(Dataset):
         # __getitem__ loads+resizes per call (bounded memory).
         self.cache = cache
         self._cache = {}   # n -> (image HWC float32 [0,1], mask HW float32 {0,1})
+        # Mosaic needs grid_yx-1 extra tiles per sample. They are drawn from THIS
+        # dataset's own `ids` and nowhere else: a val or test dataset is constructed with
+        # its own id list, so a mosaic can never reach across a split. That matters more
+        # here than in most projects — tiles are oversampled and overlap, so leakage is
+        # already the failure mode the split strategy exists to prevent.
+        self.mosaic_p = mosaic_p
+        # Own RNG rather than the global one: DataLoader workers fork, and numpy's global
+        # state would then hand every worker the same partner tiles.
+        self._mosaic_rng = random.Random(seed)
 
     def __len__(self):
         return len(self.ids)
+
+    def _mosaic_partners(self, i, k=3):
+        """k other tiles from this split, as A.Mosaic's `mosaic_metadata` list.
+
+        Supplied on every call when mosaic is on, because A.Mosaic decides internally
+        whether to fire (its own `p`). Gating here instead would mean handing it no
+        partners on the other calls, and it replicates the primary image when partners
+        are missing — a 2x2 of one tile, which is a zoom-out, not a no-op.
+
+        The cost is k extra tile loads per sample. Free with the default in-memory cache;
+        with `--no-cache-dataset` it is k+1 reads per sample, so mosaic and a large
+        uncached dataset together are worth benchmarking before use.
+        """
+        others = [j for j in range(len(self.ids)) if j != i]
+        # min(): a split smaller than k+1 tiles yields fewer partners rather than raising.
+        picks = self._mosaic_rng.sample(others, min(k, len(others)))
+        partners = []
+        for j in picks:
+            n = self.ids[j]
+            if self.cache:
+                if n not in self._cache:
+                    self._cache[n] = (self._load_image(n), self._load_mask(n))
+                pi, pm = self._cache[n]
+            else:
+                pi, pm = self._load_image(n), self._load_mask(n)
+            partners.append({"image": pi, "mask": pm})
+        return partners
 
     def _load_image(self, n):
         im = Image.open(os.path.join(self.image_dir, f"train{n}.jpeg")).convert("RGB")
@@ -96,7 +132,15 @@ class StemDataset(Dataset):
         else:
             img, mask = self._load_image(n), self._load_mask(n)
         if self.transform is not None:
-            out = self.transform(image=img, mask=mask)   # albumentations returns new arrays
+            if self.mosaic_p > 0:
+                # The key must be present whenever A.Mosaic is in the pipeline -- it
+                # declares mosaic_metadata as a required target and raises without it.
+                # An empty or short list is fine (it replicates the primary tile), so
+                # this holds for a degenerate one-tile split too.
+                out = self.transform(image=img, mask=mask,
+                                     mosaic_metadata=self._mosaic_partners(i))
+            else:
+                out = self.transform(image=img, mask=mask)  # albumentations returns new arrays
             img, mask = out["image"], out["mask"]
         img_t = torch.from_numpy(np.ascontiguousarray(img.transpose(2, 0, 1)))
         mask_t = torch.from_numpy(np.ascontiguousarray(mask))[None]

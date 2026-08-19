@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader
 
-from scripts.eval_checkpoint import score
+from winmol_unet.training.score_checkpoint import score
 from winmol_unet.training.dataset import StemDataset
 from winmol_unet.training.evaluate import evaluate
 from winmol_unet.training.model_factory import build_model

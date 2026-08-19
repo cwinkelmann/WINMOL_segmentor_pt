@@ -79,8 +79,12 @@ def test_mosaic_is_flagged_unevaluated():
 def test_the_schedule_settings_a_recipe_does_not_cover_are_stated():
     """Recipes are augmentation-only; the note is the only thing stopping that from
     becoming a silent difference against the measured runs."""
-    for token in ("--epochs 40", "--deterministic", "--seed 1"):
+    for token in ("--epochs 40", "--batch-size 16", "--deterministic"):
         assert token in recipes.SCHEDULE_NOTE
+    # The seed must NOT be quoted as a single value: scale-aug/LOSO used 1, but the
+    # released Tegel assets are seed 3, so one number sends half the reproductions to
+    # different weights.
+    assert "varies by run" in recipes.SCHEDULE_NOTE
 
 
 def test_unknown_recipe_fails_loudly():

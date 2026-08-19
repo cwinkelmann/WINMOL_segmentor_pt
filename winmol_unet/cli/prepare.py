@@ -1,0 +1,150 @@
+"""`prepare.py` — orthomosaic in, training tiles out.
+
+One command over four modes, because they are stages of the same job and sharing a CLI
+keeps their vocabulary (extent, native-px, split, AOI) identical:
+
+    # one site
+    prepare.py --ortho site.tif --stems site.shp --aoi site_AOE.shp --out DS
+
+    # several sites, leak-free splits (this is the usual one)
+    prepare.py --config sites.json --out DS --strategy blocks [--jobs 4]
+
+    # leave-one-site-out folds from per-site tile sets, by symlink
+    prepare.py --compose-folds --site-all ALL --site-tv TV \
+               --fold-sites A B C --splittable A B --out FOLDS
+
+    # just the label raster, no tiling
+    prepare.py --rasterize --stems site.shp --ortho site.tif --out stem_map.tif
+
+Two things worth knowing before choosing flags:
+
+**`--extent-m` is a scale knob, not a speed knob.** A tile covers `extent_m` of ground and
+is resized to 512 px, so the model's effective ground resolution is `extent_m / 512` —
+2.93 cm/px at the 15 m default, regardless of the orthomosaic's own resolution. The
+analyzer applies the same arithmetic to its `tile_size`, and matching the two was worth
++14.6 F1. Use `--native-px` instead to cut at the ortho's own resolution, which is what
+the multi-scale recipes (`--recipe jitter`) train on.
+
+**Splits must be leak-free by construction.** Sampling oversamples heavily and tiles are
+cut at random rotations, so tiles overlap and a random split of the tile list leaks
+between train and test. `--strategy blocks|halve|sites` partitions the *ground* first.
+Every run writes `tiles.jsonl` (source ortho, world centre, rotation, GSD, stem fraction)
+so the result can be audited for leakage afterwards rather than taken on trust.
+"""
+import argparse
+import sys
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="prepare.py", description="Build training tiles from an orthomosaic.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__.split("Two things worth knowing")[0].strip())
+
+    mode = p.add_argument_group("mode (pick one; single-site is the default)")
+    mode.add_argument("--config", help="JSON listing sites; enables the multi-site path")
+    mode.add_argument("--compose-folds", action="store_true",
+                      help="compose leave-one-site-out folds from per-site tile sets")
+    mode.add_argument("--rasterize", action="store_true",
+                      help="burn annotations to a label raster and stop (no tiling)")
+
+    src = p.add_argument_group("single-site inputs")
+    src.add_argument("--ortho", help="orthomosaic GeoTIFF")
+    src.add_argument("--stems", help="digitised stem polygons (shapefile/gpkg)")
+    src.add_argument("--aoi", help="windthrow polygon; sampling never leaves it")
+    src.add_argument("--out", required=True, help="output dataset dir (or file for --rasterize)")
+
+    tile = p.add_argument_group("tiling")
+    tile.add_argument("--extent-m", type=float, default=15.0,
+                      help="tile footprint in metres. Effective GSD is extent_m/512 "
+                           "(default 15 m -> 2.93 cm/px). Match the analyzer's tile_size.")
+    tile.add_argument("--native-px", type=int, default=None,
+                      help="cut NATIVE_PX square at the ortho's own resolution instead, "
+                           "for the multi-scale recipes. Overrides --extent-m.")
+    tile.add_argument("--tile-px", type=int, default=512, help="output tile side")
+    tile.add_argument("--limit", type=int, default=None, help="stop after N tiles")
+    tile.add_argument("--min-stem-frac", type=float, default=1 / 200.0,
+                      help="reject tiles below this stem fraction (default 0.5%%); a plain "
+                           "grid over these sites is ~99%% background")
+    tile.add_argument("--species", nargs="*", default=None, help="filter by Species attribute")
+    tile.add_argument("--seed", type=int, default=1)
+
+    sp = p.add_argument_group("splitting (multi-site)")
+    sp.add_argument("--strategy", choices=("blocks", "halve", "sites"), default="blocks",
+                    help="how to partition the GROUND. blocks: spatial blocks within each "
+                         "site. halve: cut each site in two. sites: hold whole sites out.")
+    sp.add_argument("--cut-axis", choices=("auto", "ns", "ew"), default="auto")
+    sp.add_argument("--jobs", type=int, default=1,
+                    help="sites to extract concurrently; >1 uses the parallel driver")
+    sp.add_argument("--skip-fix", action="store_true",
+                    help="skip stem-geometry repair (only if the input is already clean; "
+                         "50 of the corpus's 3,842 polygons self-intersect and GEOS "
+                         "raises on the first set operation that touches one)")
+
+    fo = p.add_argument_group("--compose-folds options")
+    fo.add_argument("--site-all", help="dir of <site>/ whole-site tiles")
+    fo.add_argument("--site-tv", help="dir of <site>/{train,val} block tiles")
+    fo.add_argument("--fold-sites", nargs="+", default=None,
+                    help="one fold per named site (folds.main calls this --folds)")
+    fo.add_argument("--splittable", nargs="+", default=None,
+                    help="sites large enough to block-split (contribute train+val)")
+    fo.add_argument("--copy", action="store_true", help="copy instead of symlink")
+
+    ra = p.add_argument_group("--rasterize options")
+    ra.add_argument("--instances", default=None, help="also write an instance-id raster here")
+    ra.add_argument("--all-touched", action="store_true")
+
+    p.add_argument("--quiet", action="store_true")
+    return p
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.rasterize:
+        from winmol_unet.geo.rasterize import rasterize
+        if not (args.stems and args.ortho):
+            parser.error("--rasterize needs --stems and --ortho")
+        rasterize(args.stems, args.ortho, args.out, instances_path=args.instances,
+                  species=args.species, all_touched=args.all_touched)
+        print(f"wrote {args.out}")
+        return 0
+
+    if args.compose_folds:
+        from winmol_unet.geo import folds
+        missing = [n for n, v in (("--site-all", args.site_all), ("--site-tv", args.site_tv),
+                                  ("--fold-sites", args.fold_sites),
+                                  ("--splittable", args.splittable)) if not v]
+        if missing:
+            parser.error(f"--compose-folds needs {', '.join(missing)}")
+        forwarded = ["--site-all", args.site_all, "--site-tv", args.site_tv,
+                     "--out", args.out, "--folds", *args.fold_sites,
+                     "--splittable", *args.splittable]
+        if args.copy:
+            forwarded.append("--copy")
+        return folds.main(forwarded)
+
+    if args.config:
+        if args.jobs > 1:
+            from winmol_unet.geo import parallel
+            return parallel.main(["--config", args.config, "--out", args.out,
+                                  "--strategy", args.strategy, "--jobs", str(args.jobs)])
+        from winmol_unet.geo.splits import run
+        run(args.config, args.out, args.strategy, cut_axis=args.cut_axis,
+            seed=args.seed, skip_fix=args.skip_fix, quiet=args.quiet)
+        return 0
+
+    # single site
+    if not (args.ortho and args.stems and args.aoi):
+        parser.error("single-site mode needs --ortho, --stems and --aoi "
+                     "(or pass --config for the multi-site path)")
+    from winmol_unet.geo.sample import sample_tiles
+    stats = sample_tiles(args.ortho, args.stems, args.aoi, args.out,
+                         extent_m=args.extent_m, tile_px=args.tile_px,
+                         native_px=args.native_px, min_stem_frac=args.min_stem_frac,
+                         seed=args.seed, species=args.species, limit=args.limit,
+                         quiet=args.quiet)
+    print(stats)
+    return 0
