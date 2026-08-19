@@ -1,4 +1,4 @@
-"""Score an Analyzer stem-map raster on the same basis as `plot_inference.py`.
+"""Score an Analyzer stem-map raster on the same basis as `geo.predict`.
 
 The Analyzer is the deployment path, so its output is the number that matters — but it
 must be scored the same way as anything it is compared against: resampled onto one
@@ -9,7 +9,7 @@ Outside the windthrow polygon the stems are real but were never digitised, so sc
 whole raster counts correct detections as false positives and penalises the better model
 hardest. That masking is not optional.
 
-    python scripts/score_stem_map.py --stem-map out.tif --aoi aoi.gpkg --stems stems.gpkg
+    python evaluate.py --stem-map out.tif --aoi aoi.gpkg --stems stems.gpkg
 """
 import argparse
 import json
@@ -18,7 +18,6 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def score_map(stem_map, aoi, stems, ref_gsd=0.029297, edge_buffer_m=2.0, threshold=0.5):
@@ -27,8 +26,8 @@ def score_map(stem_map, aoi, stems, ref_gsd=0.029297, edge_buffer_m=2.0, thresho
     from rasterio.warp import Resampling, reproject
     from shapely.ops import unary_union
 
-    from scripts.plot_inference import _grid
-    from scripts.sample_training_tiles import _load_geoms
+    from .predict import _grid
+    from .sample import _load_geoms
 
     src = rasterio.open(stem_map)
     area = unary_union(_load_geoms(aoi, src.crs, None, "aoi", quiet=True)[0])

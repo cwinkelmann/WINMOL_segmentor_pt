@@ -1,6 +1,6 @@
 """Repair invalid stem polygons and write a cleaned shapefile plus a report.
 
-    python scripts/fix_geometries.py --stems site.shp --out site_fixed.shp \
+    python -m winmol_unet.geo.geometry --stems site.shp --out site_fixed.shp \
         [--report site_geom.json] [--check-only]
 
 50 of the corpus's 3,842 stem polygons have self-intersecting rings — hand-tracing an

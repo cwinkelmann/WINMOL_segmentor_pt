@@ -15,7 +15,7 @@ a single pass leaves seams exactly where a stem crosses a tile edge.
 Scoring is masked to the AOI shrunk by `--edge-buffer-m`, because a tile centred near the
 boundary sees unannotated ground outside it, and stems there are real but undigitised.
 
-    python scripts/plot_inference.py --ortho x.tif --aoi aoi.gpkg --stems stems.gpkg \\
+    python infer.py --ortho x.tif --aoi aoi.gpkg --stems stems.gpkg \\
         --model m.onnx --extent-m 19.512 --ref-gsd-cm 2.9297
 """
 import argparse
@@ -26,7 +26,6 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _grid(bounds, ref_gsd):
@@ -48,7 +47,7 @@ def predict_plot(ortho, aoi, model, extent_m=None, native_px=None, ref_gsd=0.029
     from rasterio.windows import from_bounds
     from shapely.ops import unary_union
 
-    from scripts.sample_training_tiles import _load_geoms
+    from .sample import _load_geoms
 
     src = rasterio.open(ortho)
     gsd = abs(src.transform.a)
@@ -122,7 +121,7 @@ def score(prob, tf, W, H, area, crs, stems, threshold=0.5, edge_buffer_m=0.0,
     """F1/precision/recall inside the AOI, on the reference grid."""
     from rasterio.features import rasterize as rio_rasterize
 
-    from scripts.sample_training_tiles import _load_geoms
+    from .sample import _load_geoms
 
     geoms, _ = _load_geoms(stems, crs, None, "stems", quiet=True)
     gt = rio_rasterize([(g, 1) for g in geoms], out_shape=(H, W), transform=tf,

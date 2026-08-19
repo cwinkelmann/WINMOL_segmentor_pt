@@ -1,12 +1,12 @@
 """Extract tiles for several sites concurrently, then merge into one dataset.
 
-`make_splits.py` walks its sites one at a time on a single core, and the cost is dominated
+`geo.splits` walks its sites one at a time on a single core, and the cost is dominated
 by decoding the orthomosaic — a 19.512 m window on 1.2 cm/px imagery is 1,626 px square,
 spanning ~16 WebP blocks, and 100x oversampling means many more windows are decoded than
 kept. Measured on T14: 98.9% of one core, ~1 tile/s, while the NAS supplied 117 MB/s and
 was never the constraint.
 
-The sites are independent, so this runs one `make_splits` per site in its own process and
+The sites are independent, so this runs one `geo.splits` per site in its own process and
 merges the results. The merge is the part that needs care: each part numbers its tiles from
 1, so indices must be reassigned or two sites silently overwrite each other — and
 `tiles.jsonl` carries the old `n`, which must be rewritten to match or provenance points at
@@ -21,7 +21,6 @@ import shutil
 import subprocess
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SPLITS = ("train", "val", "test")
 
 
@@ -58,10 +57,10 @@ def _run_parts(parts, work_dir, strategy, jobs, python=None):
         _reap(block=False)
         outdir = os.path.join(work_dir, name)
         log = os.path.join(work_dir, f"{name}.log")
-        cmd = [python, os.path.join(REPO, "scripts", "make_splits.py"),
+        cmd = [python, "-m", "winmol_unet.geo.splits",
                "--config", cfg, "--out", outdir, "--strategy", strategy]
         with open(log, "w") as lf:
-            running.append((name, subprocess.Popen(cmd, stdout=lf, stderr=lf, cwd=REPO), log))
+            running.append((name, subprocess.Popen(cmd, stdout=lf, stderr=lf), log))
         print(f"  started {name}")
     _reap(block=True)
     return results

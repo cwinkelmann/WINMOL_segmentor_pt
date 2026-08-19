@@ -8,7 +8,7 @@ import pytest
 import rasterio
 from rasterio.transform import from_origin
 
-from scripts.plot_inference import _grid, score
+from winmol_unet.geo.predict import _grid, score
 
 
 def _aoi_and_stems(tmp_path, gsd=0.03, size=300):
@@ -37,7 +37,7 @@ def test_perfect_prediction_scores_one(tmp_path):
     ref = 0.03
     tf, W, H = _grid(aoi.bounds, ref)
     from rasterio.features import rasterize
-    from scripts.sample_training_tiles import _load_geoms
+    from winmol_unet.geo.sample import _load_geoms
     geoms, _ = _load_geoms(stems_p, rasterio.crs.CRS.from_epsg(25833), None, "s", quiet=True)
     gt = rasterize([(g, 1) for g in geoms], out_shape=(H, W), transform=tf, fill=0)
     rows = score(gt.astype(np.float32), tf, W, H, aoi, rasterio.crs.CRS.from_epsg(25833),

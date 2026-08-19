@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from scripts import make_splits
+from winmol_unet.geo import splits as make_splits
 
 
 @pytest.fixture

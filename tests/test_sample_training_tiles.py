@@ -12,7 +12,7 @@ rasterio = pytest.importorskip("rasterio")
 fiona = pytest.importorskip("fiona")
 shapely = pytest.importorskip("shapely")
 
-from scripts.sample_training_tiles import sample_tiles  # noqa: E402
+from winmol_unet.geo.sample import sample_tiles  # noqa: E402
 
 CRS = "EPSG:25833"
 GSD = 0.02          # 2 cm/px, in the range the real orthos sit
@@ -182,7 +182,7 @@ def test_sampling_stays_inside_the_annotated_area(site, tmp_path):
 
     # a footprint centred anywhere in the buffered area is inside at any rotation;
     # assert the buffer is what the geometry demands rather than the R script's 11
-    from scripts.sample_training_tiles import _footprint, _random_points
+    from winmol_unet.geo.sample import _footprint, _random_points
     import numpy as _np
 
     inner = aoi.buffer(-(15.0 * _np.sqrt(2) / 2))
@@ -263,7 +263,7 @@ def test_spatial_blocks_partition_the_site_without_overlap(site, tmp_path):
     from shapely.geometry import box
     from shapely.ops import unary_union
 
-    from scripts.sample_training_tiles import _spatial_blocks
+    from winmol_unet.geo.sample import _spatial_blocks
 
     cx, cy = ORIGIN[0] + 30.0, ORIGIN[1] - 30.0
     # 120 m of AOI at 30 m blocks -> 16 cells, enough for all three splits to be

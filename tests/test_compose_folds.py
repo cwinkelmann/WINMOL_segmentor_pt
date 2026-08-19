@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-from scripts.compose_folds import _ids, compose, plan
+from winmol_unet.geo.folds import _ids, compose, plan
 
 SITES = ["Campus", "Oberheide", "Bachsee", "Kaufland"]
 SPLITTABLE = ["Campus", "Oberheide"]

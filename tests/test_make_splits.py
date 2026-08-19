@@ -8,7 +8,7 @@ pytest.importorskip("fiona")
 
 from shapely.geometry import box  # noqa: E402
 
-from scripts.make_splits import _long_axis, halve_aoi  # noqa: E402
+from winmol_unet.geo.splits import _long_axis, halve_aoi  # noqa: E402
 
 
 def test_halves_are_separated_by_the_full_buffer():
@@ -105,7 +105,7 @@ def test_pipeline_repairs_geometry_before_sampling(tmp_path):
     """
     import json
 
-    from scripts.make_splits import run
+    from winmol_unet.geo.splits import run
 
     site = _tiny_site(tmp_path)
     cfg = tmp_path / "cfg.json"
@@ -126,7 +126,7 @@ def test_pipeline_repairs_geometry_before_sampling(tmp_path):
 def test_skip_fix_bypasses_step_one(tmp_path):
     import json
 
-    from scripts.make_splits import run
+    from winmol_unet.geo.splits import run
 
     site = _tiny_site(tmp_path)
     cfg = tmp_path / "cfg.json"

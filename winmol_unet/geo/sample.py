@@ -1,6 +1,6 @@
 """Sample rotated training tiles from an orthomosaic + stem annotations.
 
-    python scripts/sample_training_tiles.py --ortho site_ortho.tif \
+    python prepare.py --ortho site_ortho.tif \
         --stems site.shp --aoi site_AOE.shp --out /path/to/SpecDS
 
 This is the Python port of the original R generator kept at

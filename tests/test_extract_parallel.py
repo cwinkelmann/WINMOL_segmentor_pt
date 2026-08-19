@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from scripts.extract_parallel import _part_configs, merge
+from winmol_unet.geo.parallel import _part_configs, merge
 
 
 def _part(work, name, split, n, start=1):
@@ -69,3 +69,38 @@ def test_each_site_keeps_its_own_split(tmp_path):
         assert len(one["sites"]) == 1 and one["sites"][0]["name"] == name
         assert one["tile_px"] == 666, "shared settings must survive the split"
     assert json.loads(open(parts[1][1]).read())["sites"][0]["split"] == "test"
+
+
+def test_the_worker_command_is_runnable_as_a_module():
+    """The fan-out spawns `python -m winmol_unet.geo.splits`; pin that it resolves.
+
+    This is the one line in parallel.py the rest of the suite cannot reach: the real path
+    fans out a process per site over multi-hundred-megapixel orthomosaics, so no hermetic
+    test drives it. It used to build a filesystem path as
+    `dirname(dirname(__file__))/scripts/make_splits.py`, which silently stopped pointing at
+    anything real when the module moved one directory deeper — and would only have failed
+    at spawn time, mid-extraction, after the expensive setup.
+
+    Running the module's --help is cheap and catches exactly that class of breakage:
+    the module is importable, is a valid -m target, and its parser builds.
+    """
+    import subprocess
+    import sys
+
+    out = subprocess.run([sys.executable, "-m", "winmol_unet.geo.splits", "--help"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, f"worker command is not runnable:\n{out.stderr}"
+    assert "--config" in out.stdout and "--strategy" in out.stdout
+
+
+def test_the_spawned_command_names_the_module_not_a_path():
+    """A path built from __file__ breaks on a move; `-m` does not. Keep it that way."""
+    import inspect
+
+    from winmol_unet.geo import parallel
+
+    src = inspect.getsource(parallel)
+    assert '"-m", "winmol_unet.geo.splits"' in src, \
+        "parallel.py should spawn the splits module by name, not by filesystem path"
+    assert "scripts" not in src.split('"""')[2], \
+        "parallel.py still refers to the old scripts/ location outside its docstring"

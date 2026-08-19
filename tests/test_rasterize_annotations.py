@@ -1,4 +1,4 @@
-"""`rasterize_annotations.py` burns the corpus's stem polygons onto an ortho's grid.
+"""`winmol_unet.geo.rasterize` burns the corpus's stem polygons onto an ortho's grid.
 
 The behaviours worth pinning are the ones that fail *silently* on real data: a CRS
 mismatch that shifts masks by metres rather than erroring, a species filter that drops
@@ -16,7 +16,7 @@ shapely = pytest.importorskip("shapely")
 
 from shapely.geometry import box, mapping  # noqa: E402
 
-from scripts.rasterize_annotations import rasterize  # noqa: E402
+from winmol_unet.geo.rasterize import rasterize  # noqa: E402
 
 CRS = "EPSG:25833"
 GSD = 0.02

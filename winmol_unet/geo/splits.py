@@ -1,7 +1,7 @@
 """Build leak-free train/val/test splits: by block, by halving a site, or by holding sites out.
 
-    python scripts/make_splits.py --config sites.json --out /path/to/DS --strategy halve
-    python scripts/make_splits.py --config sites.json --out /path/to/DS --strategy sites
+    python prepare.py --config sites.json --out /path/to/DS --strategy halve
+    python prepare.py --config sites.json --out /path/to/DS --strategy sites
 
 `sites.json` lists what to sample:
 
@@ -72,9 +72,8 @@ import math
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fix_geometries import fix as fix_geometries  # noqa: E402
-from sample_training_tiles import _load_geoms, sample_tiles  # noqa: E402
+from .geometry import fix as fix_geometries
+from .sample import _load_geoms, sample_tiles
 
 
 def _long_axis(geom):
@@ -136,7 +135,7 @@ def _clean_stems(site, out_dir, quiet):
     50 of the corpus's polygons have self-intersecting rings, and GEOS aborts on the
     first set operation that touches one -- a sampling run dies tens of thousands of
     tiles in. Doing the repair here, rather than trusting the caller to have run
-    fix_geometries.py first, makes the pipeline order structural: fix, then sample,
+    geometry.fix first, makes the pipeline order structural: fix, then sample,
     then split.
     """
     work = os.path.join(out_dir, "_clean")
