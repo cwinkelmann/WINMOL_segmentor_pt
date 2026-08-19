@@ -142,11 +142,13 @@ resampled to one 2.93 cm reference grid, masked to the plot AOI shrunk by 2 m.
 | **ours, Tegel from scratch** (3-seed mean) | **0.7832** | 0.5840 |
 | **ours, Tegel fine-tuned** | 0.7811 | **0.5930** |
 
-**The published model out-transfers our own beech-corpus model.** It matches it on R12-P3
-(0.7435 vs 0.7404) and beats it by **4.6 F1** on R13-P2 (0.5715 vs 0.5252). Our beech models
-are trained on four sites at the correct serving scale, with jitter, and still do not
-transfer better than the published one to a new survey. The advantage we measured
-*within* our corpus does not carry to new ground.
+**On these two plots the published model looks better.** It matches ours on R12-P3
+(0.7435 vs 0.7404) and beats it by **4.6 F1** on R13-P2 (0.5715 vs 0.5252). *This reading
+does not survive the other three plots* — see
+[the five-plot comparison below](#the-beech-corpus-model-on-all-five-plots-from-the-full-orthomosaics),
+where the two models come out indistinguishable (mean difference −0.008) and R13-P2 turns
+out to be the one plot whose labels are too incomplete to score against. Treat the
+two-plot gap as a sampling artefact, not a transfer result.
 
 Two things this does not mean. It is not a like-for-like architecture comparison — the
 published model is a different training corpus (including sites we do not hold, such as
@@ -156,6 +158,55 @@ disagree in magnitude.
 **What does help is local data.** Training on Tegel beats the published model by **+4.0 F1**
 on R12-P3 and **+2.2** on R13-P2. The gain comes from labelling the survey you intend to
 run on, not from a better-scaled general corpus.
+
+### The beech-corpus model on all five plots, from the full orthomosaics
+
+The table above compares models on the two frozen test plots. This extends it to **all
+five** digitised plots, scoring the full-orthomosaic stem maps rather than plot windows.
+Numbers copied verbatim from [`assets/beech-corpus-zeroshot.json`](assets/beech-corpus-zeroshot.json);
+same basis throughout (Analyzer at `tile_size 15`, one 2.93 cm reference grid, AOI shrunk
+by 2 m).
+
+| plot | beech share | ours, beech corpus | published | ours, Tegel-trained |
+|---|---:|---:|---:|---:|
+| R12-P1 | 93% | 0.6718 | 0.6796 | 0.7188 |
+| R12-P2 | 81% | 0.7304 | 0.7298 | 0.7689 \* |
+| R12-P3 | 72% | 0.7408 | 0.7449 | 0.7841 |
+| R13-P1 | 20% | 0.6722 | 0.6529 | 0.7419 \* |
+| R13-P2 | 20% | 0.5218 | 0.5686 | 0.5694 |
+
+\* trained on that plot — not a held-out score, and not comparable to the other two columns.
+
+**Our beech-corpus model and the published one are indistinguishable.** Per-plot differences
+are −0.008, +0.001, −0.004, +0.019, −0.047: signs split two to three, mean −0.008. That is
+well inside the 0.45–0.96 noise floor this repo measures with `--deterministic`, so the
+earlier "the published model out-transfers ours" reading — drawn from R13-P2 alone — does
+not survive the other four plots. The honest statement is that two independently trained
+beech models reach the same accuracy on new ground.
+
+**This also re-validates the harness.** The two plots that appear in both tables agree
+across completely different inference paths — plot windows versus the full orthomosaic:
+R12-P3 0.7408 against 0.7404, R13-P2 0.5218 against 0.5252.
+
+**Both zero-shot models fail by over-predicting**, which F1 hides. Precision and recall for
+the beech-corpus model:
+
+| plot | precision | recall |
+|---|---:|---:|
+| R12-P1 | 0.5728 | 0.8122 |
+| R12-P2 | 0.7180 | 0.7431 |
+| R12-P3 | 0.7131 | 0.7707 |
+| R13-P1 | 0.7829 | 0.5890 |
+| R13-P2 | 0.4574 | 0.6073 |
+
+Recall exceeds precision on all three R12 plots. That is the benign failure mode — a human
+filtering false positives has an easier job than one hunting missed stems — and it is the
+opposite of the recall collapse seen under colour-domain shift.
+
+**R13-P2 should not be read as a model score.** It is the plot where 43% of predictions are
+unmatched because the labels are incomplete, so both zero-shot models are penalised for
+finding real stems that were never digitised. Excluding it, and excluding the two plots the
+Tegel model trained on, **local training is worth about +4 F1** (R12-P1 +4.7, R12-P3 +4.3).
 
 ### Cross-validation of the harness
 
