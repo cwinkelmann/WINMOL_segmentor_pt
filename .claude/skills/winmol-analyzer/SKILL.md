@@ -49,7 +49,7 @@ A model trained in `WINMOL_segmentor_pt` reaches the Analyzer as ONNX:
 
 ```bash
 # in the segmentor repo — every architecture exports a contract-conformant .onnx
-python -m training.run_train --arch hrnet ... --out-dir output/run
+python -m winmol_unet.training.run_train --arch hrnet ... --out-dir output/run
 # then point the Analyzer at output/run/model.onnx
 ```
 

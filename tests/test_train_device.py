@@ -1,5 +1,5 @@
 import torch
-from training.device import resolve_device
+from winmol_unet.training.device import resolve_device
 
 
 def test_resolve_explicit_cpu():

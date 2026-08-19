@@ -1,5 +1,5 @@
-from training.model_factory import build_model
-from training.run_train import config_from_args
+from winmol_unet.training.model_factory import build_model
+from winmol_unet.training.run_train import config_from_args
 
 
 def _nparams(m):

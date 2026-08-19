@@ -4,8 +4,8 @@ import os
 import numpy as np
 from PIL import Image
 
-from training.config import TrainConfig
-from training.run_train import config_from_args, run_training
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.run_train import config_from_args, run_training
 
 
 def _ds(d, n=6):

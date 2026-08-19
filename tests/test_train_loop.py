@@ -3,11 +3,11 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader
 
-from training.config import TrainConfig
-from training.dataset import StemDataset
-from training.train import train_one_run
-from training.evaluate import evaluate
-from training.losses import bce_soft_f1_loss
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.dataset import StemDataset
+from winmol_unet.training.train import train_one_run
+from winmol_unet.training.evaluate import evaluate
+from winmol_unet.training.losses import bce_soft_f1_loss
 from winmol_unet.model import UNet
 
 

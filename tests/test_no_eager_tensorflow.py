@@ -2,7 +2,7 @@
 
 TF is opt-in (`--export-keras`, the `[keras]` extra). When it *is* installed alongside
 torch, importing it after torch's native libraries are loaded deadlocks inside TF's
-abseil mutex — `import training.run_train` hangs forever, taking the whole test suite
+abseil mutex — `import winmol_unet.training.run_train` hangs forever, taking the whole test suite
 with it. CI never caught this because CI does not install TF.
 
 A plain `pytest tests/test_no_eager_tensorflow.py` cannot catch it either: by then the
@@ -16,7 +16,7 @@ import pytest
 
 # each import is run in a fresh interpreter, so the check is real rather than
 # dependent on what the enclosing test session happened to import first
-MODULES = ["training.run_train", "training.train", "training.run_logger",
+MODULES = ["winmol_unet.training.run_train", "winmol_unet.training.train", "winmol_unet.training.run_logger",
            "winmol_unet.runtime", "winmol_unet.contract"]
 
 PROBE = """

@@ -1,6 +1,6 @@
 import torch
-from training.losses import bce_soft_f1_loss
-from training.metrics import precision, recall, f1
+from winmol_unet.training.losses import bce_soft_f1_loss
+from winmol_unet.training.metrics import precision, recall, f1
 
 
 def _logits_for(target, strong=12.0):

@@ -1,5 +1,5 @@
 import os
-from training.config import TrainConfig
+from winmol_unet.training.config import TrainConfig
 
 
 def test_config_defaults_and_derived_dirs():

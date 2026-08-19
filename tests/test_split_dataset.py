@@ -6,7 +6,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from split_dataset import split_dataset
-from training.dataset import StemDataset, train_val_split
+from winmol_unet.training.dataset import StemDataset, train_val_split
 
 
 def _make_pairs(src, n):

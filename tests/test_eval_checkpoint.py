@@ -13,9 +13,9 @@ from PIL import Image
 from torch.utils.data import DataLoader
 
 from scripts.eval_checkpoint import score
-from training.dataset import StemDataset
-from training.evaluate import evaluate
-from training.model_factory import build_model
+from winmol_unet.training.dataset import StemDataset
+from winmol_unet.training.evaluate import evaluate
+from winmol_unet.training.model_factory import build_model
 
 
 def _ds(d, n=6, seed=0):

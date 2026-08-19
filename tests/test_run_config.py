@@ -7,8 +7,8 @@ that launched it. These tests pin the fields that answer "was this run what it c
 import json
 import os
 
-from training.config import TrainConfig
-from training.run_train import write_run_config
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.run_train import write_run_config
 
 
 def _cfg(out_dir, **kw):

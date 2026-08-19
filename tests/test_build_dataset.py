@@ -38,7 +38,7 @@ def test_build_dataset_renames_pairs_and_binarizes(tmp_path):
         assert 255 in vals                       # nonzero instance -> foreground
 
     # the converted dataset loads through StemDataset with binary {0,1} masks
-    from training.dataset import StemDataset
+    from winmol_unet.training.dataset import StemDataset
     ds = StemDataset(str(dst / "train"), str(dst / "mask"))
     assert len(ds) == 2
     _, mask = ds[0]
@@ -69,7 +69,7 @@ def test_loader_reads_the_published_zenodo_naming(tmp_path):
     import numpy as np
     from PIL import Image
 
-    from training.dataset import _paired_ids, _sort_key
+    from winmol_unet.training.dataset import _paired_ids, _sort_key
 
     img = tmp_path / "train"; msk = tmp_path / "mask"
     img.mkdir(); msk.mkdir()
@@ -88,7 +88,7 @@ def test_loader_still_reads_our_own_naming(tmp_path):
     import numpy as np
     from PIL import Image
 
-    from training.dataset import _paired_ids
+    from winmol_unet.training.dataset import _paired_ids
 
     img = tmp_path / "train"; msk = tmp_path / "mask"
     img.mkdir(); msk.mkdir()

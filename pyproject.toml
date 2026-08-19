@@ -40,11 +40,20 @@ geo = ["rasterio>=1.3", "fiona>=1.9", "shapely>=2.0", "pillow>=9"]
 dev = ["pytest>=7"]
 
 [tool.setuptools]
-# Only winmol_unet is distributed (the analyzer installs it). The dev-only
-# `training` package is intentionally NOT shipped — it has a generic top-level
-# name that would risk namespace collisions in any consumer environment. It is
-# still importable locally for training/tests via the repo root on sys.path.
-packages = ["winmol_unet"]
+# `training` used to be a top-level package and was deliberately not shipped, because
+# that generic a name risks namespace collisions in a consumer environment. It now lives
+# under `winmol_unet.training`, which removes that objection, so it ships.
+#
+# Shipping it stays safe for the analyzer's torch-free install: `winmol_unet/__init__.py`
+# imports nothing, and `runtime`/`contract` import only onnxruntime and numpy. The heavy
+# subpackages are inert until imported by name. tests/test_import_boundary.py pins that —
+# do not add an eager import to any __init__ here.
+packages = [
+    "winmol_unet",
+    "winmol_unet.training",
+    "winmol_unet.geo",
+    "winmol_unet.cli",
+]
 
 [tool.pytest.ini_options]
 filterwarnings = [

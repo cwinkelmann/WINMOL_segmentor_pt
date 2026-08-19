@@ -4,7 +4,7 @@ conformant ONNX and serve through the exact OnnxSegmenter interface the analyzer
 import numpy as np
 import pytest
 
-from training.model_factory import build_model
+from winmol_unet.training.model_factory import build_model
 from winmol_unet.export import export_to_onnx
 from winmol_unet.runtime import OnnxSegmenter
 
@@ -53,7 +53,7 @@ def test_dpt_cannot_yet_export_onnx():
     reason. If this test starts failing, DPT became servable and belongs in the
     parametrization above.
     """
-    from training.model_factory import build_model
+    from winmol_unet.training.model_factory import build_model
     from winmol_unet.export import export_to_onnx
 
     model = build_model("dpt", encoder_weights=None).eval()

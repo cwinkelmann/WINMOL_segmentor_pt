@@ -1,8 +1,8 @@
 import numpy as np
 import albumentations as A
 
-from training.config import TrainConfig
-from training.augment import build_augmentation
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.augment import build_augmentation
 
 
 def _cfg(**kw):

@@ -6,7 +6,7 @@ pretrained model nor a clean baseline, and would still report a plausible F1.
 import pytest
 import torch
 
-from training.run_train import config_from_args, load_init_weights
+from winmol_unet.training.run_train import config_from_args, load_init_weights
 from winmol_unet.model import UNet
 
 

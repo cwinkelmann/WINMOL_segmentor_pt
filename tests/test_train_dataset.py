@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from PIL import Image
 import albumentations as A
-from training.dataset import StemDataset, train_val_split
+from winmol_unet.training.dataset import StemDataset, train_val_split
 
 
 def _make_pair(img_dir, mask_dir, n, size=40):

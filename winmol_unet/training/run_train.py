@@ -14,7 +14,7 @@ from winmol_unet.export import export_to_onnx, export_to_pt
 # NOTE: winmol_unet.export_keras is imported lazily inside _export (only when
 # cfg.export_keras is set) because it pulls in TensorFlow, which the lean training
 # image (WITH_KERAS=0) does not install — importing it at module level would break
-# `python -m training.run_train` on any TF-less environment. Mirrors the lazy smp
+# `python -m winmol_unet.training.run_train` on any TF-less environment. Mirrors the lazy smp
 # import in model_factory.
 
 from .augment import build_augmentation

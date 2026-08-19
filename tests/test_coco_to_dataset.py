@@ -35,7 +35,7 @@ def test_converts_binarizes_and_loads(tmp_path):
     for i in (1, 2, 3):                            # masks binary + foreground (the triangle)
         m = np.asarray(Image.open(dst / "mask" / f"mask{i}.gif").convert("L"))
         assert set(np.unique(m).tolist()) <= {0, 255} and (m > 0).any()
-    from training.dataset import StemDataset
+    from winmol_unet.training.dataset import StemDataset
     ds = StemDataset(str(dst / "train"), str(dst / "mask"))
     assert len(ds) == 3
     _, mask = ds[0]

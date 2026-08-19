@@ -6,10 +6,10 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader
 
-from training.config import TrainConfig
-from training.dataset import StemDataset
-from training.train import train_one_run
-from training.run_train import config_from_args
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.dataset import StemDataset
+from winmol_unet.training.train import train_one_run
+from winmol_unet.training.run_train import config_from_args
 from winmol_unet.model import UNet
 
 

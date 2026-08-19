@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from training.model_factory import build_model
+from winmol_unet.training.model_factory import build_model
 
 
 def test_unet_returns_contract_shaped_logits():

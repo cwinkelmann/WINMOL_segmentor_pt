@@ -7,8 +7,8 @@ no-op that still produces plausible numbers.
 import numpy as np
 import pytest
 
-from training.augment import build_augmentation
-from training.run_train import config_from_args
+from winmol_unet.training.augment import build_augmentation
+from winmol_unet.training.run_train import config_from_args
 
 
 def _args(tmp_path, *extra):

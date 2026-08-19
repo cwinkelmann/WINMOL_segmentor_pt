@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from training.dataset import StemDataset
+from winmol_unet.training.dataset import StemDataset
 
 
 def _pair(img_dir, mask_dir, n):
@@ -36,7 +36,7 @@ def test_loader_with_workers_and_transform(tmp_path):
     # spawn; per-worker reseed via run_train._worker_init). Locks the large-dataset path.
     import albumentations as A
     from torch.utils.data import DataLoader
-    from training.run_train import _worker_init
+    from winmol_unet.training.run_train import _worker_init
     img_dir, mask_dir = tmp_path / "train", tmp_path / "mask"
     for n in range(1, 5):
         _pair(img_dir, mask_dir, n)

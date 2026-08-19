@@ -5,8 +5,8 @@ import numpy as np
 import torch
 from PIL import Image
 
-from training.config import TrainConfig
-from training.run_train import run_training
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.run_train import run_training
 from winmol_unet.model import UNet
 
 

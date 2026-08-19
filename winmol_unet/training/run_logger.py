@@ -11,7 +11,7 @@ class RunLogger:
         # `tensorboard` package, which loads TensorFlow when TF is installed in the same
         # environment. Doing that at import time, after torch's native libraries are
         # already loaded, deadlocks inside TF's abseil mutex ("RAW: Lock blocking") — so
-        # merely importing training.run_train hangs forever on a machine that has both.
+        # merely importing winmol_unet.training.run_train hangs forever on a machine that has both.
         # That made the whole test suite unrunnable there while CI (no TF) stayed green.
         # The same reason run_train.py imports winmol_unet.export_keras lazily.
         from torch.utils.tensorboard import SummaryWriter

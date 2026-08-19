@@ -15,10 +15,10 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
-from training.config import TrainConfig
-from training.dataset import StemDataset
-from training.evaluate import evaluate
-from training.model_factory import build_model
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.dataset import StemDataset
+from winmol_unet.training.evaluate import evaluate
+from winmol_unet.training.model_factory import build_model
 
 
 def score(model_path, arch, test_data_dir, encoder=None, batch_size=16, device="cuda",
@@ -31,7 +31,7 @@ def score(model_path, arch, test_data_dir, encoder=None, batch_size=16, device="
         state = state.get("state_dict", state)
     model.load_state_dict(state)
 
-    from training.device import resolve_device
+    from winmol_unet.training.device import resolve_device
     model.to(resolve_device(device)).eval()
 
     ds = StemDataset(os.path.join(test_data_dir, "train"),

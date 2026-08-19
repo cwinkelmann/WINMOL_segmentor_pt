@@ -21,7 +21,7 @@ import sys
 # make the dev-only `training` package importable when run as `python scripts/...`
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from training.dataset import _paired_ids
+from winmol_unet.training.dataset import _paired_ids
 
 
 def split_dataset(src_dir, dst_dir, val_fraction=0.2, seed=1):
@@ -31,7 +31,7 @@ def split_dataset(src_dir, dst_dir, val_fraction=0.2, seed=1):
     if not ids:
         raise ValueError(f"no paired train*/mask* files under {src_dir}")
 
-    # identical to training.dataset.train_val_split so the split matches at load time
+    # identical to winmol_unet.training.dataset.train_val_split so the split matches at load time
     rng = random.Random(seed)
     shuffled = ids[:]
     rng.shuffle(shuffled)

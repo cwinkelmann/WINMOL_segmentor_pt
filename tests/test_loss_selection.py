@@ -6,8 +6,8 @@ BCE alone. `--loss bce` reproduces that, which makes the soft-F1 term ablatable.
 """
 import torch
 
-from training.losses import LOSSES, bce_loss, bce_soft_f1_loss
-from training.run_train import config_from_args
+from winmol_unet.training.losses import LOSSES, bce_loss, bce_soft_f1_loss
+from winmol_unet.training.run_train import config_from_args
 
 
 def test_both_losses_registered_and_distinct():
@@ -77,7 +77,7 @@ def test_label_smoothing_touches_only_the_edge_band():
     That is the whole point: false negatives are 1.59x enriched within 2 px of an
     annotation edge, while interiors are pixels the annotators were sure about.
     """
-    from training.losses import soften_targets
+    from winmol_unet.training.losses import soften_targets
 
     t = torch.zeros(1, 1, 11, 11)
     t[0, 0, 4:7, 4:7] = 1.0                        # a 3x3 stem

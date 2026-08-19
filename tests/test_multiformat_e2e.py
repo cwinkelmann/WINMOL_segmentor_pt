@@ -3,8 +3,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from training.config import TrainConfig
-from training.run_train import run_training, config_from_args
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.run_train import run_training, config_from_args
 
 
 def _make_ds(tmp_path, n=6):

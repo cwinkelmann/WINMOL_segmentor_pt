@@ -3,8 +3,8 @@ import os
 import numpy as np
 from PIL import Image
 
-from training.config import TrainConfig
-from training.run_train import config_from_args, run_two_stage
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.run_train import config_from_args, run_two_stage
 
 
 def _ds(d, n=6):
@@ -83,7 +83,7 @@ def test_two_stage_stage2_validates_on_the_given_val_dir(tmp_path, monkeypatch):
     )
 
     seen = []
-    import training.run_train as rt
+    import winmol_unet.training.run_train as rt
     real = rt._build_loaders
 
     def spy(image_dir, mask_dir, c, transform, val_image_dir=None, val_mask_dir=None):

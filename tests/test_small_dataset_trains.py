@@ -5,8 +5,8 @@ import numpy as np
 from PIL import Image
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
-from training.config import TrainConfig
-from training.run_train import run_training
+from winmol_unet.training.config import TrainConfig
+from winmol_unet.training.run_train import run_training
 
 
 def test_training_runs_when_train_split_smaller_than_batch(tmp_path):

@@ -25,10 +25,10 @@ Use the conda env **`WINMOL_segmentor_pt`** (`~/opt/anaconda3/envs/WINMOL_segmen
 
 ```bash
 # single-stage
-python -m training.run_train --data-dir <DS> --out-dir output/run --arch deeplabv3plus \
+python -m winmol_unet.training.run_train --data-dir <DS> --out-dir output/run --arch deeplabv3plus \
   --encoder resnet34 --encoder-weights imagenet --epochs 20 --device mps
 # two-stage (GenDS -> SpecDS fine-tune)
-python -m training.run_train --gen-data-dir <GEN> --spec-data-dir <SPEC> --arch deeplabv3plus ...
+python -m winmol_unet.training.run_train --gen-data-dir <GEN> --spec-data-dir <SPEC> --arch deeplabv3plus ...
 python scripts/build_dataset.py --src <raw> --dst <ready>          # convert to loader format
 python scripts/benchmark_architectures.py --gen-data-dir <GEN> --spec-data-dir <SPEC> --out-dir results
 ```
