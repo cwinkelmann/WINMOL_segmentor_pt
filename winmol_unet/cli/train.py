@@ -42,15 +42,20 @@ def main(argv=None):
         print(f"recipe {name}: {recipes.describe(name)}")
         for key, value in sorted(recipes.RECIPES[name].items()):
             print(f"  {key} = {value}")
+        print(f"\nNote: {recipes.SCHEDULE_NOTE}")
         if name in recipes.UNEVALUATED:
             print("\nUNEVALUATED: no measurement in this repo backs this recipe. "
                   "Do not report a result from it as a comparison without running it "
                   "through the winmol-experiment procedure first.")
         return 0
 
-    args, applied = recipes.apply(args.recipe, args, parser)
+    # argv is passed so "explicit" means "present on the command line", not "differs
+    # from the default" — otherwise `--aug-hsv-p 0.5` (which is also the default) would
+    # lose to `--recipe robust` and silently become the strong-hue arm.
+    args, applied = recipes.apply(args.recipe, args, parser, argv)
     if args.recipe:
         print(f"recipe {args.recipe}: " + (", ".join(applied) if applied else "no changes"))
+        print(f"note: {recipes.SCHEDULE_NOTE}")
         if args.recipe in recipes.UNEVALUATED:
             print(f"WARNING: recipe {args.recipe!r} is UNEVALUATED — nothing in docs/ "
                   f"measures it. Treat any result from it as provisional.")

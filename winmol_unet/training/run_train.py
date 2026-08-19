@@ -238,7 +238,16 @@ def run_two_stage(cfg):
     return val_metrics
 
 
-def config_from_args(argv=None):
+def build_parser():
+    """The full training flag surface, as a parser that has not parsed anything yet.
+
+    Split out of `config_from_args` so a caller can add flags of its own and, more
+    importantly, can tell "the user passed this value" apart from "this is the default".
+    argparse cannot answer that after the fact, so `training.recipes.apply` compares
+    each parsed value against `parser.get_default(...)` — which needs the parser object.
+    That is what lets `--recipe robust --aug-hsv-p 0.5` mean "robust, but deliberately
+    weaker hue", instead of silently picking one of the two.
+    """
     p = argparse.ArgumentParser()
     p.add_argument("--data-dir", default=None, help="single-stage dataset dir")
     p.add_argument("--val-data-dir", default=None,
@@ -307,7 +316,23 @@ def config_from_args(argv=None):
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
     p.add_argument("--export-keras", action="store_true",
                    help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
-    a = p.parse_args(argv)
+    return p
+
+
+def config_from_args(argv=None):
+    """Parse `argv` and build the TrainConfig. The unchanged entry point."""
+    p = build_parser()
+    return config_from_parsed(p.parse_args(argv), p)
+
+
+def config_from_parsed(a, p):
+    """Build a TrainConfig from already-parsed args.
+
+    Separate from `config_from_args` so a caller that needs to inspect or adjust the
+    parsed namespace first — applying a recipe, say — still lands in exactly one place
+    where the namespace becomes a config. Two code paths building TrainConfig from
+    flags would drift.
+    """
     two_stage = a.gen_data_dir and a.spec_data_dir
     if not a.data_dir and not two_stage:
         p.error("provide --data-dir (single-stage) or both --gen-data-dir and --spec-data-dir")
