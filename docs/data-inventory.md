@@ -55,17 +55,20 @@ serving scale unless resampled — which is what `--extent`/`--tile-px` extracti
 
 ## 2. Stem annotations — only 8 sites carry them
 
-| acquisition | site | species | polygons | stem area | AOI | CRS |
-|---|---|---|---:|---:|---:|---|
-| 2017-10-16 | Campus | beech | 822 | 2,908 m² | 118,808 m² | 32633 |
-| 2017-11-14 | Bachsee_north | beech | 136 | 451 m² | 31,527 m² | **25833** |
-| 2021-07-06 | Kaufland | mixed | 125 | 250 m² | 5,393 m² | 25833 |
-| 2022-02-26 | Campus_Oberheide | **mixed** | 490 | 1,917 m² | 111,631 m² | 25833 |
-| 2022-02-09 | Bremerhagen_3 | spruce | 158 | 180 m² | 2,566 m² | 25833 |
-| 2022-02-12 | Barnekow_3 | spruce/pine | 358 | 741 m² | 15,516 m² | 25833 |
-| 2022-02-12 | Barnekow_5 | spruce/pine | 1,012 | 1,826 m² | 27,788 m² | 25833 |
-| 2022-02-12 | Barnekow_6 | spruce | 741 | 1,528 m² | *none* | 25833 |
-| | **total** | | **3,842** | **9,802 m² = 0.98 ha** | | |
+Units are in the header rather than every cell, and dates are in section 1.
+All layers are `EPSG:25833` **except Campus, which is 32633**.
+
+| site | species | polygons | stem m² | AOI m² |
+|---|---|---:|---:|---:|
+| Campus | beech | 822 | 2,908 | 118,808 |
+| Bachsee_north | beech | 136 | 451 | 31,527 |
+| Kaufland | mixed | 125 | 250 | 5,393 |
+| Campus_Oberheide | **mixed** | 490 | 1,917 | 111,631 |
+| Bremerhagen_3 | spruce | 158 | 180 | 2,566 |
+| Barnekow_3 | spruce/pine | 358 | 741 | 15,516 |
+| Barnekow_5 | spruce/pine | 1,012 | 1,826 | 27,788 |
+| Barnekow_6 | spruce | 741 | 1,528 | *none* |
+| **total** | | **3,842** | **9,802** = 0.98 ha | |
 
 A ninth file, `202171114_EW_WW_Bachsee_north`, is a **typo'd duplicate** of the 2017-11-14
 layer — the same 136 polygons and 451 m². It has no matching orthomosaic. Ignore it; do

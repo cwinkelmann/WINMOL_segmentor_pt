@@ -28,6 +28,11 @@ trap 'rm -rf "$TMP"' EXIT
 cat > "$TMP/header.tex" <<'TEX'
 \usepackage{graphicx}
 \setkeys{Gin}{width=\linewidth,height=0.80\textheight,keepaspectratio}
+% Several tables carry 6-7 columns and overflowed the text block at 10pt. Shrink table
+% type only - body text stays readable - and let long tables break across pages.
+\usepackage{etoolbox}
+\AtBeginEnvironment{longtable}{\footnotesize}
+\AtBeginEnvironment{tabular}{\footnotesize}
 TEX
 
 SRC=()

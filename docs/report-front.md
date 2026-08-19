@@ -50,9 +50,14 @@ touch deliberately. Jittering the training footprint ±30% makes a model robust 
 | UNet, within-site | 0.0334 | 0.0146 | −0.0188 (t −57.0) | **+0.0020** (3/3 seeds) |
 | UNet, clean site holdout | 0.1231 | 0.1116 | −0.0115 | **+0.0328** (3/3 seeds) |
 
-**Recommendation: enable it by default.** It costs nothing at the deployment scale, removes
-30–56% of the degradation when the tile size moves, and on the one clean site holdout where
-segmentation works at all it is worth **+3.3 F1** at the deployment scale.
+**Recommendation: enable it by default.** It costs nothing at the deployment scale and
+removes 30–56% of the degradation when the tile size moves.
+
+On the one clean site holdout it also *gained* accuracy — but treat that number with care:
+the per-seed differences were **+1.1, +3.3 and +5.5 F1** (mean +3.3, 3/3 positive, but
+|t| = 2.6, **below the |t| ≥ 3 bar used elsewhere in this report**). One plot, one
+architecture, three seeds. The direction is consistent; the magnitude is not well
+determined, and it should not be quoted as "+3.3" without that range.
 
 It does **not** replace matching the training scale to the serving scale — that is worth
 14.6 F1 against this 0.9–3.3. Do both.
@@ -79,6 +84,10 @@ are wrong.
 | Are the labels misregistered? Annotations are EPSG:25833, ortho EPSG:32633 — a datum pair diverging ~0.5 m. | **No.** On the orthomosaic's own grid every beech site peaks at **zero** offset; residual under 4 cm. |
 | Are the stems invisible under closed canopy? | **No.** That came from a *luminance-only* statistic. In CIELAB, Bachsee's stem/background separation is **1.75** — second highest in the corpus, above Campus's **1.16**, and Campus scores F1 0.53. |
 | Is the site learnable at all? | **Yes.** Trained on 252 tiles from its own west half and tested on the spatially separated east half: **F1 0.6203**. |
+
+![Colour domain by site — Bachsee_north is the only late-autumn acquisition](figures/loso-site-domains.png)
+
+![One labelled stem per panel: bare, then outlined. Bachsee's stems are visible](figures/bachsee-closeups.png)
 
 **252 of its own tiles beat 3,588 tiles from every other site by 53 F1 points.** The data
 is sound; the failure is **domain shift**.

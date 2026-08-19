@@ -63,6 +63,18 @@ Verified three independent ways:
   shifts recall **+3.8** and precision **−2.5** (4/4 seeds, paired t 4.86 / −5.47). So the
   term does something once it has a gradient; in the published form it does nothing.
 
+**One important qualification** (re-verified 2026-08-19). "The term does nothing" is too
+strong. It contributes no *gradient*, so the optimisation is pure BCE — confirmed again in
+torch, where the composite and plain-BCE gradients are bit-identical (max difference exactly
+0.0), while a *differentiable* soft-F1 term does change them (2.6e-4), so the test is
+sensitive enough to detect a real difference.
+
+But the composite **value** is what Keras monitors: `save_best_only` on `val_loss`,
+`ReduceLROnPlateau` on `val_loss`, and early stopping all read `BCE + (1 − F1)`. That ranks
+epochs differently from BCE alone, so **which checkpoint is kept and when the learning rate
+drops can differ**, even though every training step is identical. The term is inert in the
+optimiser and active in model selection.
+
 This does not invalidate the results — BCE is a reasonable loss — but the stated rationale
 for the loss choice is not what the model experienced.
 
@@ -126,7 +138,9 @@ describe a different version or the figure is wrong; the shipped default is 50 c
 
 ## 7. Two coordinate traps in the vectoriser
 
-Both produce plausible geometry rather than an error, so they are invisible without checking:
+**Re-checked 2026-08-19 against the current `winmol-oom-fix` version: both are still
+present.** Both produce plausible geometry rather than an error, so they are invisible
+without checking:
 
 - **The skeletonisation pad is never removed.** `find_segments` pads by
   `max_tree_height / px_size` and returns coordinates still carrying that offset — 1530 px
@@ -136,7 +150,9 @@ Both produce plausible geometry rather than an error, so they are invisible with
   count. World coordinates are applied only at write time. `calc_v_d_edt` passes
   `stem.path.coords` to `_xy_to_rowcol`, which reads them as easting/northing — so the
   **EDT diameter branch appears broken**; the default contour path is self-consistent in
-  pixel space.
+  pixel space. The current version adds a bounds check returning `radius = 0.0` when the
+  bogus index falls outside the map, so the bug now fails **silently as zero diameters**
+  rather than raising — harder to notice, not easier.
 
 ## 8. CLI: `Stems` does not vectorise
 
