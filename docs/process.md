@@ -10,7 +10,8 @@ grid, whole blocks are dealt to splits, and each block is then shrunk by the foo
 half-diagonal. Two centres on opposite sides of a shared edge are therefore at least
 `extent · √2` apart — the distance below which two rotated footprints can share a pixel.
 
-**Verification is a pass/fail check, not a discussion.** `scripts/plot_splits.py` prints
+**Verification is a pass/fail check, not a discussion.** `plot_splits.py` (private helper
+repo) prints
 the measured closest centre-to-centre distance per site and exits non-zero if a site is
 missing from a split. Run it after every build; report the number once.
 
@@ -59,7 +60,7 @@ scale is still worth far more than being robust to it — do both.
 ## Reporting
 
 - Numbers come from each run's own `test_results.md`, collected by
-  `scripts/collect_results.py` into JSON. Reports render from that JSON.
+  `collect_results.py` (private helper repo) into JSON. Reports render from that JSON.
 - State the test set and the training scale beside every figure.
 - One line per caveat, in a caveats section. Not inline.
 

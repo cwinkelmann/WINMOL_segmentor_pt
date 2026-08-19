@@ -50,7 +50,8 @@ wrong and are recorded here because each looked convincing.
 **Not a labelling error.** Its annotations are EPSG:25833 and its orthomosaic EPSG:32633 —
 the same UTM zone on different datums, a pair that has diverged ~0.5 m through plate
 motion, and already logged as a known defect. Measured with
-`scripts/check_registration.py` on the orthomosaic's **own unrotated grid**, every beech
+`check_registration.py` (private helper repo) on the orthomosaic's **own unrotated
+grid**, every beech
 site peaks at zero offset:
 
 | site | stems / ortho CRS | contrast at zero | bright peak | verdict |

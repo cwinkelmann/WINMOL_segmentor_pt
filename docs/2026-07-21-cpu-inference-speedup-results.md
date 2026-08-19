@@ -2,7 +2,7 @@
 
 **Goal:** make `winmol_unet.model.UNet` faster on **pure CPU** (ONNX Runtime CPU EP) within a
 **≤0.03 F1** budget, contract unchanged. Branch `feat/cpu-inference-speedup`. Design:
-`docs/superpowers/specs/2026-07-21-cpu-inference-speedup-design.md`.
+`specs/2026-07-21-cpu-inference-speedup-design.md` (private helper repo).
 
 **Setup.** CPU = 12th Gen i7-1255U (AVX2 + **AVX-VNNI** → hardware int8), ORT CPU EP, 4 intra-op
 threads, batch 1 (the CPU-bound single-tile case). Latency = median of 30 timed `session.run`
@@ -146,8 +146,9 @@ session must pass provider *options*, so `OnnxSegmenter` would need a small chan
 - `results/cpu_speedup/train/{w10,w05,w025}/model.onnx` + `.pt` — retrained width variants (fp32).
 - `results/cpu_speedup/models/{w05_static,w025_static,fp32unet_static,fp32unet_dyn}.onnx` — int8.
 - `results/cpu_speedup/{sweep.md,sweep.json,thread_sweep.json}` — raw measurements.
-- Tooling: `scripts/benchmark_cpu_latency.py`, `scripts/quantize_unet.py`,
-  `scripts/run_cpu_speedup_benchmark.sh`; `UNet(width_mult=)` + `run_train --width-mult`.
+- Tooling: `scripts/quantize_unet.py` (this repo); `benchmark_cpu_latency.py` and
+  `run_cpu_speedup_benchmark.sh` (private helper repo); `UNet(width_mult=)` +
+  `run_train --width-mult`.
 
 All quantized models pass `validate_onnx_model` and serve through `OnnxSegmenter` (dynamic batch,
 sigmoid output) — the analyzer loads them unchanged.

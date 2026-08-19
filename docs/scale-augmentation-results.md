@@ -1,10 +1,12 @@
 # Scale augmentation: ±30% footprint jitter buys robustness for free
 
-Design and yardstick were fixed before training —
-[`superpowers/specs/2026-08-13-scale-augmentation-design.md`](superpowers/specs/2026-08-13-scale-augmentation-design.md).
+Design and yardstick were fixed before training — pre-registered in
+`specs/2026-08-13-scale-augmentation-design.md`, which now lives in the private helper
+repo alongside the tooling below.
 Numbers below are copied verbatim from
 [`assets/scale-sweep.json`](assets/scale-sweep.json), rendered by
-`scripts/plot_scale_sweep.py` from the six per-model sweeps in `assets/scale-aug/`.
+`plot_scale_sweep.py` (private helper repo) from the six per-model sweeps in
+`assets/scale-aug/`. The sweeps themselves were cut by `scale_sweep.py`, same repo.
 
 **Answer: ship it.** Measured on two architectures. On HRNet, jitter flattens the scale
 curve by **0.87 F1** (3/3 seeds, paired t −6.02) and costs **0.11 F1** at the native scale

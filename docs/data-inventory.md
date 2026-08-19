@@ -135,7 +135,8 @@ applied once instead of every epoch, verified to reproduce the loader's array to
 ## 5. Datasets built in this repo
 
 All carry `tiles.jsonl` (source ortho, world centre, rotation, GSD, stem fraction), which
-is what makes any tile traceable back to the ground via `scripts/locate_tile.py`.
+is what makes any tile traceable back to the ground via `locate_tile.py` (private helper
+repo).
 
 | dataset | tiles | tile px | extent | GSD | purpose |
 |---|---:|---:|---:|---:|---|
@@ -181,7 +182,7 @@ plots. Species names are free text with the same variant problem as the older co
   metres rather than failing. `20171114_EW_WW_Bachsee_north` has annotations in 25833 and
   its ortho in 32633. Both scripts reproject explicitly, and this was **verified**: every
   beech site's polygons peak at zero offset on its own raster grid
-  (`scripts/check_registration.py`), residual under 4 cm.
+  (`check_registration.py`, private helper repo), residual under 4 cm.
 - **One orthomosaic has no CRS at all** (`20240719_FR17203_Abt-128_129_30.tif`). It is
   unannotated, so nothing depends on it yet.
 - **`202171114_EW_WW_Bachsee_north`** — typo'd duplicate, see above.
