@@ -328,20 +328,8 @@ def test_manifest_appends_across_sites_rather_than_overwriting(site, tmp_path):
     assert [r["n"] for r in recs] == [1, 2, 3, 4, 5, 6]
 
 
-def test_locate_tile_round_trips_a_tile_to_its_source(site, tmp_path):
-    from scripts.locate_tile import find, native_crop
-
-    out = tmp_path / "ds"
-    sample_tiles(site["ortho"], site["stems"], site["aoi"], str(out),
-                 limit=4, seed=1, quiet=True)
-
-    rec = find(str(out), 3)
-    assert rec["n"] == 3 and rec["site"] == "site"
-    info = native_crop(rec, str(tmp_path / "crop.png"))
-    # the fixture ortho is 2 cm/px and tiles are 15 m / 512 px = 2.93 cm/px
-    assert info["native_gsd_cm"] == pytest.approx(2.0, abs=0.01)
-    assert os.path.exists(info["path"])
-
+# test_locate_tile_round_trips_a_tile_to_its_source
+# moved to the private helper repo with its subject (scripts/locate_tile.py).
 
 def test_an_empty_split_names_the_split_it_would_silently_drop(site, tmp_path):
     """A split with no usable ground must say so, not leave a hole in the dataset.
