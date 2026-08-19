@@ -22,21 +22,66 @@ The four findings that most change how you use this repo:
 | **Strong hue augmentation** takes a held-out site from **F1 0.042 to 0.688**; site holdouts are viable now. | [`scale-augmentation-loso.md`](docs/scale-augmentation-loso.md) |
 | **The published method's composite loss does not train** — it calls the rounded metric, so the model trains on plain BCE. | [`reder-method-gaps-closed.md`](docs/reder-method-gaps-closed.md) |
 
-Experiment designs are pre-registered in [`docs/superpowers/specs/`](docs/superpowers/specs)
-*before* the runs; deviations are recorded in the matching results document.
+Experiment designs are pre-registered *before* the runs, and deviations are recorded in the
+matching results document. Those pre-registrations, together with the full results archive
+(including the superseded documents and the one-off experiment scripts), live in a private
+companion repository — this one keeps the code and the current findings.
 
 ## Install
 
 ```bash
-pip install -e ".[train]"           # training: torch, smp, albumentations, tensorboard
+pip install -e ".[train,geo]"       # the usual one: training + reading orthomosaics
+pip install -e ".[train]"           # training only: torch, smp, albumentations, tensorboard
+pip install -e ".[geo]"             # rasterio, fiona, shapely — prepare / infer / evaluate
+pip install -e ".[optimize]"        # onnxconverter-common — fp16/int8 release artifacts
 pip install -e ".[train,keras]"     # + TensorFlow, for the legacy-analyzer HDF5 export
 pip install -e ".[train,wandb]"     # + Weights & Biases logging
 pip install -e "."                  # serve ONNX only: onnxruntime + numpy, no torch/TF
 ```
 
 The last line is what the WINMOL Analyzer installs: `winmol_unet` serves exported ONNX
-through `OnnxSegmenter` **without** torch or TensorFlow. Only add `[keras]` if you need
-the HDF5 drop-in described under [Legacy analyzer](#legacy-analyzer-hdf5-drop-in).
+through `OnnxSegmenter` **without** torch, TensorFlow or GDAL. Only add `[keras]` if you
+need the HDF5 drop-in described under [Legacy analyzer](#legacy-analyzer-hdf5-drop-in).
+
+## The four commands
+
+Everything this repo does runs through four scripts at the root. Each also installs as a
+console script (`winmol-prepare`, `winmol-train`, `winmol-infer`, `winmol-evaluate`) that
+runs identical code.
+
+```bash
+# 1. orthomosaic + digitised stems -> leak-free training tiles
+python prepare.py --config configs/sites.example.json --out data/beech --strategy blocks
+
+# 2. train, with a measured augmentation preset
+python train.py --data-dir data/beech --out-dir runs/beech --arch hrnet \
+                --recipe robust --epochs 40 --batch-size 16 --deterministic
+
+# 3. apply the model to an orthomosaic -> georeferenced stem map
+python infer.py --model runs/beech/model.onnx --ortho site.tif --aoi site_AOE.shp \
+                --out pred.tif
+
+# 4. score it — on tiles, on the ground, or an existing Analyzer stem map
+python evaluate.py --model runs/beech/model.onnx --data-dir data/beech/test
+python evaluate.py --model runs/beech/model.onnx --ortho site.tif --aoi site_AOE.shp \
+                   --stems site.shp
+```
+
+Three things decide whether the resulting numbers mean anything:
+
+- **Scale is a knob you set, not a property of your imagery.** A tile covers `--extent-m`
+  of ground and is resized to 512 px, so effective resolution is `extent_m / 512`. It must
+  match across `prepare.py`, `infer.py` and the Analyzer's `tile_size`. Getting this wrong,
+  rather than the model, is the largest single effect measured here (**+14.6 F1**).
+- **Splits partition the ground, not the tile list.** Sampling oversamples and tiles are cut
+  at random rotations, so they overlap; a random split of the tile list leaks. Every run
+  writes `tiles.jsonl`, so leak-freedom can be verified numerically instead of assumed.
+- **Score inside the AOI.** Outside the windthrow polygon stems are real but were never
+  digitised, so scoring the whole raster counts correct detections as false positives — and
+  penalises the better model hardest.
+
+`python train.py --print-recipe robust` prints exactly what a preset sets, and what it
+deliberately leaves to you (the training schedule), without training anything.
 
 ## Pretrained models
 
@@ -86,7 +131,7 @@ model was trained single-stage on SpecDS, then quantized:
 
 ```bash
 # 1. train (full, or --width-mult 0.5 for the smaller/faster model)
-python -m training.run_train --arch unet --width-mult 0.5 \
+python train.py --arch unet --width-mult 0.5 \
   --data-dir <SpecDS> --test-data-dir <TestDS> --out-dir output/w05 --device cuda
 
 # 2. quantize the exported ONNX — no retraining (see Model optimization)
@@ -103,7 +148,7 @@ The data directory must contain `train/` (jpeg images named `trainN.jpeg`) and
 `mask/` (gif masks named `maskN.gif`), paired by the integer `N`.
 
 ```bash
-python -m training.run_train \
+python train.py \
   --data-dir /path/to/SpecDS \
   --out-dir output/run1 \
   --epochs 20 --batch-size 4 --device mps \
@@ -127,7 +172,7 @@ the same way via `OnnxSegmenter`. The Keras `.hdf5`/`.keras` mirror is UNet-spec
 opt-in with `--export-keras` (for the unmodified-analyzer drop-in). Example:
 
 ```bash
-python -m training.run_train --data-dir /path/to/SpecDS --out-dir output/deeplab \
+python train.py --data-dir /path/to/SpecDS --out-dir output/deeplab \
   --arch deeplabv3plus --encoder resnet34 --encoder-weights imagenet \
   --epochs 20 --device mps
 ```
@@ -142,7 +187,7 @@ loading branch is in place — it never inspects the architecture.
 default 5); final metrics + export come from the species model.
 
 ```bash
-python -m training.run_train --arch deeplabv3plus --encoder resnet34 --encoder-weights imagenet \
+python train.py --arch deeplabv3plus --encoder resnet34 --encoder-weights imagenet \
   --gen-data-dir /path/to/GenDS --spec-data-dir /path/to/spruce \
   --out-dir output/spruce2stage --epochs 20 --device mps --no-cache-dataset --num-workers 4
 ```
@@ -164,7 +209,8 @@ windthrow area) rather than from image/mask folders, install `pip install -e ".[
 and use:
 
 ```bash
-python scripts/inventory_training_data.py --root /path/to/training_data   # what pairs, what is broken
+python inventory_training_data.py --root /path/to/training_data   # what pairs, what is broken
+#   ^ in the private helper repo, with the rest of the experiment tooling
 python scripts/sample_training_tiles.py --ortho <site>_ortho.tif \
   --stems <site>.shp --aoi <site>_AOE.shp --out /path/to/ready
 ```
@@ -173,7 +219,7 @@ python scripts/sample_training_tiles.py --ortho <site>_ortho.tif \
 rotated 15 m footprints drawn **inside the digitized windthrow area**, heavily
 oversampled, and rejected unless stems cover at least 0.5% of the tile. Stems cover only
 about 1% of a site, so a regular grid yields near-empty tiles. See
-[docs/training-data-from-annotations.md](docs/training-data-from-annotations.md) for what
+`training-data-from-annotations.md` (private helper repo) for what
 the corpus contains, why the area polygon is not optional, and the CRS and species-code
 defects to expect.
 
@@ -184,7 +230,7 @@ so PyTorch and R evaluate on the same tiles), materialize it once and train agai
 
 ```bash
 python scripts/split_dataset.py --src /path/to/ready --dst /path/to/split   # -> split/{train,val}
-python -m training.run_train --data-dir /path/to/split/train \
+python train.py --data-dir /path/to/split/train \
   --val-data-dir /path/to/split/val --arch deeplabv3plus ...
 ```
 
@@ -264,12 +310,12 @@ python scripts/quantize_unet.py model.onnx model_int8.onnx \
 python scripts/quantize_unet.py model.onnx model_fp16.onnx --mode fp16
 
 # smaller model (needs retraining) — half the channel width, ~4× fewer FLOPs:
-python -m training.run_train --arch unet --width-mult 0.5 --data-dir <DS> --out-dir out/w05
+python train.py --arch unet --width-mult 0.5 --data-dir <DS> --out-dir out/w05
 
 # measure it — CPU latency+F1, and GPU latency:
-python scripts/benchmark_cpu_latency.py model.onnx model_int8.onnx --test-data-dir <TestDS> \
+python benchmark_cpu_latency.py model.onnx model_int8.onnx --test-data-dir <TestDS> \   # helper repo
   --threads 4 --thread-sweep 1,2,4,8
-python scripts/benchmark_gpu_latency.py --widths 1.0,0.5,0.25 --dtypes fp32,fp16   # winmol-onnxgpu
+python benchmark_gpu_latency.py --widths 1.0,0.5,0.25 --dtypes fp32,fp16   # helper repo; winmol-onnxgpu
 ```
 
 **Don't use dynamic int8** (`--mode dynamic`) for these conv nets — ORT has no fast dynamic-conv
@@ -295,7 +341,7 @@ docker run --rm -e PYTHONPATH=/app -v "$PWD":/app -w /app -v <models>:/models:ro
   out/model_UNet_SpecDS_Beech_512.onnx
 ```
 
-`scripts/build_keras_onnx_models.sh` runs the whole flow end-to-end (convert all flavours →
+`build_keras_onnx_models.sh` (private helper repo) runs the whole flow end-to-end (convert all flavours →
 fp16 + domain-calibrated int8 → verify F1). Publish artifacts to a GitHub Release with
 `scripts/deploy_models_to_release.py` (`--dry-run` first).
 
@@ -307,7 +353,7 @@ The original WINMOL Analyzer loads a Keras `.hdf5` U-Net. To produce one, instal
 ```bash
 pip install -e ".[train,keras]"
 
-python -m training.run_train --data-dir /path/to/SpecDS --out-dir output/legacy \
+python train.py --data-dir /path/to/SpecDS --out-dir output/legacy \
   --arch unet --export-keras --epochs 20 --device mps
 ```
 

@@ -4,12 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`winmol_unet` re-implements the WINMOL tree-stem segmentation model (originally R + Keras/TensorFlow in the sibling `WINMOL_segmentor` repo) in **PyTorch**, and bridges trained models to the Python `WINMOL_Analyzer` via **ONNX** (and, for UNet, an optional Keras HDF5 drop-in). Cross-repo design docs live in `docs/` (start with `docs/2026-07-02-segmentor-pytorch-onnx-design.md` and the specs/plans under `docs/superpowers/`).
+`winmol_unet` re-implements the WINMOL tree-stem segmentation model (originally R + Keras/TensorFlow in the sibling `WINMOL_segmentor` repo) in **PyTorch**, and bridges trained models to the Python `WINMOL_Analyzer` via **ONNX** (and, for UNet, an optional Keras HDF5 drop-in). Cross-repo design docs live in `docs/` (start with `docs/2026-07-02-segmentor-pytorch-onnx-design.md`, which specifies the frozen ONNX contract). The full experiment record — every results document including the superseded ones, the pre-registered designs, and the one-off experiment scripts — lives in the **private helper repo** alongside this one; `docs/README.md` says what stayed and what went.
 
 ## Commands
 
 ```bash
+pip install -e "."               # serve ONNX only: onnxruntime + numpy. What the analyzer installs.
 pip install -e ".[train]"        # torch, torchvision, pillow, tensorboard, albumentations, segmentation-models-pytorch
+pip install -e ".[geo]"          # rasterio, fiona, shapely — prepare.py / infer.py / evaluate.py
+pip install -e ".[optimize]"     # onnxconverter-common — rebuilding the fp16 release assets
 pip install -e ".[keras]"        # + tensorflow (only for the UNet Keras .hdf5/.keras export)
 pip install -e ".[wandb]"        # + wandb, python-dotenv (optional logging)
 pip install -e ".[dev]"          # pytest
@@ -21,23 +24,60 @@ pytest -k onnx                   # by keyword
 
 Use the conda env **`WINMOL_segmentor_pt`** (`~/opt/anaconda3/envs/WINMOL_segmentor_pt/bin/python`, Python 3.11) — it runs the repo, the WINMOL Analyzer and Keras-2 `.hdf5` loads from one interpreter. The old `.venv/` was Python 3.9 and has been removed: it could not import the Analyzer at all (`utils/IO.py` uses `str | None`, needing 3.10+). Many tests train small models and are slow (minutes); the suite runs several architectures.
 
-### Training / tooling entry points
+### Entry points
+
+Four scripts at the repo root are the whole public surface. Each is a thin wrapper over
+`winmol_unet/cli/<name>.py`, so the installed console scripts (`winmol-prepare`,
+`winmol-train`, `winmol-infer`, `winmol-evaluate`) run identical code.
 
 ```bash
-# single-stage
-python -m winmol_unet.training.run_train --data-dir <DS> --out-dir output/run --arch deeplabv3plus \
-  --encoder resnet34 --encoder-weights imagenet --epochs 20 --device mps
-# two-stage (GenDS -> SpecDS fine-tune)
-python -m winmol_unet.training.run_train --gen-data-dir <GEN> --spec-data-dir <SPEC> --arch deeplabv3plus ...
+# ortho -> training tiles. Writes tiles.jsonl, which is what makes a split auditable.
+python prepare.py --config configs/sites.example.json --out <DS> --strategy blocks [--jobs 4]
+python prepare.py --ortho <O> --stems <S> --aoi <A> --out <DS> [--native-px 1024]
+
+# train. --recipe applies a measured augmentation preset; explicit flags always win.
+python train.py --data-dir <DS> --out-dir output/run --arch hrnet --recipe robust \
+  --epochs 40 --batch-size 16 --deterministic --device cuda
+python train.py --gen-data-dir <GEN> --spec-data-dir <SPEC> ...   # two-stage fine-tune
+python train.py --print-recipe robust                             # resolve and exit
+
+# apply a model to an orthomosaic -> georeferenced stem map
+python infer.py --model model.onnx --ortho <O> --aoi <A> --out pred.tif
+
+# score: on tiles, on the ground, or an existing Analyzer stem map
+python evaluate.py --model model.onnx --data-dir <DS>/test
+python evaluate.py --model model.onnx --ortho <O> --aoi <A> --stems <S>
+python evaluate.py --stem-map out.tif --aoi <A> --stems <S>
+
 python scripts/build_dataset.py --src <raw> --dst <ready>          # convert to loader format
-python scripts/benchmark_architectures.py --gen-data-dir <GEN> --spec-data-dir <SPEC> --out-dir results
 ```
 
 `--device auto` prefers MPS → CUDA → CPU. For large datasets use `--no-cache-dataset --num-workers 4`.
 
+**Recipes are augmentation-only.** `baseline`, `fixed`, `jitter`, `robust`, and `mosaic`
+(UNEVALUATED). Two traps are documented at length in `winmol_unet/training/recipes.py` and
+are worth knowing before quoting any reproduction: `multiscale=True` is *not* the jitter
+switch (the `fixed` control sets it too — the crop **range** is the variable), and rotation
+is off by default while every measured run used `--aug-rotate-p 0.5 --aug-rotate-limit 180`.
+The schedule those runs used (`--epochs 40 --batch-size 16 --deterministic`, seed varying
+by family) is *not* part of a recipe and must be passed explicitly.
+
 ## Architecture — the load-bearing ideas
 
-**Two packages with a hard boundary.** `winmol_unet/` is the **shared** package the analyzer installs; `training/` is **dev-only and must never be imported by the analyzer** (it's excluded from the wheel — `pyproject.toml` `packages = ["winmol_unet"]`). Keep heavy training deps (torch, smp, albumentations, tensorflow) out of `winmol_unet` import paths: its analyzer-facing modules (`runtime`, `contract`) import only `onnxruntime`/`numpy`, so the analyzer can `pip install winmol_unet` and serve ONNX **without** torch/tf. The model factory (`training/model_factory.py`) imports `segmentation-models-pytorch` **lazily**, only for non-UNet archs.
+**One package, one hard boundary inside it.** Everything ships as `winmol_unet`: the
+analyzer-facing core, plus the `training`, `geo` and `cli` subpackages. The boundary is no
+longer *which package* but **what gets imported eagerly** — the analyzer runs
+`pip install winmol_unet` with no torch, no TensorFlow and no GDAL, and serves ONNX
+through `runtime`/`contract`, which import only `onnxruntime`/`numpy`.
+
+So: **`winmol_unet/__init__.py` imports nothing**, and neither do `cli/__init__.py` or
+`geo/__init__.py`. Each CLI imports its heavy dependencies inside `main()`; the model
+factory (`winmol_unet/training/model_factory.py`) imports `segmentation-models-pytorch` lazily, only
+for non-UNet archs; `_export` imports `export_keras` lazily because it pulls in TensorFlow.
+`tests/test_import_boundary.py` pins this in a **subprocess** — by the time pytest reaches
+it, torch is already in `sys.modules`, so an in-process assertion would pass for the wrong
+reason. Adding one eager import to any `__init__` turns a 20 MB install into a 2 GB one
+that fails on every machine without torch, and nothing else would catch it.
 
 **`contract.py` is the frozen cross-repo interface.** ONNX I/O: NCHW input `[batch,3,512,512]` → output `[batch,1,512,512]`, dynamic batch, opset 17, sigmoid baked in at export. `validate_onnx_model()` enforces it — but spatial dims may be **fixed 512 OR dynamic** (symbolic), so architectures like smp HRNet whose decoder exports symbolic shapes still pass (a *wrong* fixed size is still rejected). Any change here is a breaking change requiring coordinated analyzer updates.
 
@@ -45,9 +85,9 @@ python scripts/benchmark_architectures.py --gen-data-dir <GEN> --spec-data-dir <
 
 **`model.py` (UNet) is a modernized adaptation of the R `model_UNet.R`, not a layer-exact port.** Documented deviations (see the docstring + design-spec §7): Conv→BN→ReLU (vs R's Conv→ReLU→BN), no BatchNorm after ConvTranspose (18 vs 22 BN), 256 filters where R had a `265` typo, and 512×512 (vs the R script's 256).
 
-**Training loop is architecture-agnostic.** `training/train.py::train_one_run` only needs `model.forward(x) → logits [N,1,512,512]`; `run_train.py::run_training` (single-stage) and `run_two_stage` (GenDS→SpecDS fine-tune: build one model, train stage 1, then fine-tune the SAME model on stage 2) wire it. Loss is `BCEWithLogits + (1 − soft_F1)` on logits; metrics are hard-rounded (sigmoid + 0.5), micro-averaged in `evaluate`.
+**Training loop is architecture-agnostic.** `winmol_unet/training/train.py::train_one_run` only needs `model.forward(x) → logits [N,1,512,512]`; `run_train.py::run_training` (single-stage) and `run_two_stage` (GenDS→SpecDS fine-tune: build one model, train stage 1, then fine-tune the SAME model on stage 2) wire it. Loss is `BCEWithLogits + (1 − soft_F1)` on logits; metrics are hard-rounded (sigmoid + 0.5), micro-averaged in `evaluate`.
 
-**Dataset convention + scale.** `training/dataset.py::StemDataset` pairs `train/train{N}.jpeg` ↔ `mask/mask{N}.gif` by integer N, resizes to 512 via `winmol_unet.preprocess` (bicubic image / nearest mask), and binarizes the mask. It has an in-memory resize cache (default on, needs `num_workers=0`); for large sets use `cache=False` + `num_workers>0`. `scripts/build_dataset.py` converts arbitrary folders (non-integer names, palette/instance masks) into this format.
+**Dataset convention + scale.** `winmol_unet/training/dataset.py::StemDataset` pairs `train/train{N}.jpeg` ↔ `mask/mask{N}.gif` by integer N, resizes to 512 via `winmol_unet.preprocess` (bicubic image / nearest mask), and binarizes the mask. It has an in-memory resize cache (default on, needs `num_workers=0`); for large sets use `cache=False` + `num_workers>0`. `scripts/build_dataset.py` converts arbitrary folders (non-integer names, palette/instance masks) into this format.
 
 ## Conventions
 
@@ -80,8 +120,10 @@ because its absence already produced a wrong result in this repo:
   metrics, so they cannot drift from what training reported.
 
 Datasets carry `tiles.jsonl` (source ortho, world centre, rotation, GSD, stem fraction);
-`scripts/locate_tile.py --tile N --crop out.png` re-cuts a tile's footprint at native
-resolution, which is what settles most label questions.
+`locate_tile.py --tile N --crop out.png` re-cuts a tile's footprint at native resolution,
+which is what settles most label questions. It lives in the private helper repo alongside
+the rest of the experiment tooling, as do the architecture and latency benchmarks, the
+scale sweeps and the figure generators.
 
 ## Running the Analyzer — use the `winmol-analyzer` skill
 
