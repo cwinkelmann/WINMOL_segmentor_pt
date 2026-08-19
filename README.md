@@ -3,6 +3,28 @@
 PyTorch re-implementation of the WINMOL tree-stem segmentation U-Net, with model
 export to ONNX and Keras (`.hdf5` / native `.keras`) for use in the WINMOL Analyzer.
 
+## Results and reports
+
+**[`docs/WINMOL-report.pdf`](docs/WINMOL-report.pdf)** — everything measured here, assembled
+for reading end to end. Rebuild it with `scripts/build_report_pdf.sh`; it renders from the
+documents below, so it cannot drift from them.
+
+**[`docs/README.md`](docs/README.md)** — index of every document, each marked *current* or
+*superseded*. Several early results were later refuted; that index says which, so nothing
+gets re-cited by mistake.
+
+The four findings that most change how you use this repo:
+
+| finding | where |
+|---|---|
+| **Scale dominates.** Effective GSD is `tile_size / 512`, a user-set knob — matching it to the training scale was worth **+14.6 F1**. | [`process.md`](docs/process.md) |
+| **±30% footprint jitter** flattens the accuracy-vs-scale curve at no cost at the serving scale. | [`scale-augmentation-results.md`](docs/scale-augmentation-results.md) |
+| **Strong hue augmentation** takes a held-out site from **F1 0.042 to 0.688**; site holdouts are viable now. | [`scale-augmentation-loso.md`](docs/scale-augmentation-loso.md) |
+| **The published method's composite loss does not train** — it calls the rounded metric, so the model trains on plain BCE. | [`reder-method-gaps-closed.md`](docs/reder-method-gaps-closed.md) |
+
+Experiment designs are pre-registered in [`docs/superpowers/specs/`](docs/superpowers/specs)
+*before* the runs; deviations are recorded in the matching results document.
+
 ## Install
 
 ```bash
