@@ -1,5 +1,4 @@
 import os
-import re
 import random
 
 import numpy as np
@@ -8,36 +7,10 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 from winmol_unet.preprocess import resize_batch, to_float01
-
-
-def _index_by_n(names, prefix, ext):
-    """Map the part between `prefix` and `ext` to the filename.
-
-    Our samplers emit `train1.jpeg` / `mask1.gif`, but the published Zenodo sets use
-    `train_100_1.jpeg` / `mask_100_1.gif`. Both pair on the shared key, so keying by the
-    raw stem reads either layout without renaming anything — important when the data is
-    a published artefact that should be used exactly as distributed.
-
-    Keys stay strings; `_sort_key` orders numeric ones numerically so `train2` still
-    precedes `train10`. macOS AppleDouble files (`._train1.jpeg`) fail the prefix test.
-    """
-    out = {}
-    for name in names:
-        if name.startswith(prefix) and name.endswith(ext):
-            out[name[len(prefix):-len(ext)]] = name
-    return out
-
-
-def _sort_key(stem):
-    """Numeric where possible, so ordering matches the old int-keyed behaviour."""
-    parts = re.split(r"(\d+)", stem)
-    return tuple((1, int(p)) if p.isdigit() else (0, p) for p in parts if p != "")
-
-
-def _paired_ids(image_dir, mask_dir):
-    imgs = _index_by_n(os.listdir(image_dir), "train", ".jpeg")
-    masks = _index_by_n(os.listdir(mask_dir), "mask", ".gif")
-    return sorted(set(imgs) & set(masks), key=_sort_key)
+# The pairing helpers live in winmol_unet.data, which is torch-free: data.split
+# needs them and should not pull torch in for filename arithmetic. Re-exported
+# here so existing `from ...training.dataset import _paired_ids` still resolves.
+from winmol_unet.data.pairing import _index_by_n, _paired_ids, _sort_key  # noqa: F401
 
 
 class StemDataset(Dataset):

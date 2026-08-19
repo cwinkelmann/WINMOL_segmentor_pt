@@ -6,8 +6,7 @@ import sys
 import numpy as np
 from PIL import Image
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-from coco_to_dataset import coco_to_dataset
+from winmol_unet.data.coco import coco_to_dataset
 
 
 def _make_coco(tmp_path, n_images=5, n_annotated=4):

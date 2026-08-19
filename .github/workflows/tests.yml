@@ -68,7 +68,12 @@ jobs:
           for m in ('winmol_unet', 'winmol_unet.contract', 'winmol_unet.runtime',
                     'winmol_unet.preprocess', 'winmol_unet.cli', 'winmol_unet.cli.prepare',
                     'winmol_unet.cli.train', 'winmol_unet.cli.infer',
-                    'winmol_unet.cli.evaluate', 'winmol_unet.geo', 'winmol_unet.training'):
+                    'winmol_unet.cli.evaluate', 'winmol_unet.geo', 'winmol_unet.training',
+                    # data/* must import on a BASE install: these are the no-GDAL,
+                    # no-torch conversion paths, and importing a helper from a torch-
+                    # importing module silently broke that once already.
+                    'winmol_unet.data', 'winmol_unet.data.pairing',
+                    'winmol_unet.data.build', 'winmol_unet.data.split'):
               importlib.import_module(m)
           print('all subpackages present in the wheel')
           "

@@ -106,6 +106,21 @@ python prepare.py --compose-folds --site-all ALL --site-tv TV \
 python prepare.py --rasterize --stems site.shp --ortho site.tif --out stem_map.tif
 ```
 
+Starting from data that is **already raster pairs** rather than from an orthomosaic? These
+three modes need no GDAL, so they work on a plain `[train]` install:
+
+```bash
+# an existing image/mask folder -> the loader convention (pairs by shared filename key,
+# renumbers, binarises palette/instance masks). Reads jpeg/png/tif/bmp.
+python prepare.py --from-folder --src raw/ --out data/ready
+
+# COCO polygon annotations -> rasterised masks
+python prepare.py --from-coco --coco-json ann.json --images-dir img/ --out data/ready
+
+# a fixed, shareable train/val split, matching the loader's own seeded split
+python prepare.py --split --src data/ready --out data/split --val-fraction 0.2 --seed 1
+```
+
 ### The site config
 
 `--config` takes a JSON file listing the sites to sample and the settings shared across
@@ -269,7 +284,7 @@ By default training takes a deterministic 80/20 split of `--data-dir`. To pin an
 shareable held-out set, materialise it once and train against it:
 
 ```bash
-python scripts/split_dataset.py --src data/ready --dst data/split   # -> split/{train,val}
+python prepare.py --split --src data/ready --out data/split   # -> split/{train,val}
 python train.py --data-dir data/split/train --val-data-dir data/split/val ...
 ```
 
@@ -318,7 +333,7 @@ leak across a split boundary.
 - **Logging** — metrics always go to TensorBoard (`<out-dir>/logs/`). Add `--wandb` (with
   `--wandb-project` / `--wandb-run-name`) for Weights & Biases; put `WANDB_API_KEY` in a
   `.env` at the repo root.
-- **Converting an existing dataset** — `python scripts/build_dataset.py --src raw --dst ready`
+- **Converting an existing dataset** — `python prepare.py --from-folder --src raw --out ready`
   pairs arbitrary image/mask folders by shared key, renumbers them, and binarises masks.
 
 ---

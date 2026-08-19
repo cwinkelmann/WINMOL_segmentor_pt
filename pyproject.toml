@@ -67,6 +67,7 @@ packages = [
     "winmol_unet",
     "winmol_unet.training",
     "winmol_unet.geo",
+    "winmol_unet.data",
     "winmol_unet.cli",
 ]
 

@@ -9,7 +9,7 @@ Each split is renumbered ``train{i}.jpeg`` / ``mask{i}.gif`` (i = 1..N) and is i
 a valid loader dataset. The source is never mutated.
 
 Usage:
-  python scripts/split_dataset.py --src /Users/christian/data/Winmol/data/SpecDS \
+  python prepare.py --split --src /Users/christian/data/Winmol/data/SpecDS \
     --dst /Users/christian/data/Winmol/data/SpecDS_split --val-fraction 0.2 --seed 1
 """
 import argparse
@@ -19,9 +19,8 @@ import shutil
 import sys
 
 # make the dev-only `training` package importable when run as `python scripts/...`
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from winmol_unet.training.dataset import _paired_ids
+from winmol_unet.data.pairing import _paired_ids
 
 
 def split_dataset(src_dir, dst_dir, val_fraction=0.2, seed=1):

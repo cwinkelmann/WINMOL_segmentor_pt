@@ -232,3 +232,76 @@ def test_evaluate_geospatial_mode_scores_against_the_ground(site, trained, tmp_p
     assert payload["label"] == "geo"
     assert {"f1", "precision", "recall"} <= set(payload)
     assert 0.0 <= payload["f1"] <= 1.0
+
+
+# --- prepare.py's non-geo modes ------------------------------------------------------
+# build/coco/split moved from scripts/ into winmol_unet.data and are now prepare.py modes.
+# They need no GDAL, so unlike the tiling modes they work on a base [train] install.
+
+def _pairs(dst, n=4, ext="png"):
+    from PIL import Image
+    import numpy as np
+    (dst / "train").mkdir(parents=True); (dst / "mask").mkdir(parents=True)
+    for i in range(n):
+        Image.fromarray(np.full((16, 16, 3), 100 + i, dtype="uint8")).save(
+            dst / "train" / f"train_{i}.{ext}")
+        m = np.zeros((16, 16), dtype="uint8"); m[4:9, 3 + i] = 7   # palette-ish, non-binary
+        Image.fromarray(m).save(dst / "mask" / f"mask_{i}.png")
+    return dst
+
+
+def test_prepare_from_folder_produces_the_loader_convention(tmp_path):
+    from winmol_unet.cli.prepare import main
+    src, out = _pairs(tmp_path / "raw"), tmp_path / "ready"
+    assert main(["--from-folder", "--src", str(src), "--out", str(out)]) == 0
+    imgs = sorted((out / "train").glob("train*.jpeg"))
+    masks = sorted((out / "mask").glob("mask*.gif"))
+    assert len(imgs) == len(masks) == 4
+    # masks must come out binary: the source used palette index 7, not 255
+    import numpy as np
+    from PIL import Image
+    arr = np.asarray(Image.open(masks[0]).convert("L"))
+    assert set(np.unique(arr)) <= {0, 255}
+
+
+def test_prepare_split_matches_the_loaders_own_split(tmp_path):
+    """The materialised split must equal what train_val_split would pick for the same
+    fraction and seed — otherwise a 'shareable held-out set' is a different set."""
+    from winmol_unet.cli.prepare import main
+    from winmol_unet.training.dataset import split_ids
+
+    src = tmp_path / "ready"
+    (src / "train").mkdir(parents=True); (src / "mask").mkdir(parents=True)
+    from PIL import Image
+    import numpy as np
+    for i in range(1, 11):
+        Image.fromarray(np.full((16, 16, 3), i, dtype="uint8")).save(src / "train" / f"train{i}.jpeg")
+        Image.fromarray(np.zeros((16, 16), dtype="uint8")).save(src / "mask" / f"mask{i}.gif")
+
+    out = tmp_path / "split"
+    assert main(["--split", "--src", str(src), "--out", str(out),
+                 "--val-fraction", "0.2", "--seed", "1"]) == 0
+    _, val_ids = split_ids(str(src / "train"), str(src / "mask"), 0.2, 1)
+    assert len(list((out / "val" / "train").glob("*.jpeg"))) == len(val_ids)
+    assert len(list((out / "train" / "train").glob("*.jpeg"))) == 10 - len(val_ids)
+
+
+def test_prepare_conversion_modes_need_no_gdal():
+    """These modes must not import rasterio/fiona/shapely — they are not in [train]."""
+    import subprocess, sys as _sys, textwrap
+    code = textwrap.dedent("""
+        import sys
+        import winmol_unet.data.build, winmol_unet.data.coco, winmol_unet.data.split
+        heavy = [m for m in ("rasterio", "fiona", "shapely") if m in sys.modules]
+        print(",".join(heavy))
+    """)
+    out = subprocess.run([_sys.executable, "-c", code], capture_output=True, text=True, cwd=REPO)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "", f"conversion modules pulled in GDAL: {out.stdout}"
+
+
+def test_prepare_conversion_modes_report_missing_arguments(tmp_path):
+    from winmol_unet.cli.prepare import main
+    for argv in (["--from-folder"], ["--from-coco"], ["--split"]):
+        with pytest.raises(SystemExit):
+            main(argv + ["--out", str(tmp_path / "x")])

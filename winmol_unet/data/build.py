@@ -37,8 +37,12 @@ def _index(dirpath, prefix, exts):
 def build_dataset(src_dir, dst_dir):
     img_src = os.path.join(src_dir, "train")
     mask_src = os.path.join(src_dir, "mask")
-    imgs = _index(img_src, "train", (".jpeg", ".jpg"))
-    masks = _index(mask_src, "mask", (".gif",))
+    # Accept the common raster extensions on input, not just the two this repo happens to
+    # emit. Output is always jpeg+gif regardless, so widening the input costs nothing and
+    # makes the documented promise ("convert an arbitrary image/mask folder") true --
+    # a PNG mask export is the usual thing people arrive with.
+    imgs = _index(img_src, "train", (".jpeg", ".jpg", ".png", ".tif", ".tiff", ".bmp"))
+    masks = _index(mask_src, "mask", (".gif", ".png", ".tif", ".tiff", ".bmp"))
     keys = sorted(set(imgs) & set(masks))
     if not keys:
         raise ValueError(

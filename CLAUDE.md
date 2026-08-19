@@ -49,7 +49,7 @@ python evaluate.py --model model.onnx --data-dir <DS>/test
 python evaluate.py --model model.onnx --ortho <O> --aoi <A> --stems <S>
 python evaluate.py --stem-map out.tif --aoi <A> --stems <S>
 
-python scripts/build_dataset.py --src <raw> --dst <ready>          # convert to loader format
+python prepare.py --from-folder --src <raw> --out <ready>          # convert to loader format
 ```
 
 `--device auto` prefers MPS → CUDA → CPU. For large datasets use `--no-cache-dataset --num-workers 4`.
@@ -87,7 +87,7 @@ that fails on every machine without torch, and nothing else would catch it.
 
 **Training loop is architecture-agnostic.** `winmol_unet/training/train.py::train_one_run` only needs `model.forward(x) → logits [N,1,512,512]`; `run_train.py::run_training` (single-stage) and `run_two_stage` (GenDS→SpecDS fine-tune: build one model, train stage 1, then fine-tune the SAME model on stage 2) wire it. Loss is `BCEWithLogits + (1 − soft_F1)` on logits; metrics are hard-rounded (sigmoid + 0.5), micro-averaged in `evaluate`.
 
-**Dataset convention + scale.** `winmol_unet/training/dataset.py::StemDataset` pairs `train/train{N}.jpeg` ↔ `mask/mask{N}.gif` by integer N, resizes to 512 via `winmol_unet.preprocess` (bicubic image / nearest mask), and binarizes the mask. It has an in-memory resize cache (default on, needs `num_workers=0`); for large sets use `cache=False` + `num_workers>0`. `scripts/build_dataset.py` converts arbitrary folders (non-integer names, palette/instance masks) into this format.
+**Dataset convention + scale.** `winmol_unet/training/dataset.py::StemDataset` pairs `train/train{N}.jpeg` ↔ `mask/mask{N}.gif` by integer N, resizes to 512 via `winmol_unet.preprocess` (bicubic image / nearest mask), and binarizes the mask. It has an in-memory resize cache (default on, needs `num_workers=0`); for large sets use `cache=False` + `num_workers>0`. `winmol_unet/data/build.py` (`prepare.py --from-folder`) converts arbitrary folders (non-integer names, palette/instance masks) into this format.
 
 ## Conventions
 

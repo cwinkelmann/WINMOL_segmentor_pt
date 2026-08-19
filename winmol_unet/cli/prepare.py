@@ -16,6 +16,13 @@ keeps their vocabulary (extent, native-px, split, AOI) identical:
     # just the label raster, no tiling
     prepare.py --rasterize --stems site.shp --ortho site.tif --out stem_map.tif
 
+Starting from data that is already raster pairs rather than from an orthomosaic — these
+need no GDAL, so they work without the [geo] extra:
+
+    prepare.py --from-folder --src raw/ --out data/ready       # pair, renumber, binarise
+    prepare.py --from-coco --coco-json a.json --images-dir img/ --out data/ready
+    prepare.py --split --src data/ready --out data/split       # fixed train/val split
+
 Two things worth knowing before choosing flags:
 
 **`--extent-m` is a scale knob, not a speed knob.** A tile covers `extent_m` of ground and
@@ -47,6 +54,12 @@ def build_parser():
                       help="compose leave-one-site-out folds from per-site tile sets")
     mode.add_argument("--rasterize", action="store_true",
                       help="burn annotations to a label raster and stop (no tiling)")
+    mode.add_argument("--from-folder", action="store_true",
+                      help="convert an existing image/mask folder to the loader convention")
+    mode.add_argument("--from-coco", action="store_true",
+                      help="rasterise COCO polygon annotations into a loader dataset")
+    mode.add_argument("--split", action="store_true",
+                      help="materialise a fixed train/val split of a loader dataset")
 
     src = p.add_argument_group("single-site inputs")
     src.add_argument("--ortho", help="orthomosaic GeoTIFF")
@@ -90,6 +103,14 @@ def build_parser():
                     help="sites large enough to block-split (contribute train+val)")
     fo.add_argument("--copy", action="store_true", help="copy instead of symlink")
 
+    cv = p.add_argument_group("--from-folder / --from-coco / --split options")
+    cv.add_argument("--src", help="source dataset dir (--from-folder, --split)")
+    cv.add_argument("--coco-json", help="COCO annotations JSON (--from-coco)")
+    cv.add_argument("--images-dir", help="directory of source images (--from-coco)")
+    cv.add_argument("--val-fraction", type=float, default=0.2,
+                    help="--split: fraction held out for validation (default 0.2). Matches "
+                         "the loader's own seeded split for the same fraction and seed.")
+
     ra = p.add_argument_group("--rasterize options")
     ra.add_argument("--instances", default=None, help="also write an instance-id raster here")
     ra.add_argument("--all-touched", action="store_true")
@@ -102,6 +123,29 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.from_folder:
+        from winmol_unet.data.build import build_dataset
+        if not args.src:
+            parser.error("--from-folder needs --src")
+        print(build_dataset(args.src, args.out))
+        return 0
+
+    if args.from_coco:
+        from winmol_unet.data.coco import coco_to_dataset
+        if not (args.coco_json and args.images_dir):
+            parser.error("--from-coco needs --coco-json and --images-dir")
+        print(coco_to_dataset(args.coco_json, args.images_dir, args.out,
+                              limit=args.limit or 100, seed=args.seed))
+        return 0
+
+    if args.split:
+        from winmol_unet.data.split import split_dataset
+        if not args.src:
+            parser.error("--split needs --src")
+        print(split_dataset(args.src, args.out, val_fraction=args.val_fraction,
+                            seed=args.seed))
+        return 0
 
     if args.rasterize:
         from winmol_unet.geo.rasterize import rasterize

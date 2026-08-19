@@ -10,7 +10,7 @@ least one annotation are sampled (so masks are non-empty). Images whose file is 
 disk are skipped (some COCO splits reference never-shipped images). Deterministic given --seed.
 
 Usage:
-  python scripts/coco_to_dataset.py \
+  python prepare.py --from-coco \
     --coco-json .../annotations/instances_tree_train2023.json \
     --images-dir .../train2023 --dst .../100_images/train --limit 100 --seed 1
 """

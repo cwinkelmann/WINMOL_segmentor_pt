@@ -4,8 +4,7 @@ import sys
 import numpy as np
 from PIL import Image
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-from split_dataset import split_dataset
+from winmol_unet.data.split import split_dataset
 from winmol_unet.training.dataset import StemDataset, train_val_split
 
 
