@@ -63,6 +63,22 @@ The release re-hosts *only* the ONNX (the HDF5 stay on Zenodo), each flavour in 
 - **Zenodo flavours as ONNX** — `model_UNet_<FLAVOUR>_512{.onnx,_fp16.onnx,_int8.onnx}`: converted
   from the Zenodo HDF5 (numerically identical) and quantized **post-training** (no retraining).
 
+**Models trained on the newer data — GitHub Release [`models-v2`](../../releases/tag/models-v2).**
+Same ONNX contract, so they drop into the Analyzer unchanged. Two families, each the best of
+three seeds, each scored on its own held-out ground (**the two families are not comparable to
+each other** — see [`docs/tegel-r12-r13-results.md`](docs/tegel-r12-r13-results.md)):
+
+- **Four-site beech corpus** (Campus, Campus_Oberheide, Bachsee_north, Kaufland) trained with
+  ±30% scale jitter — `model_HRNet_Beech4Site_512_jitter` (F1 0.787) and
+  `model_UNet_Beech4Site_512_jitter` (F1 0.783).
+- **Tegel R12/R13** (July 2025 survey) — `model_UNet_TegelR12R13_512_scratch` (F1 0.777) and
+  `..._finetune` (F1 0.789, initialised from the beech UNet). The beech models already reach
+  **F1 0.76 zero-shot** on the Tegel test plots, so training on Tegel is worth +3.5 to +6.2 F1.
+
+fp32 (macOS/CoreML) / `_fp16` (GPU) / `_int8` (CPU) as in v1, except HRNet, which has no int8:
+the smp decoder's symbolic shapes fail ORT static quantisation. Build and publish with
+`scripts/fetch_release_v2.sh` then `scripts/deploy_models_to_release.py --set v2`.
+
 ### Retraining / reproducing
 
 The PyTorch UNet is reproducible from the [Training](#training) workflow; the released optimised
