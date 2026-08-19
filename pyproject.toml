@@ -37,6 +37,13 @@ wandb = ["wandb>=0.16", "python-dotenv>=1.0"]
 # Reading orthomosaics and digitized stem annotations. Kept out of [train] so the
 # training and ONNX-serving paths never pull GDAL: only scripts/ needs these.
 geo = ["rasterio>=1.3", "fiona>=1.9", "shapely>=2.0", "pillow>=9"]
+# Post-training optimization, i.e. rebuilding the _fp16 and _int8 release assets with
+# scripts/quantize_unet.py. onnxconverter-common was previously installed only inside
+# Dockerfile.convert and Dockerfile.onnxgpu, so a plain `pip install -e ".[train]"`
+# checkout could build the fp32 assets of a release but not its fp16 ones -- and only
+# found out at the point of conversion. Declared here so the repo can rebuild everything
+# it publishes.
+optimize = ["onnxconverter-common>=1.14"]
 dev = ["pytest>=7"]
 
 [tool.setuptools]
