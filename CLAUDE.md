@@ -18,7 +18,7 @@ pip install -e ".[wandb]"        # + wandb, python-dotenv (optional logging)
 pip install -e ".[dev]"          # pytest
 
 pytest                           # full suite
-pytest tests/test_two_stage.py::test_two_stage_trains_both_stages_and_exports   # single test
+pytest tests/test_training.py::test_overfit_loss_decreases   # single test
 pytest -k onnx                   # by keyword
 ```
 
@@ -92,6 +92,15 @@ that fails on every machine without torch, and nothing else would catch it.
 ## Conventions
 
 - Tests are TDD-first and are the executable spec (contract parity, export/serve, two-stage handoff). Add/adjust tests before changing behavior. Keep them **hermetic** (synthetic data in `tmp_path`, `encoder_weights=None` for smp archs to avoid downloads).
+- The public suite is ten subject-named files (`test_cli.py`, `test_config_wiring.py`,
+  `test_contract.py`, `test_data_prep.py`, `test_export_serve.py`, `test_geo.py`,
+  `test_import_boundary.py`, `test_keras_bridge.py`, `test_model.py`, `test_training.py`)
+  plus `tests/conftest.py`, which holds the shared fixtures (`stem_dataset`, `train_config`,
+  `force_cpu_onnx`, `geo_site`). The slow full-training variants (two-stage fine-tuning,
+  rotation/multiscale/wandb/export sweeps) and the real-data integration test now live in
+  the private helper repo. `test_contract.py` and `test_import_boundary.py` stay public
+  because they guard the cross-repo boundary — the frozen ONNX interface and the
+  no-eager-heavy-imports rule that keeps the analyzer install small.
 - ONNX parity/serve tests pin the CPU EP via the `WINMOL_ONNX_FORCE_CPU` env var — CoreML/CUDA compute in fp16 and are not bit-exact; use CPU for exact fp32 comparisons.
 - `pyproject.toml` scopes filterwarnings; keep exports/warnings clean rather than re-adding noise.
 

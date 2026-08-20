@@ -55,6 +55,9 @@ voided numbers. Each carries a correction banner at its top.
 |---|---|
 | `FEATURES.md` *(private helper repo)* | What the package does, feature by feature. |
 | `report-front.md` *(private helper repo)* | Executive summary + PDF metadata. Not standalone — it is the first section of `WINMOL-report.pdf`. |
+| `tests/test_training_variants.py` *(private helper repo)* | The relocated slow full-training variants — rotation, multiscale/eval-tiling, wandb logging, the four export combinations, the HDF5 drop-in end to end. |
+| `tests/test_two_stage.py` *(private helper repo)* | The relocated two-stage (GenDS → SpecDS) fine-tune tests, including `test_two_stage_trains_both_stages_and_exports`. |
+| `tests/test_full_training_integration.py` *(private helper repo)* | The real-data integration test, scored against an actual dataset; skips unless its env var is set. |
 
 ## Specifications
 
