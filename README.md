@@ -425,7 +425,7 @@ The four findings that most change how you use this repo:
 | **Scale dominates.** Effective GSD is `tile_size / 512`, a user-set knob — matching it to the training scale was worth **+14.6 F1**. | [`process.md`](docs/process.md) |
 | **±30% footprint jitter** flattens the accuracy-vs-scale curve at no cost at the serving scale. | [`scale-augmentation-results.md`](docs/scale-augmentation-results.md) |
 | **Strong hue augmentation** takes a held-out site from **F1 0.042 to 0.688**; site holdouts are viable now. | [`scale-augmentation-loso.md`](docs/scale-augmentation-loso.md) |
-| **The published method's composite loss does not train** — it calls the rounded metric, so the model trains on plain BCE. Measured directly in R: `sum|grad| = 0.000e+00`. | *(detail in the private helper repo)* |
+| **The published method's composite loss does not train** — it calls the rounded metric, so the model trains on plain BCE. Measured directly in R: the gradient sums to exactly `0.000e+00`. | *(detail in the private helper repo)* |
 
 Experiment designs are pre-registered *before* the runs, and deviations are recorded in the
 matching results document. Those pre-registrations, together with the full results archive

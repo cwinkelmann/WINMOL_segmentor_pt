@@ -46,8 +46,48 @@ def bce_hard_f1_loss(logits, target, eps=1e-6):
     return bce + (1 - f1)
 
 
+def focal_loss(logits, target, gamma=2.0, alpha=None):
+    """BCE reweighted by difficulty: `-alpha_t * (1 - p_t)^gamma * log(p_t)`.
+
+    Stems are a few percent of pixels and most background is trivially correct, so plain
+    BCE spends most of its gradient budget on pixels already settled. The `(1 - p_t)^gamma`
+    factor shrinks those and leaves the contested ones -- which here sit at stem boundaries,
+    where false negatives are 1.59x enriched within 2 px of an annotation edge.
+
+    `alpha` is **off by default on purpose**. It re-weights by class, which is a second,
+    separable change; folding it in would make a focal-vs-bce difference unattributable to
+    the focusing term. Every other arm in this repo isolates exactly one change, so this one
+    does too. Set it explicitly if class weighting is what you mean to test.
+
+    gamma=0 with alpha=None is exactly `bce_loss`, which is what makes this an ablation of
+    the focusing term rather than a different loss family.
+    """
+    bce = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+    p_t = torch.exp(-bce)                       # p where target==1, 1-p where target==0
+    loss = (1 - p_t) ** gamma * bce
+    if alpha is not None:
+        loss = (alpha * target + (1 - alpha) * (1 - target)) * loss
+    return loss.mean()
+
+
+def focal_soft_f1_loss(logits, target, gamma=2.0, alpha=None, eps=1e-6):
+    """`focal + (1 - soft_F1)` -- the soft-F1 arm with focal swapped in for BCE.
+
+    Pairs against `bce_soft_f1_loss` the same way `focal` pairs against `bce`, so the two
+    comparisons together separate the focusing term from the soft-F1 term instead of
+    confounding them.
+    """
+    probs = torch.sigmoid(logits)
+    tp = (probs * target).sum()
+    fp = (probs * (1 - target)).sum()
+    fn = ((1 - probs) * target).sum()
+    soft_f1 = (2 * tp + eps) / (2 * tp + fp + fn + eps)
+    return focal_loss(logits, target, gamma, alpha) + (1 - soft_f1)
+
+
 LOSSES = {"bce_soft_f1": bce_soft_f1_loss, "bce": bce_loss,
-          "bce_hard_f1": bce_hard_f1_loss}
+          "bce_hard_f1": bce_hard_f1_loss,
+          "focal": focal_loss, "focal_soft_f1": focal_soft_f1_loss}
 
 
 def soften_targets(target, eps=0.0, band_px=2):

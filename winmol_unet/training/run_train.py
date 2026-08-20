@@ -317,7 +317,8 @@ def build_parser():
     p.add_argument("--deterministic", action="store_true",
                    help="cuDNN deterministic kernels + fixed algorithm choice. Slower, but "
                         "without it same-seed runs still diverge on GPU.")
-    p.add_argument("--loss", default="bce_soft_f1", choices=("bce_soft_f1", "bce", "bce_hard_f1"),
+    p.add_argument("--loss", default="bce_soft_f1",
+                   choices=("bce_soft_f1", "bce", "bce_hard_f1", "focal", "focal_soft_f1"),
                    help="bce = what R effectively optimises (its F1 term is rounded, "
                         "so it has no gradient)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
