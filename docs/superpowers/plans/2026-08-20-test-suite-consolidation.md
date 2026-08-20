@@ -415,8 +415,13 @@ This file carries **the overfit test** — one of the two anchors the public sui
 **Files:**
 - Create: `tests/test_training.py`
 - Delete: `tests/test_train_loop.py`, `tests/test_train_losses.py`, `tests/test_train_dataset.py`, `tests/test_dataset_cache.py`, `tests/test_loss_selection.py`, `tests/test_focal_loss.py`, `tests/test_augment.py`, `tests/test_colour_aug.py`, `tests/test_run_config.py`, `tests/test_run_logger.py`
+- Take from (do **not** delete — later tasks own the remainder): `tests/test_mosaic.py` (all except `test_the_cli_flag_reaches_the_config` and `test_mosaic_recipe_is_labelled_unevaluated`), `tests/test_multiscale.py` (all except `test_run_training_multiscale_and_eval_tiling`)
 
-**Case-specific note:** `test_colour_aug.py` imports `run_train`; keep only its augmentation-pipeline assertions here. If it contains a `run_training()` call, that call is Task 12's input, not this task's.
+**Case-specific notes (controller rulings — these override the plan's earlier text):**
+
+- `test_colour_aug.py` contains **no** `run_training()` call (verified). Take all three tests whole.
+- `test_mosaic.py` contains **no** `run_training()` call. Take nine of its eleven tests here — everything except `test_the_cli_flag_reaches_the_config` and `test_mosaic_recipe_is_labelled_unevaluated`, which Task 8 takes. Leave the file on disk; Task 8 deletes it.
+- `test_multiscale.py`: take seven of its eight tests here (`test_native_mode_skips_resize`, `test_multiscale_transform_outputs_img_size_and_binary_mask`, `test_multiscale_rotates_full_tile_before_crop`, `test_non_multiscale_keeps_prior_order`, `test_tile_starts`, `test_tiling_dataset_covers_and_is_deterministic`, `test_split_ids_partitions_disjointly`). They assert transform and tiling behaviour, not flag parsing. Leave `test_run_training_multiscale_and_eval_tiling` in place for Task 12, and leave the file on disk.
 
 - [ ] **Step 1: Snapshot inputs**
 
@@ -425,7 +430,7 @@ This file carries **the overfit test** — one of the two anchors the public sui
   tests/test_train_loop.py tests/test_train_losses.py tests/test_train_dataset.py \
   tests/test_dataset_cache.py tests/test_loss_selection.py tests/test_focal_loss.py \
   tests/test_augment.py tests/test_colour_aug.py tests/test_run_config.py \
-  tests/test_run_logger.py 2>/dev/null | grep "::" | sort
+  tests/test_run_logger.py tests/test_mosaic.py tests/test_multiscale.py 2>/dev/null | grep "::" | sort
 ```
 
 Record the printed count. It is this task's reconciliation target — do not
@@ -472,8 +477,12 @@ The largest single reduction. Twelve files each pair fast `config_from_args` ass
 
 **Files:**
 - Create: `tests/test_config_wiring.py`
-- Delete: `tests/test_train_config.py`, `tests/test_train_device.py`, `tests/test_width_wiring.py`
-- Modify (strip to their training halves, leaving them as Task 12 inputs): `tests/test_arch_wiring.py`, `tests/test_aug_wiring.py`, `tests/test_val_data_dir.py`, `tests/test_multiscale.py`, `tests/test_mosaic.py`, `tests/test_wandb_wiring.py`, `tests/test_test_stage.py`
+- Delete: `tests/test_train_config.py`, `tests/test_train_device.py`, `tests/test_width_wiring.py`, `tests/test_recipes.py`, `tests/test_val_data_dir.py`, `tests/test_mosaic.py`
+- Modify (strip to their training halves, leaving them as Task 12 inputs): `tests/test_arch_wiring.py` (leaves 4), `tests/test_aug_wiring.py` (leaves 1), `tests/test_multiscale.py` (leaves 1), `tests/test_wandb_wiring.py` (leaves 2), `tests/test_test_stage.py` (leaves 2)
+
+**Controller ruling — take only these two tests from `test_mosaic.py`:** `test_the_cli_flag_reaches_the_config` and `test_mosaic_recipe_is_labelled_unevaluated`. Task 7 already took the other nine; this task deletes the emptied file. `test_multiscale.py` contributes **no** rows to the table — Task 7 took its behavioural tests and Task 12 takes its one training test.
+
+**Controller ruling — this task deletes any file it empties**, namely `test_val_data_dir.py`, `test_recipes.py` and `test_mosaic.py`. Task 12 deletes only files that still hold training tests.
 - Move whole: `tests/test_recipes.py` content into this file
 
 **Interfaces:**
@@ -553,7 +562,8 @@ Copy `test_train_device.py`'s two tests and `test_train_config.py`'s one test ve
 
 ```bash
 ~/opt/anaconda3/envs/WINMOL_segmentor_pt/bin/python -m pytest tests/test_config_wiring.py -v --durations=5
-git rm tests/test_train_config.py tests/test_train_device.py tests/test_width_wiring.py tests/test_recipes.py
+git rm tests/test_train_config.py tests/test_train_device.py tests/test_width_wiring.py \
+       tests/test_recipes.py tests/test_val_data_dir.py tests/test_mosaic.py
 ```
 
 Expected: all pass, and the **slowest test is under 2 seconds** except the one `_build_loaders` case. If anything takes 20s+, a `run_training()` call was copied in by mistake.
@@ -739,7 +749,9 @@ git commit -m "test: fold checkpoint scoring into the CLI suite"
 - Create: `/Users/christian/work/winmol_segmentror_pt_helper/tests/test_training_variants.py`
 - Create: `/Users/christian/work/winmol_segmentror_pt_helper/tests/test_two_stage.py`
 - Modify: `/Users/christian/work/winmol_segmentror_pt_helper/tests/conftest.py`
-- Delete (public repo): `tests/test_arch_wiring.py`, `tests/test_aug_wiring.py`, `tests/test_val_data_dir.py`, `tests/test_multiscale.py`, `tests/test_mosaic.py`, `tests/test_wandb_wiring.py`, `tests/test_test_stage.py`, `tests/test_multiformat_e2e.py`, `tests/test_train_e2e.py`, `tests/test_small_dataset_trains.py`, `tests/test_two_stage.py`
+- Delete (public repo): `tests/test_arch_wiring.py`, `tests/test_aug_wiring.py`, `tests/test_multiscale.py`, `tests/test_wandb_wiring.py`, `tests/test_test_stage.py`, `tests/test_multiformat_e2e.py`, `tests/test_train_e2e.py`, `tests/test_small_dataset_trains.py`, `tests/test_two_stage.py`
+
+**Controller ruling:** `test_val_data_dir.py` and `test_mosaic.py` are **not** this task's inputs — Task 8 emptied and deleted them. Expect **18 relocated tests**: 4 from `test_arch_wiring`, 1 from `test_aug_wiring`, 1 from `test_multiscale`, 2 from `test_wandb_wiring`, 2 from `test_test_stage`, 2 from `test_multiformat_e2e`, 1 from `test_train_e2e`, 1 from `test_small_dataset_trains`, 4 from `test_two_stage`.
 
 **Interfaces:**
 - Consumes: `run_training`, `run_two_stage`, `TrainConfig` from the public package, installed editable.
@@ -777,8 +789,8 @@ Header:
 ```python
 """Full run_training() variants, moved here in the release split.
 
-Each of these calls run_training() end to end to assert one config flag is
-honoured. They cost ~330s between them, which is why they left the public repo;
+Each of these drives a real training run end to end -- run_training(), or
+train_one_run() in the wandb cases -- to assert one config flag is honoured. They cost ~330s between them, which is why they left the public repo;
 the public suite asserts the same flags reach the config in
 tests/test_config_wiring.py, and proves training works at all with a single
 overfit test. Needs the public repo installed editable:
@@ -810,10 +822,9 @@ Expected: all pass.
 
 ```bash
 cd /Users/christian/work/work/WINMOL_segmentor_pt
-git rm tests/test_arch_wiring.py tests/test_aug_wiring.py tests/test_val_data_dir.py \
-       tests/test_multiscale.py tests/test_mosaic.py tests/test_wandb_wiring.py \
-       tests/test_test_stage.py tests/test_multiformat_e2e.py tests/test_train_e2e.py \
-       tests/test_small_dataset_trains.py tests/test_two_stage.py
+git rm tests/test_arch_wiring.py tests/test_aug_wiring.py tests/test_multiscale.py \
+       tests/test_wandb_wiring.py tests/test_test_stage.py tests/test_multiformat_e2e.py \
+       tests/test_train_e2e.py tests/test_small_dataset_trains.py tests/test_two_stage.py
 git add docs/superpowers/plans/consolidation-ledger.md
 git commit -m "test: move the slow full-training variants to the helper repo"
 
