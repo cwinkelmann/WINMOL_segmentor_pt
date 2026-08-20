@@ -42,12 +42,26 @@ def cut(layout_dir, gsd_ortho, out_dir, stem_map=None, min_valid_frac=0.5,
             row = int(round((src.transform.f - r["maxy"]) / src.res[1]))
             win = Window(col, row, r["width_px"], r["height_px"])
 
-            data = src.read(window=win)
-            valid = src.read_masks(1, window=win)
+            # A footprint from a skirt candidate (min_aoi_frac < 1) or from an AOI-less
+            # run over the raster's own bounds can overhang the raster edge. A plain
+            # (non-boundless) read silently returns a SMALLER array for such a window --
+            # not an error -- and `dst.write` below would then stretch it nearest-
+            # neighbour to width_px x height_px, georeferenced as if it covered the
+            # full footprint: a corrupted, resampled tile that looks byte-identical
+            # everywhere the eye would check. boundless=True keeps the read exactly
+            # width_px x height_px, with the off-raster part filled at 0 -- real pixels
+            # where the raster has them, explicit fill everywhere else, never a stretch.
+            data = src.read(window=win, boundless=True, fill_value=0)
+            valid = src.read_masks(1, window=win, boundless=True)
             valid_frac = float((valid > 0).mean())
 
             if lbl is not None:
-                mask = lbl.read(1, window=win)
+                # lbl shares gsd_ortho's exact grid (winmol_unet/geo/rasterize.py writes
+                # it with the same transform and shape), so the same window can overhang
+                # it the same way; boundless=True fill_value=0 says "no stem" for ground
+                # the label raster doesn't cover, which is already excluded from training
+                # by valid_frac above.
+                mask = lbl.read(1, window=win, boundless=True, fill_value=0)
             else:
                 mask = np.zeros((r["height_px"], r["width_px"]), dtype="uint8")
             mask = np.where(mask > 0, 255, 0).astype("uint8")

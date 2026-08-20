@@ -135,6 +135,16 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
         else:
             regions = [(box(*src.bounds), {"aoi_id": 0})]
 
+        # A region that does not touch the raster at all (an AOI drawn over the wrong
+        # flight, or a leakage group from a multi-site ingest that this raster doesn't
+        # cover) has no candidate that could ever be valid: every window read against it
+        # is entirely off-raster. Skip it outright rather than generating a raster's
+        # worth of guaranteed-invalid candidates for min_valid_frac to reject one by one.
+        raster_box = box(*src.bounds)
+        n_regions_in = len(regions)
+        regions = [(poly, props) for poly, props in regions if poly.intersects(raster_box)]
+        regions_skipped = n_regions_in - len(regions)
+
         # The screen reads the mask from an overview, cheap enough for millions of
         # candidates. It can only be approximate, so borderline cases are passed to
         # stage 5 rather than dropped here.
@@ -170,9 +180,18 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
                 continue
 
             win = from_bounds(*fp.bounds, transform=src.transform)
+            # boundless=True: a skirt candidate (min_aoi_frac < 1) or a candidate from
+            # an AOI that only partly overlaps the raster can have a window that
+            # overhangs the raster edge. Without boundless, GDAL either silently reads
+            # only the in-raster part -- averaged into `m` as if the tile were smaller,
+            # so a tile half off the raster reads back valid_frac == 1.0 -- or raises
+            # RasterioIOError outright when the window doesn't intersect the raster at
+            # all. boundless=True fills the off-raster part with mask value 0 (invalid),
+            # which is the correct answer: unlabelled, unphotographed ground is not
+            # valid ground, whether or not an AOI happens to claim it.
             m = src.read_masks(1, window=win,
                                out_shape=(max(1, int(tile_px / decim)),) * 2,
-                               resampling=Resampling.average)
+                               resampling=Resampling.average, boundless=True)
             valid_frac = float(m.mean()) / 255.0
             if valid_frac < min_valid_frac - tol:
                 dropped["valid"] += 1
@@ -222,7 +241,8 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
 
     stats = {"n_candidates": len(cands), "n_kept": len(kept),
              "dropped_aoi": dropped["aoi"], "dropped_valid": dropped["valid"],
-             "dropped_stem": dropped["stem"], "extent_m": extent_m, "tile_px": tile_px}
+             "dropped_stem": dropped["stem"], "extent_m": extent_m, "tile_px": tile_px,
+             "regions_skipped": regions_skipped}
     params = {"mode": mode, "extent_m": extent_m, "tile_px": tile_px,
               "stride_frac": stride_frac, "min_valid_frac": min_valid_frac,
               "min_stem_frac": min_stem_frac, "min_aoi_frac": min_aoi_frac,

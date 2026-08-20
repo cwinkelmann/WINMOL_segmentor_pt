@@ -124,3 +124,59 @@ def test_records_carry_the_aoi_id_for_leakage_grouping(tmp_path):
     layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0)
     ids = {json.loads(l)["aoi_id"] for l in open(os.path.join(out, "tiles.jsonl"))}
     assert ids == {1}
+
+
+def _scene_overhanging_the_raster(tmp_path):
+    """An AOI that exactly covers the raster, so a skirt candidate (min_aoi_frac < 1)
+    necessarily hangs off the raster edge too -- the branch's own recommended recipe
+    (--clip-aoi then --min-aoi-frac < 1) shrinks the raster to the AOI union first,
+    which produces exactly this geometry.
+    """
+    ortho = str(tmp_path / "ortho.tif")
+    write_ortho(ortho, size_m=10.0, gsd=0.02)
+    aoi_path = str(tmp_path / "aoi.gpkg")
+    write_polygons(aoi_path, [box_m(0, 0, 10, 10)], layer="aoi")
+    stems_path = str(tmp_path / "stems.gpkg")
+    write_polygons(stems_path, [box_m(1, 1, 1, 1)], layer="stems")
+    return ortho, aoi_path, stems_path
+
+
+def test_a_skirt_tile_counts_off_raster_ground_as_invalid(tmp_path):
+    # Before the fix: read_masks on the overhanging window was silently averaged over
+    # only the in-raster part, so a tile half off the raster edge reported
+    # valid_frac == 1.0 -- exactly wrong, since valid_frac exists to measure how much
+    # of a tile is real, photographed ground.
+    ortho, aoi_path, stems_path = _scene_overhanging_the_raster(tmp_path)
+    out = str(tmp_path / "02_layout")
+    stats = layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0,
+                   min_aoi_frac=0.25, min_valid_frac=0.0)
+    recs = [json.loads(l) for l in open(os.path.join(out, "tiles.jsonl"))]
+    skirts = [r for r in recs if r["aoi_frac"] < 1.0]
+    assert skirts, "fixture must produce at least one skirt tile"
+    for r in skirts:
+        # This AOI exactly coincides with the raster's own footprint, so the fraction
+        # of the tile outside the AOI is also the fraction outside the raster: the two
+        # should read back equal (within the overview screen's own tolerance).
+        assert r["valid_frac"] == pytest.approx(r["aoi_frac"], abs=0.05)
+        assert r["valid_frac"] < 1.0
+    assert stats["regions_skipped"] == 0
+
+
+def test_layout_skips_a_region_entirely_outside_the_raster(tmp_path):
+    # Before the fix: the overview screen's read_masks(window=..., out_shape=...,
+    # resampling=...) raised RasterioIOError as soon as any AOI region did not
+    # intersect the raster at all -- reachable from a plain multi-AOI ingest, not just
+    # a mistaken flight/AOI pairing.
+    ortho = str(tmp_path / "ortho.tif")
+    write_ortho(ortho, size_m=16.0, gsd=0.02)
+    aoi_path = str(tmp_path / "aoi.gpkg")
+    write_polygons(aoi_path,
+                   [box_m(0, 0, 10, 10), box_m(100, 100, 10, 10)], layer="aoi")
+    stems_path = str(tmp_path / "stems.gpkg")
+    write_polygons(stems_path, [box_m(1, 1, 1, 1)], layer="stems")
+    out = str(tmp_path / "02_layout")
+    stats = layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0)
+    assert stats["regions_skipped"] == 1
+    assert stats["n_kept"] == 4          # only the in-raster AOI's tiles
+    ids = {json.loads(l)["aoi_id"] for l in open(os.path.join(out, "tiles.jsonl"))}
+    assert ids == {1}                    # the out-of-raster AOI (id 2) contributed none
