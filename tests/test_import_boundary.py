@@ -18,7 +18,7 @@ import textwrap
 
 import pytest
 
-HEAVY = ("torch", "tensorflow", "albumentations", "segmentation_models_pytorch",
+HEAVY = ("torch", "tensorflow", "keras", "albumentations", "segmentation_models_pytorch",
          "torchvision", "wandb", "rasterio", "fiona", "shapely")
 
 
@@ -53,3 +53,23 @@ def test_the_subpackages_are_reachable_when_asked_for():
         capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert "TrainConfig" in out.stdout
+
+
+# Relocated from tests/test_no_eager_tensorflow.py (formerly its only test), rather than
+# folded into tests/test_keras_bridge.py with the rest of the Keras bridge suite: that file
+# is guarded per-test by `pytest.importorskip("tensorflow")` wherever TensorFlow is actually
+# used, but this test's whole point is to catch code that eagerly imports TensorFlow, so it
+# must keep running -- and be able to fail -- in a process that never imported TensorFlow at
+# all. TF is opt-in (`--export-keras`, the `[keras]` extra). When it *is* installed alongside
+# torch, importing it after torch's native libraries are loaded deadlocks inside TF's abseil
+# mutex -- `import winmol_unet.training.run_train` hangs forever, taking the whole test suite
+# with it. CI never catches this directly because CI does not install TF; this still runs
+# there and passes vacuously (nothing loads TF because TF isn't present to load).
+@pytest.mark.parametrize("module", ["winmol_unet.training.run_train", "winmol_unet.training.train",
+                                    "winmol_unet.training.run_logger", "winmol_unet.runtime",
+                                    "winmol_unet.contract"])
+def test_training_modules_do_not_eagerly_import_tensorflow(module):
+    loaded = [m for m in _import_in_subprocess(f"import {module}") if m in ("tensorflow", "keras")]
+    assert not loaded, (
+        f"importing {module} eagerly loaded {loaded}. TensorFlow must stay lazy: with torch "
+        f"already loaded, importing it deadlocks on an abseil mutex and hangs the suite.")
