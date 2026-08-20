@@ -58,6 +58,8 @@ def build_parser():
                       help="normalise annotations onto the ortho's CRS and stop")
     mode.add_argument("--resample", action="store_true",
                       help="write one full-ortho COG per --gsd and stop")
+    mode.add_argument("--layout", action="store_true",
+                      help="write tile footprints without cutting any pixels")
     mode.add_argument("--from-folder", action="store_true",
                       help="convert an existing image/mask folder to the loader convention")
     mode.add_argument("--from-coco", action="store_true",
@@ -72,13 +74,16 @@ def build_parser():
     src.add_argument("--out", required=True, help="output dataset dir (or file for --rasterize)")
 
     tile = p.add_argument_group("tiling")
-    tile.add_argument("--extent-m", type=float, default=15.0,
+    tile.add_argument("--extent-m", type=float, default=None,
                       help="tile footprint in metres. Effective GSD is extent_m/512 "
-                           "(default 15 m -> 2.93 cm/px). Match the analyzer's tile_size.")
+                           "(default 15 m -> 2.93 cm/px). Match the analyzer's tile_size. "
+                           "Mutually exclusive with --tile-px (--layout).")
     tile.add_argument("--native-px", type=int, default=None,
                       help="cut NATIVE_PX square at the ortho's own resolution instead, "
                            "for the multi-scale recipes. Overrides --extent-m.")
-    tile.add_argument("--tile-px", type=int, default=512, help="output tile side")
+    tile.add_argument("--tile-px", type=int, default=None,
+                      help="output tile side (default 512). Mutually exclusive with "
+                           "--extent-m (--layout).")
     tile.add_argument("--limit", type=int, default=None, help="stop after N tiles")
     tile.add_argument("--min-stem-frac", type=float, default=1 / 200.0,
                       help="reject tiles below this stem fraction (default 0.5%%); a plain "
@@ -130,6 +135,14 @@ def build_parser():
                     help="target ground sample distances in metres (--resample)")
     pl.add_argument("--jpeg-quality", type=int, default=95,
                     help="stage-2 JPEG quality; the source is already lossy")
+    pl.add_argument("--mode", choices=("grid", "random"), default="grid",
+                    help="tile placement (--layout)")
+    pl.add_argument("--stride-frac", type=float, default=1.0,
+                    help="grid step as a fraction of the tile extent")
+    pl.add_argument("--min-valid-frac", type=float, default=0.5,
+                    help="reject tiles whose footprint is less than this fraction valid")
+    pl.add_argument("--n-tiles", type=int, default=None,
+                    help="how many tiles to draw (--mode random)")
 
     p.add_argument("--quiet", action="store_true")
     return p
@@ -184,6 +197,17 @@ def main(argv=None):
                      quiet=args.quiet)
         return 0
 
+    if args.layout:
+        from winmol_unet.pipeline.layout import layout
+        if not args.ortho:
+            parser.error("--layout needs --ortho (a stage-2 GSD copy)")
+        layout(args.ortho, args.aoi, args.stems, args.out, mode=args.mode,
+               extent_m=args.extent_m, tile_px=args.tile_px,
+               stride_frac=args.stride_frac, min_valid_frac=args.min_valid_frac,
+               min_stem_frac=args.min_stem_frac, n_tiles=args.n_tiles,
+               seed=args.seed, quiet=args.quiet)
+        return 0
+
     if args.rasterize:
         from winmol_unet.geo.rasterize import rasterize
         if not (args.stems and args.ortho):
@@ -229,7 +253,8 @@ def main(argv=None):
                      "(or pass --config for the multi-site path)")
     from winmol_unet.geo.sample import sample_tiles
     stats = sample_tiles(args.ortho, args.stems, args.aoi, args.out,
-                         extent_m=args.extent_m, tile_px=args.tile_px,
+                         extent_m=15.0 if args.extent_m is None else args.extent_m,
+                         tile_px=512 if args.tile_px is None else args.tile_px,
                          native_px=args.native_px, min_stem_frac=args.min_stem_frac,
                          seed=args.seed, species=args.species, limit=args.limit,
                          quiet=args.quiet)

@@ -1,0 +1,126 @@
+"""Snapping to the raster grid is what lets stage 5 be a pure window read. If a
+footprint lands off-grid, cutting has to interpolate and the pipeline's central claim
+is gone -- so the snapping is tested here, and the byte-identity it buys is tested in
+test_pipeline_cut.py.
+"""
+import json
+import os
+
+import pytest
+
+rasterio = pytest.importorskip("rasterio")
+fiona = pytest.importorskip("fiona")
+pytest.importorskip("shapely")
+
+from tests.pipeline_fixtures import CRS, ORIGIN, box_m, write_ortho, write_polygons  # noqa: E402
+from winmol_unet.pipeline.layout import layout, tile_geometry  # noqa: E402
+
+
+def _scene(tmp_path, blank_edge_m=0.0, aoi=None):
+    ortho = str(tmp_path / "ortho.tif")
+    write_ortho(ortho, size_m=16.0, gsd=0.02, blank_edge_m=blank_edge_m)
+    aoi_path = str(tmp_path / "aoi.gpkg")
+    write_polygons(aoi_path, [aoi or box_m(0, 0, 10, 10)], layer="aoi")
+    stems_path = str(tmp_path / "stems.gpkg")
+    write_polygons(stems_path, [box_m(1, 1, 1, 1)], layer="stems")
+    return ortho, aoi_path, stems_path
+
+
+def test_extent_and_tile_px_are_mutually_exclusive():
+    assert tile_geometry(0.02, extent_m=5.0) == (5.0, 250)
+    assert tile_geometry(0.02, tile_px=250) == (5.0, 250)
+    with pytest.raises(ValueError, match="exactly one"):
+        tile_geometry(0.02, extent_m=5.0, tile_px=250)
+    with pytest.raises(ValueError, match="exactly one"):
+        tile_geometry(0.02)
+
+
+def test_a_grid_tiles_the_aoi(tmp_path):
+    ortho, aoi_path, stems_path = _scene(tmp_path)
+    out = str(tmp_path / "02_layout")
+    stats = layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0)
+    assert stats["n_kept"] == 4          # 10 m AOI / 5 m tiles
+    assert stats["tile_px"] == 250
+
+
+def test_halving_the_stride_overlaps_the_tiles(tmp_path):
+    ortho, aoi_path, stems_path = _scene(tmp_path)
+    out = str(tmp_path / "02_layout")
+    stats = layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0,
+                   stride_frac=0.5)
+    # Not 16: a tile must fit entirely inside the 10 m AOI, so the last start is at
+    # 5 m, giving starts {0, 2.5, 5} on each axis. Overlap raises the count without
+    # ever letting a footprint hang over the edge.
+    assert stats["n_kept"] == 9
+
+
+def test_every_footprint_is_snapped_to_the_raster_grid(tmp_path):
+    # An AOI deliberately offset by a third of a pixel.
+    ortho, aoi_path, stems_path = _scene(tmp_path, aoi=box_m(0.0067, 0.0067, 10, 10))
+    out = str(tmp_path / "02_layout")
+    layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0)
+    with open(os.path.join(out, "tiles.jsonl")) as fh:
+        for line in fh:
+            r = json.loads(line)
+            assert abs(round((r["minx"] - ORIGIN[0]) / 0.02) * 0.02
+                       - (r["minx"] - ORIGIN[0])) < 1e-9
+            assert r["width_px"] == 250 and r["height_px"] == 250
+            assert r["rotation"] == 0.0
+
+
+def test_min_valid_frac_drops_tiles_over_the_blank_edge(tmp_path):
+    # 2.5 m of blank down the left edge; a 5 m tile there is exactly 50% valid.
+    ortho, aoi_path, stems_path = _scene(tmp_path, blank_edge_m=2.5)
+    out = str(tmp_path / "02_layout")
+    strict = layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0,
+                    min_valid_frac=0.75)
+    assert strict["dropped_valid"] == 2       # the two tiles in the left column
+    loose = layout(ortho, aoi_path, stems_path, str(tmp_path / "loose"), mode="grid",
+                   extent_m=5.0, min_valid_frac=0.25)
+    assert loose["dropped_valid"] == 0
+
+
+def test_min_stem_frac_zero_keeps_empty_tiles(tmp_path):
+    ortho, aoi_path, stems_path = _scene(tmp_path)
+    out = str(tmp_path / "02_layout")
+    stats = layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0,
+                   min_stem_frac=0.0)
+    # A hard-negative set is 99.9% background by construction; rejecting empty tiles
+    # is what makes SpecDS stem-dense and is exactly wrong here.
+    assert stats["n_kept"] == 4
+    fracs = [json.loads(l)["stem_frac"] for l in open(os.path.join(out, "tiles.jsonl"))]
+    assert sum(1 for f in fracs if f == 0.0) == 3
+
+
+def test_random_mode_is_reproducible_from_its_seed(tmp_path):
+    ortho, aoi_path, stems_path = _scene(tmp_path)
+    a = str(tmp_path / "a")
+    b = str(tmp_path / "b")
+    layout(ortho, aoi_path, stems_path, a, mode="random", extent_m=5.0,
+           n_tiles=8, seed=7)
+    layout(ortho, aoi_path, stems_path, b, mode="random", extent_m=5.0,
+           n_tiles=8, seed=7)
+    assert open(os.path.join(a, "tiles.jsonl")).read() == \
+           open(os.path.join(b, "tiles.jsonl")).read()
+
+
+def test_random_footprints_stay_axis_aligned_and_inside_the_aoi(tmp_path):
+    ortho, aoi_path, stems_path = _scene(tmp_path)
+    out = str(tmp_path / "02_layout")
+    layout(ortho, aoi_path, stems_path, out, mode="random", extent_m=5.0,
+           n_tiles=8, seed=3)
+    with fiona.open(os.path.join(out, "footprints.gpkg"), layer="footprints") as s:
+        assert len(s) > 0
+        for f in s:
+            ring = f["geometry"]["coordinates"][0]
+            xs = {round(c[0], 6) for c in ring}
+            ys = {round(c[1], 6) for c in ring}
+            assert len(xs) == 2 and len(ys) == 2      # a true rectangle
+
+
+def test_records_carry_the_aoi_id_for_leakage_grouping(tmp_path):
+    ortho, aoi_path, stems_path = _scene(tmp_path)
+    out = str(tmp_path / "02_layout")
+    layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0)
+    ids = {json.loads(l)["aoi_id"] for l in open(os.path.join(out, "tiles.jsonl"))}
+    assert ids == {1}
