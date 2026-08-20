@@ -82,3 +82,49 @@ def test_writes_a_manifest(tmp_path):
     ingest(src, ortho, out, stems_layer="hard_negative_AOI", aoi_layer="AOI")
     from winmol_unet.pipeline.manifest import read_manifest
     assert read_manifest(out)["stage"] == "ingest"
+
+
+def test_text_coded_species_survives_and_is_filterable(tmp_path):
+    """The older corpus spells this field `Species`, capitalised, with text codes
+    (GFI, RBU, DGL). Coercing it to int -- what the writer used to do -- raises on
+    exactly this data; this must survive ingest and filter case-insensitively.
+    """
+    from shapely.geometry import mapping
+
+    ortho = str(tmp_path / "ortho.tif")
+    write_ortho(ortho, size_m=16.0)
+    src = str(tmp_path / "src.gpkg")
+    schema = {"geometry": "Polygon", "properties": {"Species": "str"}}
+    keep, drop = box_m(2, 2, 0.4, 0.4), box_m(10, 10, 0.4, 0.4)
+    with fiona.open(src, "w", driver="GPKG", layer="hard_negative_AOI", crs=CRS,
+                    schema=schema) as dst:
+        dst.write({"geometry": mapping(keep), "properties": {"Species": "gfi"}})
+        dst.write({"geometry": mapping(drop), "properties": {"Species": "RBU"}})
+
+    out = str(tmp_path / "00_source")
+    stats = ingest(src, ortho, out, stems_layer="hard_negative_AOI", aoi_layer=None,
+                   species={"GFI"})
+    assert stats["n_stems"] == 1
+    with fiona.open(os.path.join(out, "stems.gpkg"), layer="stems") as s:
+        feats = list(s)
+        assert len(feats) == 1
+        # Stored verbatim -- not upper-cased -- even though the filter matched it
+        # case-insensitively.
+        assert feats[0]["properties"]["species"] == "gfi"
+
+
+def test_a_layer_with_no_crs_raises_rather_than_silently_matching(tmp_path):
+    from shapely.geometry import mapping
+
+    ortho = str(tmp_path / "ortho.tif")
+    write_ortho(ortho, size_m=16.0)
+    src = str(tmp_path / "src.gpkg")
+    schema = {"geometry": "Polygon", "properties": {"stem_id": "int"}}
+    with fiona.open(src, "w", driver="GPKG", layer="hard_negative_AOI", crs=None,
+                    schema=schema) as dst:
+        dst.write({"geometry": mapping(box_m(2, 2, 0.4, 0.4)),
+                   "properties": {"stem_id": 1}})
+
+    out = str(tmp_path / "00_source")
+    with pytest.raises(ValueError):
+        ingest(src, ortho, out, stems_layer="hard_negative_AOI", aoi_layer=None)

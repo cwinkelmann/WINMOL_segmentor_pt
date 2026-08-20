@@ -161,9 +161,12 @@ def main(argv=None):
         from winmol_unet.pipeline.ingest import ingest
         if not (args.stems and args.ortho and args.stems_layer):
             parser.error("--ingest needs --stems, --ortho and --stems-layer")
+        # Upper-cased and stripped here so the case-insensitive comparison ingest()
+        # already performs on the stem's own value actually matches end to end.
+        species = {s.strip().upper() for s in args.species} if args.species else None
         ingest(args.stems, args.ortho, args.out, stems_layer=args.stems_layer,
                aoi_layer=args.aoi_layer, aoi_ids=args.aoi_ids,
-               species=args.species, quiet=args.quiet)
+               species=species, quiet=args.quiet)
         return 0
 
     if args.rasterize:

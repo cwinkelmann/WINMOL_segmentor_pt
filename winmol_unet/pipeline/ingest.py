@@ -50,12 +50,35 @@ def _read_layer(path, layer, dst_crs):
         recs = [(f["geometry"], dict(f["properties"] or {}), f.get("id"))
                 for f in src if f["geometry"] is not None]
 
+    if not crs:
+        # This stage exists to catch exactly this class of silent CRS defect --
+        # a layer with no CRS at all would otherwise pass the equality check below
+        # and be written through unreprojected, on the unverified assumption that
+        # it already matches the orthomosaic.
+        raise ValueError(f"{path!r} layer {layer!r} has no CRS; refusing to assume "
+                          "it already matches the orthomosaic")
+
     reprojected = 0
-    if crs and dst_crs and str(crs) != str(dst_crs):
+    if dst_crs and str(crs) != str(dst_crs):
         recs = [(transform_geom(crs, dst_crs, g), p, i) for g, p, i in recs]
         reprojected = len(recs)
     geoms, repaired = _repair([shape(g) for g, _, _ in recs])
     return geoms, [p for _, p, _ in recs], reprojected, repaired
+
+
+def _species(p):
+    """The species code, verbatim, from whichever spelling the corpus used.
+
+    Revier 13 spells the field lowercase `species` and has typed it both `Integer`
+    and absent entirely between reads (it has an open WAL). The older corpus spells
+    it `Species`, capitalised, with text codes (`GFI`, `RBU`, `DGL`). Both are read
+    here, `species` first, so one code path serves both -- stored as text and
+    verbatim, never coerced to int, since a text code cannot survive that coercion.
+    """
+    v = p.get("species")
+    if v is None:
+        v = p.get("Species")
+    return "" if v is None else str(v)
 
 
 def ingest(gpkg, ortho, out_dir, stems_layer, aoi_layer=None, aoi_ids=None,
@@ -69,8 +92,11 @@ def ingest(gpkg, ortho, out_dir, stems_layer, aoi_layer=None, aoi_ids=None,
 
     stems, stem_props, reprojected, repaired = _read_layer(gpkg, stems_layer, dst_crs)
     if species:
+        # `species` here is expected already upper-cased and stripped by the caller
+        # (the CLI does this before passing it in); only the stem's own value is
+        # normalised on this side of the comparison.
         keep = [i for i, p in enumerate(stem_props)
-                if str(p.get("species", "")).strip().upper() in species]
+                if _species(p).strip().upper() in species]
         stems = [stems[i] for i in keep]
         stem_props = [stem_props[i] for i in keep]
 
@@ -91,6 +117,10 @@ def ingest(gpkg, ortho, out_dir, stems_layer, aoi_layer=None, aoi_ids=None,
     tagged = []
     for g, p in zip(stems, stem_props):
         aoi_id = 0
+        # First-intersection-wins: a stem intersecting two AOIs is tagged with
+        # whichever AOI comes first in the layer's iteration order. Undefined for
+        # overlapping AOIs -- fine for the current corpus, worth revisiting if that
+        # changes.
         for poly, ap in zip(aois, aoi_props):
             if poly.intersects(g):
                 aoi_id = ap["aoi_id"]
@@ -98,13 +128,13 @@ def ingest(gpkg, ortho, out_dir, stems_layer, aoi_layer=None, aoi_ids=None,
         if aois and aoi_id == 0:
             continue
         tagged.append((g, {"stem_id": int(p.get("stem_id") or 0),
-                           "species": int(p.get("species") or 0),
+                           "species": _species(p),
                            "old_tree": int(p.get("old_tree") or 0),
                            "aoi_id": aoi_id}))
 
     stems_path = os.path.join(out_dir, "stems.gpkg")
     schema = {"geometry": "Unknown",
-              "properties": {"stem_id": "int", "species": "int",
+              "properties": {"stem_id": "int", "species": "str",
                              "old_tree": "int", "aoi_id": "int"}}
     with fiona.open(stems_path, "w", driver="GPKG", layer="stems",
                     crs=dst_crs.to_string(), schema=schema) as dst:
