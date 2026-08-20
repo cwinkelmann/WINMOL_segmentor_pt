@@ -5,8 +5,6 @@ are 130 gigapixels. The mask band matters more here than the pixels: it is what
 `--min-valid-frac` reads, so `write_ortho` gives every scene a real internal mask
 rather than relying on black pixels.
 """
-import os
-
 import numpy as np
 import rasterio
 from rasterio.transform import from_origin
@@ -49,10 +47,19 @@ def write_ortho(path, size_m=16.0, gsd=GSD, blank_edge_m=0.0, crs=CRS, seed=0):
 def write_polygons(path, polys, layer, crs=CRS, props=None):
     schema = {"geometry": "Polygon",
               "properties": {"stem_id": "int", "species": "int", "old_tree": "int"}}
-    # A second layer in an existing GeoPackage needs append mode; "w" would truncate
-    # the file and silently lose the layer written before it.
-    mode = "a" if os.path.exists(path) else "w"
-    with fiona.open(path, mode, driver="GPKG", layer=layer, crs=crs,
+    # "w" on GDAL's GPKG driver adds a layer to an existing GeoPackage rather than
+    # truncating the file -- verified empirically (GDAL 3.9.2 / fiona 1.10.1): three
+    # sequential "w" writes with three different layer names and CRSes left all three
+    # layers intact with their own feature counts. "a" mode looked like the safer
+    # choice but cannot create a layer that doesn't already exist yet -- it raises
+    # `fiona.errors.DriverError: NULL pointer error` (GDAL's error string is empty,
+    # so fiona's fallback message gives no hint this is about a missing layer) even on
+    # a brand-new file, and even when a same-named layer is opened for append it can't
+    # create a *different* new layer beside it. Each layer here is written in one call,
+    # so "w" is also the correct semantics: two "w" writes to the SAME layer name
+    # overwrite just that layer (verified: second call left it at 1 feature, not 2)
+    # without touching sibling layers.
+    with fiona.open(path, "w", driver="GPKG", layer=layer, crs=crs,
                     schema=schema) as dst:
         for i, poly in enumerate(polys):
             p = (props or [{}] * len(polys))[i]

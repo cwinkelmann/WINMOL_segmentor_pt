@@ -54,6 +54,8 @@ def build_parser():
                       help="compose leave-one-site-out folds from per-site tile sets")
     mode.add_argument("--rasterize", action="store_true",
                       help="burn annotations to a label raster and stop (no tiling)")
+    mode.add_argument("--ingest", action="store_true",
+                      help="normalise annotations onto the ortho's CRS and stop")
     mode.add_argument("--from-folder", action="store_true",
                       help="convert an existing image/mask folder to the loader convention")
     mode.add_argument("--from-coco", action="store_true",
@@ -115,6 +117,14 @@ def build_parser():
     ra.add_argument("--instances", default=None, help="also write an instance-id raster here")
     ra.add_argument("--all-touched", action="store_true")
 
+    pl = p.add_argument_group("staged pipeline (--ingest / --resample / --layout / --cut)")
+    pl.add_argument("--stems-layer", default=None,
+                    help="layer holding the stem polygons (--ingest)")
+    pl.add_argument("--aoi-layer", default=None,
+                    help="layer holding the AOI polygons (--ingest)")
+    pl.add_argument("--aoi-ids", nargs="*", type=int, default=None,
+                    help="keep only these AOIs, by position in the AOI layer")
+
     p.add_argument("--quiet", action="store_true")
     return p
 
@@ -145,6 +155,15 @@ def main(argv=None):
             parser.error("--split needs --src")
         print(split_dataset(args.src, args.out, val_fraction=args.val_fraction,
                             seed=args.seed))
+        return 0
+
+    if args.ingest:
+        from winmol_unet.pipeline.ingest import ingest
+        if not (args.stems and args.ortho and args.stems_layer):
+            parser.error("--ingest needs --stems, --ortho and --stems-layer")
+        ingest(args.stems, args.ortho, args.out, stems_layer=args.stems_layer,
+               aoi_layer=args.aoi_layer, aoi_ids=args.aoi_ids,
+               species=args.species, quiet=args.quiet)
         return 0
 
     if args.rasterize:
