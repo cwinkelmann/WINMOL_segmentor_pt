@@ -145,6 +145,10 @@ def build_parser():
                     help="grid step as a fraction of the tile extent")
     pl.add_argument("--min-valid-frac", type=float, default=0.5,
                     help="reject tiles whose footprint is less than this fraction valid")
+    pl.add_argument("--min-aoi-frac", type=float, default=1.0,
+                    help="fraction of a tile that must lie inside the AOI; "
+                         "1.0 (default) keeps only fully contained tiles, "
+                         "lower values admit edge tiles (--layout)")
     pl.add_argument("--n-tiles", type=int, default=None,
                     help="how many tiles to draw (--mode random)")
     pl.add_argument("--layout-dir", default=None,
@@ -213,8 +217,8 @@ def main(argv=None):
         layout(args.ortho, args.aoi, args.stems, args.out, mode=args.mode,
                extent_m=args.extent_m, tile_px=args.tile_px,
                stride_frac=args.stride_frac, min_valid_frac=args.min_valid_frac,
-               min_stem_frac=args.min_stem_frac, n_tiles=args.n_tiles,
-               seed=args.seed, quiet=args.quiet)
+               min_stem_frac=args.min_stem_frac, min_aoi_frac=args.min_aoi_frac,
+               n_tiles=args.n_tiles, seed=args.seed, quiet=args.quiet)
         return 0
 
     if args.cut:

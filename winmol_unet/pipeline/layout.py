@@ -11,6 +11,15 @@ where it is visible.
 
 `stem_frac` here is computed from the polygons -- exact and cheap for the 69 stems of
 Revier 13 -- and confirmed against the label raster in stage 5.
+
+`min_aoi_frac` trades a hard "entirely inside the AOI" test for a fraction, so a tile
+can reach the AOI boundary instead of always sitting a full footprint short of it.
+Ground inside the tile but outside the AOI is *unlabelled*, not *stem-free* -- the
+annotator never looked there. A tile at `min_aoi_frac=0.25` therefore teaches the
+model that three-quarters of its area is background on no evidence. That is a real
+risk for a positive-bearing dataset, and much less so for a hard-negative set, where
+the surrounding ground genuinely is negative. This module does not judge that
+trade-off; whoever sets the flag does.
 """
 import json
 import os
@@ -37,17 +46,42 @@ def _snap(value, origin, gsd):
 
 
 def enumerate_grid(bounds, origin, gsd, extent_m, stride_frac):
+    """Interior tile positions tiling `bounds`, plus a one-tile skirt straddling
+    each edge so a footprint can reach past it.
+
+    The skirt candidate on a side is centred exactly on that edge -- half inside,
+    half out -- rather than sized to whatever gap the interior grid happens to
+    leave, so it is always exactly one extra candidate per edge, independent of
+    `stride_frac` or how evenly the tile size divides the region. Whether a skirt
+    candidate survives is left entirely to `min_aoi_frac` in `layout()`: at the
+    default of 1.0 a skirt candidate is at most half full and is always dropped,
+    so the interior list below -- and every count that depended on it -- is
+    unchanged from before this existed.
+    """
     minx, miny, maxx, maxy = bounds
     step = extent_m * stride_frac
-    out = []
+
+    xs = []
     x = _snap(minx, origin[0], gsd)
     while x + extent_m <= maxx + 1e-9:
-        y = _snap(maxy, origin[1], gsd)
-        while y - extent_m >= miny - 1e-9:
-            out.append((x, y))
-            y = _snap(y - step, origin[1], gsd)
+        xs.append(x)
         x = _snap(x + step, origin[0], gsd)
-    return out
+    for skirt_x in (_snap(minx - extent_m / 2, origin[0], gsd),
+                    _snap(maxx - extent_m / 2, origin[0], gsd)):
+        if skirt_x not in xs:
+            xs.append(skirt_x)
+
+    ys = []
+    y = _snap(maxy, origin[1], gsd)
+    while y - extent_m >= miny - 1e-9:
+        ys.append(y)
+        y = _snap(y - step, origin[1], gsd)
+    for skirt_y in (_snap(maxy + extent_m / 2, origin[1], gsd),
+                    _snap(miny + extent_m / 2, origin[1], gsd)):
+        if skirt_y not in ys:
+            ys.append(skirt_y)
+
+    return [(x, y) for x in xs for y in ys]
 
 
 def _read_layer(path, layer):
@@ -60,7 +94,7 @@ def _read_layer(path, layer):
 
 def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
            tile_px=None, stride_frac=1.0, min_valid_frac=0.5, min_stem_frac=0.0,
-           n_tiles=None, seed=1, quiet=False):
+           min_aoi_frac=1.0, n_tiles=None, seed=1, quiet=False):
     """Stage 4 -- write the sampling plan, without reading any image bands.
 
     `n_tiles` (mode="random") is applied **per AOI region**, not per run: each
@@ -130,7 +164,8 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
         kept, dropped = [], {"aoi": 0, "valid": 0, "stem": 0}
         for x, y, aoi_id, region in cands:
             fp = box(x, y - extent_m, x + extent_m, y)
-            if not region.contains(fp):
+            aoi_frac = fp.intersection(region).area / fp.area
+            if aoi_frac < min_aoi_frac - 1e-9:
                 dropped["aoi"] += 1
                 continue
 
@@ -163,6 +198,7 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
                          "width_px": tile_px, "height_px": tile_px, "rotation": 0.0,
                          "aoi_id": aoi_id, "mode": mode, "seed": seed,
                          "stride_frac": stride_frac, "valid_frac": valid_frac,
+                         "aoi_frac": aoi_frac,
                          "stem_frac": stem_frac, "n_stems": n_stems, "stage": "layout"})
 
     os.makedirs(out_dir, exist_ok=True)
@@ -174,20 +210,23 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
     fp_path = os.path.join(out_dir, "footprints.gpkg")
     schema = {"geometry": "Polygon",
               "properties": {"id": "str", "aoi_id": "int", "valid_frac": "float",
+                             "aoi_frac": "float",
                              "stem_frac": "float", "n_stems": "int"}}
     with fiona.open(fp_path, "w", driver="GPKG", layer="footprints",
                     crs=crs.to_string(), schema=schema) as dst:
         for r in kept:
             dst.write({"geometry": mapping(box(r["minx"], r["miny"], r["maxx"], r["maxy"])),
                        "properties": {k: r[k] for k in
-                                      ("id", "aoi_id", "valid_frac", "stem_frac", "n_stems")}})
+                                      ("id", "aoi_id", "valid_frac", "aoi_frac",
+                                       "stem_frac", "n_stems")}})
 
     stats = {"n_candidates": len(cands), "n_kept": len(kept),
              "dropped_aoi": dropped["aoi"], "dropped_valid": dropped["valid"],
              "dropped_stem": dropped["stem"], "extent_m": extent_m, "tile_px": tile_px}
     params = {"mode": mode, "extent_m": extent_m, "tile_px": tile_px,
               "stride_frac": stride_frac, "min_valid_frac": min_valid_frac,
-              "min_stem_frac": min_stem_frac, "n_tiles": n_tiles, "seed": seed}
+              "min_stem_frac": min_stem_frac, "min_aoi_frac": min_aoi_frac,
+              "n_tiles": n_tiles, "seed": seed}
     inputs = [input_identity(gsd_ortho, "ortho")]
     if aoi_path:
         inputs.append(input_identity(aoi_path, "aoi"))
