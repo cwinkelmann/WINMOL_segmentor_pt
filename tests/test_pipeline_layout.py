@@ -109,6 +109,10 @@ def test_random_footprints_stay_axis_aligned_and_inside_the_aoi(tmp_path):
     out = str(tmp_path / "02_layout")
     layout(ortho, aoi_path, stems_path, out, mode="random", extent_m=5.0,
            n_tiles=8, seed=3)
+    from shapely.geometry import box as shapely_box, shape
+    from shapely.ops import unary_union
+    with fiona.open(aoi_path, layer="aoi") as al:
+        aoi_poly = unary_union([shape(f["geometry"]) for f in al])
     with fiona.open(os.path.join(out, "footprints.gpkg"), layer="footprints") as s:
         assert len(s) > 0
         for f in s:
@@ -116,6 +120,11 @@ def test_random_footprints_stay_axis_aligned_and_inside_the_aoi(tmp_path):
             xs = {round(c[0], 6) for c in ring}
             ys = {round(c[1], 6) for c in ring}
             assert len(xs) == 2 and len(ys) == 2      # a true rectangle
+            fp = shapely_box(min(xs), min(ys), max(xs), max(ys))
+            # "inside the AOI", not merely "a rectangle somewhere": a bounds-math
+            # regression (e.g. sampling up to maxx instead of maxx - extent_m) would
+            # let a footprint hang over the AOI edge without breaking axis-alignment.
+            assert fp.difference(aoi_poly).area < 1e-9
 
 
 def test_records_carry_the_aoi_id_for_leakage_grouping(tmp_path):

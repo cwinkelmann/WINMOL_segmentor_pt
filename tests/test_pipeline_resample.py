@@ -52,7 +52,12 @@ def test_native_gsd_is_a_passthrough_not_a_copy(tmp_path):
     write_ortho(src, size_m=16.0, gsd=0.02)
     stats = resample(src, str(tmp_path / "01_gsd"), gsd=0.02)
     assert stats["ratio"] == pytest.approx(1.0)
-    assert os.path.islink(stats["path"]) or os.path.exists(stats["path"])
+    # A copy would also satisfy "the path exists" -- and would cost a JPEG generation
+    # for nothing, which is the whole reason this path is a symlink rather than a
+    # write. Assert the link itself, and that it resolves back to the source: the
+    # property the test's name promises, not just that some file landed there.
+    assert os.path.islink(stats["path"])
+    assert os.path.realpath(stats["path"]) == os.path.realpath(src)
 
 
 def test_refuses_to_upsample(tmp_path):

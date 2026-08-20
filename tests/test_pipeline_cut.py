@@ -82,16 +82,7 @@ def test_a_cut_tile_is_byte_identical_to_its_window(tmp_path):
     ortho, stem_map, lay = _laid_out(tmp_path)
     out = str(tmp_path / "03_tiles")
     cut(lay, ortho, out, stem_map=stem_map)
-
-    rec = json.loads(open(os.path.join(lay, "tiles.jsonl")).readline())
-    with rasterio.open(os.path.join(out, "train", "train" + rec["id"] + ".tif")) as t:
-        tile = t.read()
-    with rasterio.open(ortho) as src:
-        win = rasterio.windows.from_bounds(
-            rec["minx"], rec["miny"], rec["maxx"], rec["maxy"], transform=src.transform)
-        direct = src.read(window=win)
-    # Not "close" -- equal. Any resampling at cut time would break this.
-    assert np.array_equal(tile, direct)
+    _assert_every_written_tile_matches_a_direct_read(ortho, lay, out)
 
 
 def test_an_overhanging_tile_is_zero_filled_not_stretched(tmp_path):
@@ -168,5 +159,10 @@ def test_records_carry_exact_stats(tmp_path):
     cut(lay, ortho, out, stem_map=stem_map)
     recs = [json.loads(l) for l in open(os.path.join(out, "tiles.jsonl"))]
     assert all(r["stage"] == "cut" for r in recs)
-    assert all(0.0 <= r["valid_frac"] <= 1.0 for r in recs)
+    # This fixture's AOI sits fully inside a raster with no blank edge, at the default
+    # min_aoi_frac=1.0 -- every kept tile is strictly interior, so valid_frac must be
+    # exactly 1.0, not merely "some value in range" (which cannot fail).  A regression
+    # in the exact valid-pixel count -- e.g. counting the off-raster fill from the
+    # boundless read as valid, or a wrong denominator -- would show up here.
+    assert all(r["valid_frac"] == 1.0 for r in recs)
     assert any(r["stem_frac"] > 0 for r in recs)
