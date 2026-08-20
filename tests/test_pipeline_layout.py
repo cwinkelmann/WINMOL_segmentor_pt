@@ -135,14 +135,14 @@ def test_records_carry_the_aoi_id_for_leakage_grouping(tmp_path):
     assert ids == {1}
 
 
-def _scene_overhanging_the_raster(tmp_path):
+def _scene_overhanging_the_raster(tmp_path, with_mask=True):
     """An AOI that exactly covers the raster, so a skirt candidate (min_aoi_frac < 1)
     necessarily hangs off the raster edge too -- the branch's own recommended recipe
     (--clip-aoi then --min-aoi-frac < 1) shrinks the raster to the AOI union first,
     which produces exactly this geometry.
     """
     ortho = str(tmp_path / "ortho.tif")
-    write_ortho(ortho, size_m=10.0, gsd=0.02)
+    write_ortho(ortho, size_m=10.0, gsd=0.02, with_mask=with_mask)
     aoi_path = str(tmp_path / "aoi.gpkg")
     write_polygons(aoi_path, [box_m(0, 0, 10, 10)], layer="aoi")
     stems_path = str(tmp_path / "stems.gpkg")
@@ -169,6 +169,67 @@ def test_a_skirt_tile_counts_off_raster_ground_as_invalid(tmp_path):
         assert r["valid_frac"] == pytest.approx(r["aoi_frac"], abs=0.05)
         assert r["valid_frac"] < 1.0
     assert stats["regions_skipped"] == 0
+
+
+def test_a_skirt_tile_counts_off_raster_ground_as_invalid_with_no_mask_band(tmp_path):
+    # Same scene as above, but on a plain GeoTIFF with no mask band at all
+    # (MaskFlags.all_valid) -- exactly what resample()'s ratio==1.0 symlink
+    # passthrough hands straight through to this stage. The overhang behaviour
+    # must not depend on whether the source happens to carry a mask band: before
+    # the fix, read_masks(..., boundless=True) on a mask-less source returned a
+    # bool array, and float(m.mean()) / 255.0 divided a 0/1 mean by 255 instead of
+    # 1.0 -- reporting valid_frac ~= 0.002 for a HALF-valid tile, not the ~0.5 a
+    # correct area-weighted computation gives.
+    ortho, aoi_path, stems_path = _scene_overhanging_the_raster(tmp_path, with_mask=False)
+    out = str(tmp_path / "02_layout")
+    stats = layout(ortho, aoi_path, stems_path, out, mode="grid", extent_m=5.0,
+                   min_aoi_frac=0.25, min_valid_frac=0.0)
+    recs = [json.loads(l) for l in open(os.path.join(out, "tiles.jsonl"))]
+    skirts = [r for r in recs if r["aoi_frac"] < 1.0]
+    assert skirts, "fixture must produce at least one skirt tile"
+    for r in skirts:
+        assert r["valid_frac"] == pytest.approx(r["aoi_frac"], abs=0.05)
+        assert r["valid_frac"] < 1.0
+    assert stats["regions_skipped"] == 0
+
+
+def test_layout_is_blind_to_whether_the_source_has_a_mask_band(tmp_path):
+    # The regression this fix exists for: layout() must keep the same candidates
+    # regardless of whether the source ortho carries an internal mask band.
+    # Before the fix, read_masks(..., boundless=True) on a mask-less
+    # (MaskFlags.all_valid) source returned a bool array of True/False rather than
+    # uint8 255/0; float(m.mean()) / 255.0 then divided a mean of ~1.0 by 255
+    # instead of by 1.0, reporting valid_frac ~= 0.0039 for a fully valid tile and
+    # min_valid_frac's default of 0.5 rejected every single candidate -- 0 kept
+    # instead of 4. Every OTHER fixture in this suite calls write_ortho with its
+    # default with_mask=True, so this is the one test that would have caught it.
+    masked_ortho = str(tmp_path / "masked.tif")
+    write_ortho(masked_ortho, size_m=16.0, gsd=0.02, with_mask=True)
+    maskless_ortho = str(tmp_path / "maskless.tif")
+    write_ortho(maskless_ortho, size_m=16.0, gsd=0.02, with_mask=False)
+    aoi_path = str(tmp_path / "aoi.gpkg")
+    write_polygons(aoi_path, [box_m(0, 0, 10, 10)], layer="aoi")
+    stems_path = str(tmp_path / "stems.gpkg")
+    write_polygons(stems_path, [box_m(1, 1, 1, 1)], layer="stems")
+
+    masked_out = str(tmp_path / "masked_layout")
+    maskless_out = str(tmp_path / "maskless_layout")
+    masked_stats = layout(masked_ortho, aoi_path, stems_path, masked_out,
+                          mode="grid", extent_m=5.0)
+    maskless_stats = layout(maskless_ortho, aoi_path, stems_path, maskless_out,
+                            mode="grid", extent_m=5.0)
+
+    assert masked_stats["n_kept"] == 4
+    assert maskless_stats["n_kept"] == masked_stats["n_kept"]
+    assert maskless_stats["dropped_valid"] == masked_stats["dropped_valid"] == 0
+
+    masked_recs = [json.loads(l) for l in open(os.path.join(masked_out, "tiles.jsonl"))]
+    maskless_recs = [json.loads(l) for l in open(os.path.join(maskless_out, "tiles.jsonl"))]
+    assert {r["id"] for r in masked_recs} == {r["id"] for r in maskless_recs}
+    # Every kept tile here is strictly interior to a fully-valid raster: the exact
+    # value must be 1.0, not the ~0.0039 the pre-fix bool/255 division produced.
+    assert all(r["valid_frac"] == 1.0 for r in maskless_recs)
+    assert all(r["valid_frac"] == 1.0 for r in masked_recs)
 
 
 def test_layout_skips_a_region_entirely_outside_the_raster(tmp_path):

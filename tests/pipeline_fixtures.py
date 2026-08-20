@@ -23,7 +23,18 @@ def box_m(x0, y0, w, h):
     return box(left, top - h, left + w, top)
 
 
-def write_ortho(path, size_m=16.0, gsd=GSD, blank_edge_m=0.0, crs=CRS, seed=0):
+def write_ortho(path, size_m=16.0, gsd=GSD, blank_edge_m=0.0, crs=CRS, seed=0,
+                with_mask=True):
+    """`with_mask=False` writes a plain GeoTIFF with no mask band at all --
+    `MaskFlags.all_valid` in rasterio's terms, exactly what a source orthomosaic
+    with no nodata/alpha/mask information looks like, and exactly what
+    `resample()`'s ratio==1.0 symlink passthrough hands straight through to
+    `layout()` unchanged. `read_masks()` on such a raster returns a synthetic
+    array rather than one read from the file -- and, when combined with a
+    boundless window, a **bool** array rather than uint8. Every other fixture in
+    this module calls `write_ortho` with the default `with_mask=True`, so this is
+    the one case the rest of the suite is blind to.
+    """
     n = int(round(size_m / gsd))
     rng = np.random.default_rng(seed)
     # mid-grey noise, never black: nodata rejection must fire from the mask band,
@@ -41,7 +52,8 @@ def write_ortho(path, size_m=16.0, gsd=GSD, blank_edge_m=0.0, crs=CRS, seed=0):
                            dtype="uint8", crs=crs,
                            transform=from_origin(ORIGIN[0], ORIGIN[1], gsd, gsd)) as dst:
             dst.write(data)
-            dst.write_mask(mask)
+            if with_mask:
+                dst.write_mask(mask)
 
 
 def write_polygons(path, polys, layer, crs=CRS, props=None):

@@ -105,7 +105,8 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
     import numpy as np
     import rasterio
     from rasterio.enums import Resampling
-    from rasterio.windows import from_bounds
+    from rasterio.errors import WindowError
+    from rasterio.windows import Window, from_bounds, intersection as window_intersection
     from shapely.geometry import box, mapping
     from shapely.strtree import STRtree
     import fiona
@@ -200,19 +201,46 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
                 continue
 
             win = from_bounds(*fp.bounds, transform=src.transform)
-            # boundless=True: a skirt candidate (min_aoi_frac < 1) or a candidate from
-            # an AOI that only partly overlaps the raster can have a window that
-            # overhangs the raster edge. Without boundless, GDAL either silently reads
-            # only the in-raster part -- averaged into `m` as if the tile were smaller,
-            # so a tile half off the raster reads back valid_frac == 1.0 -- or raises
-            # RasterioIOError outright when the window doesn't intersect the raster at
-            # all. boundless=True fills the off-raster part with mask value 0 (invalid),
-            # which is the correct answer: unlabelled, unphotographed ground is not
-            # valid ground, whether or not an AOI happens to claim it.
-            m = src.read_masks(1, window=win,
-                               out_shape=(max(1, int(tile_px / decim)),) * 2,
-                               resampling=Resampling.average, boundless=True)
-            valid_frac = float(m.mean()) / 255.0
+            # A skirt candidate (min_aoi_frac < 1) or a candidate from an AOI that
+            # only partly overlaps the raster can have a window that overhangs the
+            # raster edge. `boundless=True` on the whole window used to be the fix
+            # here, but it has two problems: (1) when the source has no mask band at
+            # all (MaskFlags.all_valid -- a plain GeoTIFF, which is exactly what
+            # resample()'s ratio==1.0 symlink passthrough hands to this stage),
+            # read_masks(boundless=True) returns a **bool** array instead of uint8,
+            # so `float(m.mean()) / 255.0` divides a 0/1 mean by 255 and reports
+            # valid_frac ~= 0.0039 for a fully valid tile -- min_valid_frac then
+            # rejects everything; (2) boundless reads bypass GDAL's overview
+            # selection entirely, so the "cheap screen from an overview" this
+            # function's docstring promises stops being cheap (measured ~60x slower
+            # on a 4000^2 raster).
+            #
+            # Instead: intersect the window with the raster's own window first, and
+            # read only that (never boundless), which keeps overview selection
+            # working. Off-raster area is not read at all -- it is definitionally
+            # invalid -- so its contribution to valid_frac is added by area weight,
+            # not by pixel count of a decimated fill.
+            raster_win = Window(0, 0, src.width, src.height)
+            try:
+                read_win = window_intersection(raster_win, win)
+            except WindowError:
+                read_win = None
+
+            if read_win is None or read_win.width <= 0 or read_win.height <= 0:
+                valid_frac = 0.0
+            else:
+                sub_shape = (max(1, int(round(read_win.height / decim))),
+                             max(1, int(round(read_win.width / decim))))
+                m = src.read_masks(1, window=read_win, out_shape=sub_shape,
+                                   resampling=Resampling.average)
+                # Belt and braces: read_masks on a non-boundless window should
+                # always be uint8, but a future GDAL/rasterio change (or a mask-less
+                # source hitting some other code path) is exactly the kind of thing
+                # that bit us above -- normalise explicitly rather than assume.
+                denom = 1.0 if m.dtype == bool else 255.0
+                frac_within_read = float(m.mean()) / denom
+                area_weight = (read_win.width * read_win.height) / (win.width * win.height)
+                valid_frac = frac_within_read * area_weight
             if valid_frac < min_valid_frac - tol:
                 dropped["valid"] += 1
                 continue
