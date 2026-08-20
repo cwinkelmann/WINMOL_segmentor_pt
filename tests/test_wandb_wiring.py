@@ -1,3 +1,5 @@
+"""Wandb logging wired through train_one_run: the CLI-flag half of this file moved to
+tests/test_config_wiring.py (task 8 of the 2026-08-20 test-suite consolidation)."""
 import glob
 import sys
 import types
@@ -9,7 +11,6 @@ from torch.utils.data import DataLoader
 from winmol_unet.training.config import TrainConfig
 from winmol_unet.training.dataset import StemDataset
 from winmol_unet.training.train import train_one_run
-from winmol_unet.training.run_train import config_from_args
 from winmol_unet.model import UNet
 
 
@@ -22,19 +23,6 @@ def _tiny_ds(tmp_path):
         m = np.zeros((32, 32), np.uint8); m[:, :16] = 255
         Image.fromarray(m, "L").save(mask_dir / f"mask{n}.gif")
     return StemDataset(str(img_dir), str(mask_dir))
-
-
-def test_cli_parses_wandb_flags():
-    cfg = config_from_args(["--data-dir", "d", "--wandb",
-                            "--wandb-project", "P", "--wandb-run-name", "R"])
-    assert cfg.wandb is True
-    assert cfg.wandb_project == "P"
-    assert cfg.wandb_run_name == "R"
-
-
-def test_cli_wandb_off_by_default():
-    cfg = config_from_args(["--data-dir", "d"])
-    assert cfg.wandb is False
 
 
 def test_train_logs_train_loss_scalar(tmp_path):

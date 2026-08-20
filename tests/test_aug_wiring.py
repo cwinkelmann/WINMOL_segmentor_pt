@@ -1,22 +1,11 @@
+"""Augmentation wiring end to end: the CLI-flag half of this file moved to
+tests/test_config_wiring.py (task 8 of the 2026-08-20 test-suite consolidation)."""
 import os
 import numpy as np
 from PIL import Image
 
-from winmol_unet.training.run_train import config_from_args, run_training
+from winmol_unet.training.run_train import run_training
 from winmol_unet.training.config import TrainConfig
-
-
-def test_cli_parses_aug_flags():
-    cfg = config_from_args(["--data-dir", "d", "--aug-rotate-p", "0.3",
-                            "--aug-rotate-limit", "20", "--aug-hflip-p", "0.25"])
-    assert cfg.aug_rotate_p == 0.3
-    assert cfg.aug_rotate_limit == 20
-    assert cfg.aug_hflip_p == 0.25
-
-
-def test_aug_flags_default_preserved():
-    cfg = config_from_args(["--data-dir", "d"])
-    assert cfg.aug_hflip_p == 0.5 and cfg.aug_rotate_p == 0.0
 
 
 def test_run_training_with_rotation_enabled(tmp_path):

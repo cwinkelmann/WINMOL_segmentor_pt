@@ -1,3 +1,5 @@
+"""The held-out --test-data-dir stage: the CLI-flag half of this file moved to
+tests/test_config_wiring.py (task 8 of the 2026-08-20 test-suite consolidation)."""
 import glob
 import os
 
@@ -5,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from winmol_unet.training.config import TrainConfig
-from winmol_unet.training.run_train import config_from_args, run_training
+from winmol_unet.training.run_train import run_training
 
 
 def _ds(d, n=6):
@@ -15,11 +17,6 @@ def _ds(d, n=6):
         Image.fromarray(rgb, "RGB").save(d / "train" / f"train{k}.jpeg")
         m = np.zeros((32, 32), np.uint8); m[:, :16] = 255
         Image.fromarray(m, "L").save(d / "mask" / f"mask{k}.gif")
-
-
-def test_cli_parses_test_data_dir():
-    assert config_from_args(["--data-dir", "d", "--test-data-dir", "t"]).test_data_dir == "t"
-    assert config_from_args(["--data-dir", "d"]).test_data_dir is None
 
 
 def test_test_stage_writes_results_and_logs(tmp_path):

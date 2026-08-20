@@ -1,10 +1,12 @@
+"""Architecture-dependent export behaviour: the CLI-flag half of this file moved to
+tests/test_config_wiring.py (task 8 of the 2026-08-20 test-suite consolidation)."""
 import os
 import numpy as np
 import pytest
 from PIL import Image
 
 from winmol_unet.training.config import TrainConfig
-from winmol_unet.training.run_train import config_from_args, run_training
+from winmol_unet.training.run_train import run_training
 
 
 def _make_ds(tmp_path, n=6):
@@ -26,15 +28,6 @@ def _cfg(tmp_path, arch, export_keras=False):
         onnx_out=str(out / "m.onnx"), epochs=1, batch_size=2, patience=999,
         device="cpu", arch=arch, encoder_weights=None, export_keras=export_keras,
     )
-
-
-def test_cli_parses_arch_flags():
-    cfg = config_from_args(["--data-dir", "d", "--arch", "deeplabv3plus",
-                            "--encoder", "resnet18", "--encoder-weights", "imagenet"])
-    assert cfg.arch == "deeplabv3plus"
-    assert cfg.encoder == "resnet18"
-    assert cfg.encoder_weights == "imagenet"
-    assert config_from_args(["--data-dir", "d"]).arch == "unet"   # default
 
 
 def test_non_unet_exports_onnx_pt_only(tmp_path):
