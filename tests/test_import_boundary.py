@@ -22,15 +22,29 @@ HEAVY = ("torch", "tensorflow", "keras", "albumentations", "segmentation_models_
          "torchvision", "wandb", "rasterio", "fiona", "shapely")
 
 
-def _import_in_subprocess(statement):
-    """Import `statement` in a clean interpreter; return the heavy modules it pulled in."""
+def _import_in_subprocess(statement, timeout=180):
+    """Import `statement` in a clean interpreter; return the heavy modules it pulled in.
+
+    `timeout` matters for exactly one caller: eagerly importing TensorFlow after torch's
+    native libraries are already loaded deadlocks inside TF's abseil mutex, which would
+    otherwise hang this subprocess (and the whole suite) forever instead of failing. On
+    expiry this reports the statement that hung rather than letting a raw
+    `subprocess.TimeoutExpired` surface, so the failure names what to go look at.
+    """
     code = textwrap.dedent(f"""
         import sys
         {statement}
         heavy = [m for m in {HEAVY!r} if m in sys.modules]
         print(",".join(heavy))
     """)
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    try:
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                              timeout=timeout)
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            f"`{statement}` did not finish within {timeout}s in a fresh subprocess -- this "
+            f"looks like a hang/deadlock (e.g. eager TensorFlow import after torch), not a "
+            f"slow import.")
     assert out.returncode == 0, f"import failed:\n{out.stderr}"
     return [m for m in out.stdout.strip().split(",") if m]
 
