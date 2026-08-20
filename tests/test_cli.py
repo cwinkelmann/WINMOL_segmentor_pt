@@ -1,4 +1,8 @@
-"""The four root entry points, exercised rather than --help'd.
+"""The four root entry points, exercised rather than --help'd, plus checkpoint scoring
+absorbed from the former tests/test_eval_checkpoint.py.
+
+The four entry points end to end: prepare, train, infer, evaluate.
+test_infer_writes_a_georeferenced_raster is the public suite's inference anchor.
 
 `--help` proves argparse is wired up; it proves nothing about whether the CLI calls the
 library correctly. Writing prepare.py produced two bugs that `--help` was perfectly happy
@@ -7,14 +11,17 @@ forwarding `--config` to `folds.main`, which takes `--site-all/--site-tv/--folds
 and has no `--config` at all. Both would have failed in front of a user, on real data,
 after a long tiling run.
 
-So each mode here runs end to end on a synthetic site built in tmp_path.
+So each mode here runs end to end on a synthetic site built by the shared `geo_site`
+fixture. eval_checkpoint must reproduce run_train's own test number for the same
+model+set -- the whole point of the script is that a 2x2's off-diagonal is comparable to
+the diagonal that training printed, which is what
+test_matches_the_training_loops_own_evaluate checks.
 """
 import json
 import os
 import subprocess
 import sys
 
-import numpy as np
 import onnx
 import pytest
 
@@ -24,42 +31,6 @@ shapely = pytest.importorskip("shapely")
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CRS = "EPSG:25833"
-GSD = 0.02
-ORIGIN = (400000.0, 6000000.0)
-
-
-def _write_ortho(path, size_m=60.0):
-    n = int(size_m / GSD)
-    transform = rasterio.transform.from_origin(ORIGIN[0], ORIGIN[1], GSD, GSD)
-    data = np.random.default_rng(0).integers(60, 200, size=(3, n, n), dtype="uint8")
-    with rasterio.open(path, "w", driver="GTiff", width=n, height=n, count=3,
-                       dtype="uint8", crs=CRS, transform=transform) as dst:
-        dst.write(data)
-
-
-def _write_polygons(path, polys):
-    schema = {"geometry": "Polygon", "properties": {"id": "int", "Species": "str"}}
-    with fiona.open(path, "w", driver="ESRI Shapefile", crs=CRS, schema=schema) as dst:
-        for i, poly in enumerate(polys):
-            dst.write({"geometry": shapely.geometry.mapping(poly),
-                       "properties": {"id": i + 1, "Species": "GFI"}})
-
-
-@pytest.fixture
-def site(tmp_path):
-    from shapely.affinity import rotate
-    from shapely.geometry import box
-
-    ortho = tmp_path / "site_ortho.tif"
-    _write_ortho(str(ortho))
-    cx, cy = ORIGIN[0] + 30.0, ORIGIN[1] - 30.0
-    _write_polygons(str(tmp_path / "aoi.shp"), [box(cx - 20, cy - 20, cx + 20, cy + 20)])
-    stems = [rotate(box(cx + dx - 1.5, cy + dy - 0.2, cx + dx + 1.5, cy + dy + 0.2),
-                    17 * (dx + dy))
-             for dx in range(-18, 19, 3) for dy in range(-18, 19, 3)]
-    _write_polygons(str(tmp_path / "stems.shp"), stems)
-    return {"ortho": str(ortho), "stems": str(tmp_path / "stems.shp"),
-            "aoi": str(tmp_path / "aoi.shp")}
 
 
 @pytest.mark.parametrize("script", ["prepare.py", "train.py", "infer.py", "evaluate.py"])
@@ -70,12 +41,13 @@ def test_entry_point_runs(script):
     assert "usage:" in out.stdout
 
 
-def test_prepare_single_site_writes_a_loader_dataset(site, tmp_path):
+def test_prepare_single_site_writes_a_loader_dataset(geo_site, tmp_path):
     from winmol_unet.cli.prepare import main
 
     out = tmp_path / "DS"
-    assert main(["--ortho", site["ortho"], "--stems", site["stems"], "--aoi", site["aoi"],
-                 "--out", str(out), "--limit", "3", "--quiet"]) == 0
+    assert main(["--ortho", geo_site["ortho"], "--stems", geo_site["stems"],
+                 "--aoi", geo_site["aoi"], "--out", str(out), "--limit", "3",
+                 "--quiet"]) == 0
 
     images = sorted((out / "train").glob("train*.jpeg"))
     masks = sorted((out / "mask").glob("mask*.gif"))
@@ -86,14 +58,14 @@ def test_prepare_single_site_writes_a_loader_dataset(site, tmp_path):
     assert {"n", "site", "gsd_m_per_px"} <= set(recs[0])
 
 
-def test_prepare_rasterize_writes_a_label_raster(site, tmp_path):
+def test_prepare_rasterize_writes_a_label_raster(geo_site, tmp_path):
     """Regression: this called rasterize(instances=...) where the parameter is
     instances_path, so it raised TypeError the moment it was actually invoked."""
     from winmol_unet.cli.prepare import main
 
     out = tmp_path / "stem_map.tif"
     inst = tmp_path / "instances.tif"
-    assert main(["--rasterize", "--stems", site["stems"], "--ortho", site["ortho"],
+    assert main(["--rasterize", "--stems", geo_site["stems"], "--ortho", geo_site["ortho"],
                  "--out", str(out), "--instances", str(inst)]) == 0
     with rasterio.open(out) as src:
         assert src.read(1).max() > 0        # something was actually burned in
@@ -143,28 +115,32 @@ def test_prepare_refuses_an_incomplete_single_site_invocation(tmp_path):
 # evaluate.py fed a list (geo.predict.score) and a tuple (score_checkpoint.score) into a
 # dict splat. Both raise on the first real invocation. These tests drive the real paths.
 
-def _tiny_dataset(dst, n=6):
-    """A loader-convention dataset small enough to train on in seconds."""
-    import numpy as np
-    from PIL import Image
-    (dst / "train").mkdir(parents=True); (dst / "mask").mkdir(parents=True)
-    rng = np.random.default_rng(0)
-    for i in range(1, n + 1):
-        Image.fromarray(rng.integers(0, 255, (64, 64, 3), dtype="uint8")).save(
-            dst / "train" / f"train{i}.jpeg")
-        m = np.zeros((64, 64), dtype="uint8"); m[20:44, 28:36] = 255
-        Image.fromarray(m).save(dst / "mask" / f"mask{i}.gif")
-    return dst
-
-
 @pytest.fixture(scope="module")
 def trained(tmp_path_factory):
-    """Train a tiny UNet once and reuse its ONNX across the tests below."""
+    """Train a tiny UNet once and reuse its ONNX across the tests below.
+
+    Builds its own dataset rather than requesting the shared `stem_dataset` fixture:
+    `trained` is module-scoped (training is slow enough that five dependent tests
+    sharing one run matters) and `stem_dataset` is function-scoped, and pytest refuses
+    a module-scoped fixture depending on a function-scoped one. The image content is a
+    plain synthetic RGB tile with a small rectangular mask blob -- shape doesn't matter
+    since StemDataset resizes everything to 512 regardless of the source size.
+    """
+    import numpy as np
+    from PIL import Image
     torch = pytest.importorskip("torch")
     from winmol_unet.cli.train import main
 
     root = tmp_path_factory.mktemp("e2e")
-    ds = _tiny_dataset(root / "ds")
+    ds = root / "ds"
+    (ds / "train").mkdir(parents=True); (ds / "mask").mkdir(parents=True)
+    rng = np.random.default_rng(0)
+    for i in range(1, 7):
+        Image.fromarray(rng.integers(0, 255, (64, 64, 3), dtype="uint8")).save(
+            ds / "train" / f"train{i}.jpeg")
+        m = np.zeros((64, 64), dtype="uint8"); m[20:44, 28:36] = 255
+        Image.fromarray(m).save(ds / "mask" / f"mask{i}.gif")
+
     out = root / "run"
     assert main(["--data-dir", str(ds), "--out-dir", str(out), "--arch", "unet",
                  "--width-mult", "0.25", "--epochs", "1", "--batch-size", "2",
@@ -203,15 +179,51 @@ def test_evaluate_checkpoint_mode_emits_a_flat_metric_dict(trained, capsys):
     assert {"f1", "precision", "recall"} <= set(payload)
 
 
-def test_infer_writes_a_georeferenced_raster(site, trained, tmp_path, monkeypatch):
+def test_matches_the_training_loops_own_evaluate(tmp_path, stem_dataset):
+    """eval_checkpoint must reproduce run_train's own test number for the same model+set.
+
+    The whole point of the script is that a 2x2's off-diagonal is comparable to the
+    diagonal that training printed. If it scored differently -- a different resize, a
+    different threshold, augmentation left on -- the off-diagonal would be measuring the
+    harness rather than the filter mismatch.
+
+    Absorbed from the former tests/test_eval_checkpoint.py.
+    """
+    import torch
+    from torch.utils.data import DataLoader
+    from winmol_unet.training.score_checkpoint import score
+    from winmol_unet.training.dataset import StemDataset
+    from winmol_unet.training.evaluate import evaluate
+    from winmol_unet.training.model_factory import build_model
+
+    data = stem_dataset(tmp_path / "test_ds")
+
+    model = build_model("deeplabv3plus", encoder_weights=None).eval()
+    ckpt = tmp_path / "model.pt"
+    torch.save(model.state_dict(), ckpt)
+
+    # what run_train._run_test does: no augmentation, plain resize dataset, same evaluate()
+    ds = StemDataset(str(data / "train"), str(data / "mask"), 32, transform=None,
+                     cache=False)
+    expected = evaluate(model, DataLoader(ds, batch_size=2))
+
+    got, n = score(str(ckpt), "deeplabv3plus", str(data), batch_size=2, device="cpu",
+                   img_size=32, num_workers=0)
+
+    assert n == 6
+    for k in ("f1", "precision", "recall", "loss"):
+        assert abs(got[k] - expected[k]) < 1e-6, f"{k}: {got[k]} != {expected[k]}"
+
+
+def test_infer_writes_a_georeferenced_raster(geo_site, trained, tmp_path, monkeypatch):
     """Regression for the 7-tuple unpack AND the silently-missing CRS: a stem map with
     crs=None is not georeferenced, which is the entire point of the output."""
     monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
     from winmol_unet.cli.infer import main
 
     out = tmp_path / "pred.tif"
-    assert main(["--model", trained["onnx"], "--ortho", site["ortho"],
-                 "--aoi", site["aoi"], "--out", str(out),
+    assert main(["--model", trained["onnx"], "--ortho", geo_site["ortho"],
+                 "--aoi", geo_site["aoi"], "--out", str(out),
                  "--extent-m", "15", "--threshold", "0.5", "--quiet"]) == 0
     with rasterio.open(out) as src:
         assert src.crs is not None, "output raster has no CRS"
@@ -220,12 +232,12 @@ def test_infer_writes_a_georeferenced_raster(site, trained, tmp_path, monkeypatc
     assert (tmp_path / "pred_mask.tif").exists(), "--threshold did not write the mask"
 
 
-def test_evaluate_geospatial_mode_scores_against_the_ground(site, trained, tmp_path,
+def test_evaluate_geospatial_mode_scores_against_the_ground(geo_site, trained, tmp_path,
                                                             capsys, monkeypatch):
     monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
     from winmol_unet.cli.evaluate import main
-    assert main(["--model", trained["onnx"], "--ortho", site["ortho"],
-                 "--aoi", site["aoi"], "--stems", site["stems"],
+    assert main(["--model", trained["onnx"], "--ortho", geo_site["ortho"],
+                 "--aoi", geo_site["aoi"], "--stems", geo_site["stems"],
                  "--extent-m", "15", "--edge-buffer-m", "0", "--label", "geo",
                  "--quiet"]) == 0
     payload = json.loads(capsys.readouterr().out.strip())
@@ -266,7 +278,7 @@ def test_prepare_from_folder_produces_the_loader_convention(tmp_path):
 
 def test_prepare_split_matches_the_loaders_own_split(tmp_path):
     """The materialised split must equal what train_val_split would pick for the same
-    fraction and seed — otherwise a 'shareable held-out set' is a different set."""
+    fraction and seed -- otherwise a 'shareable held-out set' is a different set."""
     from winmol_unet.cli.prepare import main
     from winmol_unet.training.dataset import split_ids
 
@@ -287,7 +299,7 @@ def test_prepare_split_matches_the_loaders_own_split(tmp_path):
 
 
 def test_prepare_conversion_modes_need_no_gdal():
-    """These modes must not import rasterio/fiona/shapely — they are not in [train]."""
+    """These modes must not import rasterio/fiona/shapely -- they are not in [train]."""
     import subprocess, sys as _sys, textwrap
     code = textwrap.dedent("""
         import sys
