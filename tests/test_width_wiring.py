@@ -1,19 +1,6 @@
-from winmol_unet.training.model_factory import build_model
+"""CLI wiring for --width-mult. The build_model width tests moved to tests/test_model.py;
+this file keeps only the config_from_args tests, pending Task 8's removal of this file."""
 from winmol_unet.training.run_train import config_from_args
-
-
-def _nparams(m):
-    return sum(p.numel() for p in m.parameters())
-
-
-def test_build_model_unet_accepts_width_mult():
-    full = build_model("unet")
-    half = build_model("unet", width_mult=0.5)
-    assert _nparams(half) < 0.32 * _nparams(full)
-
-
-def test_build_model_default_width_is_full():
-    assert _nparams(build_model("unet", width_mult=1.0)) == _nparams(build_model("unet"))
 
 
 def test_cli_parses_width_mult():
