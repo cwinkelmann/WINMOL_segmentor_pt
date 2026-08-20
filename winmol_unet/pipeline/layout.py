@@ -110,6 +110,19 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
     from shapely.strtree import STRtree
     import fiona
 
+    if mode == "random" and min_aoi_frac < 1.0:
+        # Random candidates are drawn strictly inside [minx, maxx - extent_m] (and the
+        # matching y range), so a footprint can never straddle the AOI boundary --
+        # min_aoi_frac has no candidate to reject and is silently inert. Skirts are not
+        # implemented for mode="random"; refuse rather than pretend the flag did
+        # something.
+        raise ValueError(
+            f"mode='random' cannot honour --min-aoi-frac (got {min_aoi_frac}): random "
+            "candidates are drawn strictly inside each AOI's bounds and can never "
+            "straddle its boundary, so --min-aoi-frac would silently have no effect. "
+            "Use mode='grid' with --min-aoi-frac, or drop --min-aoi-frac (default 1.0) "
+            "for mode='random'.")
+
     with rasterio.open(gsd_ortho) as src:
         gsd = src.res[0]
         crs = src.crs
@@ -158,8 +171,15 @@ def layout(gsd_ortho, aoi_path, stems_path, out_dir, mode="grid", extent_m=None,
             if mode == "grid":
                 tops = enumerate_grid(poly.bounds, origin, gsd, extent_m, stride_frac)
             elif mode == "random":
-                rng = np.random.default_rng(seed + aoi_id)
                 minx, miny, maxx, maxy = poly.bounds
+                if (maxx - minx) < extent_m or (maxy - miny) < extent_m:
+                    raise ValueError(
+                        f"AOI aoi_id={aoi_id} bounds {poly.bounds} are smaller than the "
+                        f"{extent_m} m tile extent in mode='random'; a random tile "
+                        "cannot be placed inside it (skirts are not implemented for "
+                        "mode='random', so shrinking the tile or using mode='grid' are "
+                        "the alternatives).")
+                rng = np.random.default_rng(seed + aoi_id)
                 tops = []
                 for _ in range(int((n_tiles or 100) * 20)):
                     if len(tops) >= (n_tiles or 100):

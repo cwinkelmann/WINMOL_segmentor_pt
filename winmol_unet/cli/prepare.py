@@ -58,8 +58,10 @@ AOI that left 0 of 79 tiles touching the boundary, at 70% coverage. `--min-aoi-f
 0.25` admitted edge tiles and raised that to 128 tiles, 38% touching, 98% coverage.
 Pair it with `--min-valid-frac 0.25`, not 0.0: `--min-valid-frac 0.0` combined with
 edge tiles produced 25% fully-black tiles — no imagery at all — in one run.
-`--min-aoi-frac` has **no effect in `--mode random`**, whose candidates are drawn
-strictly inside the AOI bounding box.
+`--min-aoi-frac` **raises in `--mode random`** rather than being silently inert:
+random candidates are drawn strictly inside the AOI bounding box and can never
+straddle its edge, so there is nothing for the flag to do. Use `--mode grid` for edge
+tiles, or drop `--min-aoi-frac` for random mode.
 
 **`--extent-m` and `--tile-px` are exclusive in the staged path.** The stage GSD fixes
 whichever you do not give. `--extent-m` holds ground scale constant and varies the

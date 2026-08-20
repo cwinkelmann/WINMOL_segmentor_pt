@@ -189,3 +189,28 @@ def test_layout_skips_a_region_entirely_outside_the_raster(tmp_path):
     assert stats["n_kept"] == 4          # only the in-raster AOI's tiles
     ids = {json.loads(l)["aoi_id"] for l in open(os.path.join(out, "tiles.jsonl"))}
     assert ids == {1}                    # the out-of-raster AOI (id 2) contributed none
+
+
+def test_random_mode_refuses_min_aoi_frac(tmp_path):
+    # Random candidates are drawn strictly inside [minx, maxx - extent_m], so they can
+    # never straddle the AOI boundary and min_aoi_frac is silently inert. An error is
+    # the fix, not skirts for random mode.
+    ortho, aoi_path, stems_path = _scene(tmp_path)
+    out = str(tmp_path / "02_layout")
+    with pytest.raises(ValueError, match="min-aoi-frac") as exc:
+        layout(ortho, aoi_path, stems_path, out, mode="random", extent_m=5.0,
+               n_tiles=8, min_aoi_frac=0.25)
+    assert "random" in str(exc.value)
+
+
+def test_random_mode_names_the_aoi_and_extent_when_the_aoi_is_too_small(tmp_path):
+    # Before the fix this raised a bare `ValueError: high - low < 0` from
+    # rng.uniform, naming neither the AOI nor the extent that didn't fit inside it.
+    ortho, aoi_path, stems_path = _scene(tmp_path)   # a 10 m AOI, aoi_id=1
+    out = str(tmp_path / "02_layout")
+    with pytest.raises(ValueError) as exc:
+        layout(ortho, aoi_path, stems_path, out, mode="random", extent_m=20.0,
+               n_tiles=4)
+    msg = str(exc.value)
+    assert "aoi_id=1" in msg
+    assert "20" in msg
