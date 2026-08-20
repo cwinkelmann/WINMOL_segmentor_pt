@@ -60,7 +60,6 @@ def test_cli_flag_reaches_config(flags, expected):
 # --- test_mosaic.py: recipe labelling (not a flag-parsing test) --------------------
 
 def test_mosaic_recipe_is_labelled_unevaluated():
-    from winmol_unet.training import recipes
     assert recipes.RECIPES["mosaic"]["mosaic_p"] > 0
     assert "mosaic" in recipes.UNEVALUATED
 

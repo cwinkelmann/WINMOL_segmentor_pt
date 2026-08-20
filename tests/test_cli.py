@@ -25,10 +25,11 @@ import sys
 import onnx
 import pytest
 
-rasterio = pytest.importorskip("rasterio")
-fiona = pytest.importorskip("fiona")
-shapely = pytest.importorskip("shapely")
-
+# No module-level geo guard: most of this file needs no GDAL, and
+# test_prepare_conversion_modes_need_no_gdal in particular asserts that the conversion
+# modes work on a base [train] install -- a module-level importorskip would make it skip
+# on exactly the machine where its premise matters. The tiling/inference tests that do
+# need rasterio take the `geo_site` fixture, which importorskips internally.
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CRS = "EPSG:25833"
 
@@ -61,6 +62,8 @@ def test_prepare_single_site_writes_a_loader_dataset(geo_site, tmp_path):
 def test_prepare_rasterize_writes_a_label_raster(geo_site, tmp_path):
     """Regression: this called rasterize(instances=...) where the parameter is
     instances_path, so it raised TypeError the moment it was actually invoked."""
+    import rasterio
+
     from winmol_unet.cli.prepare import main
 
     out = tmp_path / "stem_map.tif"
@@ -154,10 +157,9 @@ def test_train_exports_a_contract_conformant_onnx(trained):
     validate_onnx_model(onnx.load(trained["onnx"]))
 
 
-def test_evaluate_tile_mode_emits_a_flat_metric_dict(trained, capsys, monkeypatch):
+def test_evaluate_tile_mode_emits_a_flat_metric_dict(trained, capsys, force_cpu_onnx):
     """Regression for the tuple/list splat: --label must not raise, and the payload
     must be a flat mapping rather than a list or a (metrics, n) pair."""
-    monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
     from winmol_unet.cli.evaluate import main
     assert main(["--model", trained["onnx"], "--data-dir", trained["ds"],
                  "--label", "e2e"]) == 0
@@ -215,10 +217,11 @@ def test_matches_the_training_loops_own_evaluate(tmp_path, stem_dataset):
         assert abs(got[k] - expected[k]) < 1e-6, f"{k}: {got[k]} != {expected[k]}"
 
 
-def test_infer_writes_a_georeferenced_raster(geo_site, trained, tmp_path, monkeypatch):
+def test_infer_writes_a_georeferenced_raster(geo_site, trained, tmp_path, force_cpu_onnx):
     """Regression for the 7-tuple unpack AND the silently-missing CRS: a stem map with
     crs=None is not georeferenced, which is the entire point of the output."""
-    monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
+    import rasterio
+
     from winmol_unet.cli.infer import main
 
     out = tmp_path / "pred.tif"
@@ -233,8 +236,7 @@ def test_infer_writes_a_georeferenced_raster(geo_site, trained, tmp_path, monkey
 
 
 def test_evaluate_geospatial_mode_scores_against_the_ground(geo_site, trained, tmp_path,
-                                                            capsys, monkeypatch):
-    monkeypatch.setenv("WINMOL_ONNX_FORCE_CPU", "1")
+                                                            capsys, force_cpu_onnx):
     from winmol_unet.cli.evaluate import main
     assert main(["--model", trained["onnx"], "--ortho", geo_site["ortho"],
                  "--aoi", geo_site["aoi"], "--stems", geo_site["stems"],

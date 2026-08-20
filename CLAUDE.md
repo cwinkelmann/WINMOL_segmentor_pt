@@ -91,7 +91,7 @@ that fails on every machine without torch, and nothing else would catch it.
 
 ## Conventions
 
-- Tests are TDD-first and are the executable spec (contract parity, export/serve, two-stage handoff). Add/adjust tests before changing behavior. Keep them **hermetic** (synthetic data in `tmp_path`, `encoder_weights=None` for smp archs to avoid downloads).
+- Tests are TDD-first and are the executable spec (contract parity, export/serve, config wiring). Add/adjust tests before changing behavior. Keep them **hermetic** (synthetic data in `tmp_path`, `encoder_weights=None` for smp archs to avoid downloads).
 - The public suite is ten subject-named files (`test_cli.py`, `test_config_wiring.py`,
   `test_contract.py`, `test_data_prep.py`, `test_export_serve.py`, `test_geo.py`,
   `test_import_boundary.py`, `test_keras_bridge.py`, `test_model.py`, `test_training.py`)

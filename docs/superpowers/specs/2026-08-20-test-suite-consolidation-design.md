@@ -151,12 +151,26 @@ interface is not "clean".
 |---|---|---|
 | test files | 56 | 10 (+ `conftest.py`) |
 | lines | 4,039 | ~1,600 |
-| tests | 280 | ~200 |
-| runtime | 585s | ~240s |
+| tests | 280 | 317 (measured) |
+| runtime | 585s | 341s (measured) |
 
-The test-count drop is deduplicated postconditions and merged fixtures, not removed
-assertions. Every behavioural claim in the current suite is either kept public, made
-cheaper, or relocated with a docstring recording where it went.
+The `after` numbers are measured, not projected: `pytest -q --durations=10` on the finished
+branch reports **317 passed in 341s** (wall clock 343s) under
+`~/opt/anaconda3/envs/WINMOL_segmentor_pt/bin/python`. The pre-registered estimates
+(~200 tests, ~240s) were both wrong. The count rose rather than fell because consolidation
+merged *files*, not test functions -- a parametrized flag table expands to one id per row,
+so folding six single-assertion modules into `test_config_wiring.py` produced more ids from
+less code -- and because the branch also landed work outside the consolidation's scope.
+Runtime landed above the estimate for two reasons, both deliberate: the shared
+`train_config` fixture defaults to `device="cpu"` so the suite is reproducible on any
+contributor's hardware rather than fast on one machine, and the one test that override is
+too expensive for -- `test_overfit_loss_decreases`, whose `after < before` assertion is
+relational and so device-independent -- passes `device="auto"`, which restores its
+pre-consolidation 35s from 192s.
+
+No assertion was removed to reach these numbers. Every behavioural claim in the original
+suite is either kept public, made cheaper, or relocated with a docstring recording where it
+went.
 
 ## Sequencing constraint
 

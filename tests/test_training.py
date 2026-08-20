@@ -10,7 +10,6 @@ and full-training-run tests from those two files stay behind for later tasks).
 """
 import glob
 import json
-import os
 import sys
 import types
 
@@ -65,7 +64,9 @@ def test_overfit_loss_decreases(tmp_path, stem_dataset, train_config):
     root = stem_dataset(tmp_path, n=2)
     ds = StemDataset(str(root / "train"), str(root / "mask"))
     loader = DataLoader(ds, batch_size=2)
-    cfg = train_config(epochs=8, lr=1e-2)
+    # "auto" (MPS/CUDA where available) restores this test's pre-consolidation runtime;
+    # its assertion is relational (after < before), so it is device-independent.
+    cfg = train_config(epochs=8, lr=1e-2, device="auto")
     model = UNet(dropout=0.0)
     before = _train_mode_loss(model, loader)
     train_one_run(model, loader, loader, cfg)

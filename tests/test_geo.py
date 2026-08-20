@@ -5,9 +5,11 @@ Absorbs tests/test_sample_training_tiles.py, tests/test_block_splits.py,
 tests/test_make_splits.py, tests/test_compose_folds.py, tests/test_rasterize_annotations.py,
 tests/test_extract_parallel.py and tests/test_plot_inference.py. The synthetic-site builder
 (``_write_ortho`` / ``_write_polygons`` / ``_stem``, and the ``CRS`` / ``GSD`` / ``ORIGIN``
-constants) moved to tests/conftest.py as the ``geo_site`` fixture, shared with any future
-geo test. The private helper repo keeps its own copy of the same builder deliberately --
-test suites are not importable packages across repo boundaries.
+constants) moved to tests/geo_helpers.py, which tests/conftest.py wraps as the ``geo_site``
+fixture, shared with any future geo test. It is a plain sibling module rather than
+conftest itself so that this import works under any pytest import mode. The private helper
+repo keeps its own copy of the same builder deliberately -- test suites are not importable
+packages across repo boundaries.
 """
 import json
 import os
@@ -19,7 +21,7 @@ rasterio = pytest.importorskip("rasterio")
 fiona = pytest.importorskip("fiona")
 shapely = pytest.importorskip("shapely")
 
-from tests.conftest import CRS, GSD, ORIGIN, _stem, _write_ortho, _write_polygons  # noqa: E402
+from tests.geo_helpers import CRS, GSD, ORIGIN, _stem, _write_ortho, _write_polygons  # noqa: E402
 from winmol_unet.geo.sample import sample_tiles  # noqa: E402
 
 # =============================================================================

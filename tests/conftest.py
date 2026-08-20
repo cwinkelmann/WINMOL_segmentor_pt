@@ -84,46 +84,13 @@ def force_cpu_onnx(monkeypatch):
 # on the fixture, not at module scope -- a module-level pytest.importorskip
 # here would make conftest.py itself fail to load when geo is not installed,
 # taking every other fixture down with it.
+#
+# The builder itself lives in tests/geo_helpers.py so that tests/test_geo.py can
+# import it as an ordinary module instead of importing tests.conftest, which only
+# works under importmode=prepend. Its imports of rasterio/fiona/shapely all sit
+# inside function bodies, so importing it here costs nothing without [geo].
 
-CRS = "EPSG:25833"
-GSD = 0.02          # 2 cm/px, in the range the real orthos sit
-ORIGIN = (400000.0, 6000000.0)
-
-
-def _write_ortho(path, size_m=60.0, gsd=GSD, blank_edge_m=0.0):
-    import rasterio
-
-    n = int(size_m / gsd)
-    transform = rasterio.transform.from_origin(ORIGIN[0], ORIGIN[1], gsd, gsd)
-    rng = np.random.default_rng(0)
-    # mid-grey noise: never black, so nodata rejection only fires where we make it
-    data = rng.integers(60, 200, size=(3, n, n), dtype="uint8")
-    if blank_edge_m:
-        k = int(blank_edge_m / gsd)
-        data[:, :k, :] = 0
-    with rasterio.open(path, "w", driver="GTiff", width=n, height=n, count=3,
-                       dtype="uint8", crs=CRS, transform=transform) as dst:
-        dst.write(data)
-
-
-def _write_polygons(path, polys, props=None):
-    import fiona
-    from shapely.geometry import mapping
-
-    schema = {"geometry": "Polygon", "properties": {"id": "int", "Species": "str"}}
-    with fiona.open(path, "w", driver="ESRI Shapefile", crs=CRS, schema=schema) as dst:
-        for i, poly in enumerate(polys):
-            p = (props or [{}] * len(polys))[i]
-            dst.write({"geometry": mapping(poly),
-                       "properties": {"id": p.get("id", i + 1),
-                                      "Species": p.get("Species", "GFI")}})
-
-
-def _stem(x, y, length=3.0, width=0.4, angle=0.0):
-    """A stem-shaped polygon: the corpus median is 3.0 m x 0.43 m."""
-    from shapely.affinity import rotate
-    from shapely.geometry import box
-    return rotate(box(x - length / 2, y - width / 2, x + length / 2, y + width / 2), angle)
+from tests.geo_helpers import ORIGIN, _stem, _write_ortho, _write_polygons  # noqa: E402
 
 
 @pytest.fixture
