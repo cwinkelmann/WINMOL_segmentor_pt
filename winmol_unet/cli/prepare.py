@@ -133,6 +133,8 @@ def build_parser():
                     help="layer holding the AOI polygons (--ingest)")
     pl.add_argument("--aoi-ids", nargs="*", type=int, default=None,
                     help="keep only these AOIs, by position in the AOI layer")
+    pl.add_argument("--clip-aoi", default=None,
+                    help="clip --resample to the AOIs in this aoi.gpkg (--resample)")
     pl.add_argument("--gsd", nargs="*", type=float, default=None,
                     help="target ground sample distances in metres (--resample)")
     pl.add_argument("--jpeg-quality", type=int, default=95,
@@ -199,7 +201,8 @@ def main(argv=None):
         if not (args.ortho and args.gsd):
             parser.error("--resample needs --ortho and --gsd")
         for g in args.gsd:
-            resample(args.ortho, args.out, g, jpeg_quality=args.jpeg_quality,
+            resample(args.ortho, args.out, g, clip_aoi=args.clip_aoi,
+                     aoi_ids=args.aoi_ids, jpeg_quality=args.jpeg_quality,
                      quiet=args.quiet)
         return 0
 
