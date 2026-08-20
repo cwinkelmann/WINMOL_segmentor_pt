@@ -254,15 +254,75 @@ carries a per-dataset internal mask band, which is the footprint; it is preserve
 cropping and resampling (58.22% at 1.28 cm → 58.38% at 20 cm) and is what `--min-valid-frac`
 reads. Thresholding dark pixels instead would also reject genuine shadow.
 
-### Derived rasters
+### Derived rasters and the training set
 
-Built with the staged pipeline (`--ingest`, `--resample`, `--rasterize`; see the helper repo's
-`docs/superpowers/specs/2026-08-20-training-data-pipeline-design.md`), cropped per AOI first:
+Built with the staged pipeline (`--ingest`, `--clip-aoi`, `--resample`, `--rasterize`,
+`--layout`, `--cut`, `--from-folder`; design in the helper repo's
+`docs/superpowers/specs/2026-08-20-training-data-pipeline-design.md`), clipped per AOI:
 
-| AOI | crop @ 1.28 cm | on disk | 2 cm | 5 cm | 10 cm | 20 cm |
-|---:|---|---:|---|---|---|---|
-| 3 | 7,071 × 3,191 | 5.4 MB | 4,525 × 2,042 | 1,810 × 816 | 905 × 408 | 452 × 204 |
+| AOI | clip @ 1.28 cm | in-footprint | 5 cm |
+|---:|---|---:|---|
+| 1 | 18,089 x 23,244 | 34% | 4,630 x 5,950 |
+| 2 | 49,561 x 41,426 | **23%** | 12,687 x 10,605 |
+| 3 | 7,073 x 3,193 | 48% | 1,810 x 817 |
 
-Cropping to the AOIs first cuts the work from the full ortho's 131.6 Gpx to roughly 2.5 Gpx
-— **a factor of 53** — which is what makes a full multi-GSD sweep a minutes-long job rather
-than an overnight one.
+Clipping to the AOIs cuts the work from the full ortho's 131.6 Gpx to about 2.5 Gpx, a
+factor of 53, which is what makes a multi-GSD sweep a minutes-long job.
+
+`_tmp/r13_hardneg_multiscale` — **2,459 tiles, 926 MB**, five ground extents at 5 cm:
+
+| extent | tiles | px | stem-bearing |
+|---:|---:|---:|---:|
+| 10 m | 1,187 | 200 | 155 |
+| 15 m | 558 | 300 | 105 |
+| 20 m | 334 | 400 | 91 |
+| 25 m | 218 | 500 | 67 |
+| 30 m | 162 | 600 | 60 |
+
+19% carry stem, 20% straddle an AOI boundary, and exactly 10 fully-empty tiles are kept
+out of the 827 the cut produced. Note the 10 m arm is 48% of the dataset but only 32% of
+the stem-bearing tiles — small tiles fragment stems and many land between them, so weight
+by extent rather than tile count when mixing this with a positive corpus.
+
+## 9. What the Revier 13 imagery is actually like
+
+![Revier 13 hard-negative image quality](figures/r13-hardneg-quality.png)
+
+Two measured findings, neither of them "the images are blurry".
+
+### The 1.28 cm GSD is nominal, not effective
+
+Panel A is one 6 m patch of forest at five resolutions, upscaled nearest-neighbour so
+nothing is smoothed. **1.28 cm and 2 cm are visually indistinguishable.** The round-trip
+metric of §4 — mean grey levels lost to a 2x down/up cycle, high meaning real detail —
+puts numbers on it, measured on the same ground patch:
+
+| level | 1.28 cm | 2 cm | 5 cm | 10 cm | 20 cm |
+|---|---:|---:|---:|---:|---:|
+| round-trip Δgrey | **2.95** | 4.88 | **6.98** | 5.99 | 5.62 |
+
+The metric **peaks at 5 cm**, not at native. Native pixels carry *less* independent
+information each than their own 5 cm downsample, which is the signature of an oversampled
+raster: the photogrammetry emitted a finer grid than the optics support. Measured the same
+way, SpecDS and TestDS score 2.77 and GenDS10 scores 1.25, so Revier 13 at native sits
+barely above the published 313 px tiles despite a nominally 4x finer GSD.
+
+**Effective resolution is therefore ~5 cm, and cutting tiles at 1.28 cm buys 15x the
+pixels and no more information** — the GenDS10 failure of §4 repeated on new imagery.
+
+### Sharpness varies by ground cover, not by image quality
+
+Panel B ranks real tiles by Laplacian variance. The least sharp are **asphalt roads**
+(lapvar 440-469): smooth surfaces genuinely have little texture. The sharpest is slash and
+deadwood (3,741). Across 1,346 fully-valid tiles the range is 440-3,741 with no blurred or
+mis-stitched examples, so tile-to-tile variation is scene content and not a defect to
+filter on.
+
+### The real defect is missing imagery
+
+The rightmost tile in panel B is 49% valid: a clean diagonal where the flight footprint
+ends. **Only 23% of AOI 2's bounding box is inside the footprint at all**, and an
+unfiltered edge-tile run produced 25% fully-black tiles. The orthomosaic marks these
+correctly in its per-dataset mask band, but that mask is easy to lose — a `gdalwarp
+-dstalpha` crop silently discards it and reports every black pixel as valid data. Anything
+cropping this ortho must carry the mask explicitly and check it afterwards.
