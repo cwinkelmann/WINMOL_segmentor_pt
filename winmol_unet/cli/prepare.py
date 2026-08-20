@@ -56,6 +56,8 @@ def build_parser():
                       help="burn annotations to a label raster and stop (no tiling)")
     mode.add_argument("--ingest", action="store_true",
                       help="normalise annotations onto the ortho's CRS and stop")
+    mode.add_argument("--resample", action="store_true",
+                      help="write one full-ortho COG per --gsd and stop")
     mode.add_argument("--from-folder", action="store_true",
                       help="convert an existing image/mask folder to the loader convention")
     mode.add_argument("--from-coco", action="store_true",
@@ -124,6 +126,10 @@ def build_parser():
                     help="layer holding the AOI polygons (--ingest)")
     pl.add_argument("--aoi-ids", nargs="*", type=int, default=None,
                     help="keep only these AOIs, by position in the AOI layer")
+    pl.add_argument("--gsd", nargs="*", type=float, default=None,
+                    help="target ground sample distances in metres (--resample)")
+    pl.add_argument("--jpeg-quality", type=int, default=95,
+                    help="stage-2 JPEG quality; the source is already lossy")
 
     p.add_argument("--quiet", action="store_true")
     return p
@@ -167,6 +173,15 @@ def main(argv=None):
         ingest(args.stems, args.ortho, args.out, stems_layer=args.stems_layer,
                aoi_layer=args.aoi_layer, aoi_ids=args.aoi_ids,
                species=species, quiet=args.quiet)
+        return 0
+
+    if args.resample:
+        from winmol_unet.pipeline.resample import resample
+        if not (args.ortho and args.gsd):
+            parser.error("--resample needs --ortho and --gsd")
+        for g in args.gsd:
+            resample(args.ortho, args.out, g, jpeg_quality=args.jpeg_quality,
+                     quiet=args.quiet)
         return 0
 
     if args.rasterize:
