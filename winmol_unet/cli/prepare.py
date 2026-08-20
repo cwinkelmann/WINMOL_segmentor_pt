@@ -16,6 +16,56 @@ keeps their vocabulary (extent, native-px, split, AOI) identical:
     # just the label raster, no tiling
     prepare.py --rasterize --stems site.shp --ortho site.tif --out stem_map.tif
 
+Staged, when you want to see and keep the intermediates — the pipeline in
+`docs/superpowers/specs/2026-08-20-training-data-pipeline-design.md`:
+
+    prepare.py --ingest   --stems hn.gpkg --stems-layer hard_negative_AOI \
+                          --aoi-layer AOI --aoi-ids 1 2 3 \
+                          --ortho ortho.tif --out RUN/00_source
+    prepare.py --resample --ortho ortho.tif --gsd 0.02 0.05 0.10 0.20 --out RUN/01_gsd
+    prepare.py --rasterize --stems RUN/00_source/stems.gpkg \
+                          --ortho RUN/01_gsd/gsd_050/ortho.tif \
+                          --out RUN/01_gsd/gsd_050/stem_map.tif
+    prepare.py --layout   --ortho RUN/01_gsd/gsd_050/ortho.tif \
+                          --aoi RUN/00_source/aoi.gpkg --stems RUN/00_source/stems.gpkg \
+                          --extent-m 15 --mode grid --min-aoi-frac 0.25 \
+                          --min-valid-frac 0.25 --min-stem-frac 0 \
+                          --out RUN/02_layout/gsd050_ext15_grid
+    prepare.py --cut      --layout-dir RUN/02_layout/gsd050_ext15_grid \
+                          --ortho RUN/01_gsd/gsd_050/ortho.tif \
+                          --stem-map RUN/01_gsd/gsd_050/stem_map.tif \
+                          --out RUN/03_tiles/gsd050_ext15_grid
+    prepare.py --from-folder --src RUN/03_tiles/gsd050_ext15_grid \
+                          --out RUN/04_dataset/gsd050_ext15_grid
+
+**Open `02_layout/*/footprints.gpkg` in QGIS before running `--cut`.** That is the
+whole reason the stages are separate: the sampling plan is a file, so a bad one costs
+a second rather than an hour.
+
+**`--min-stem-frac` defaults to 1/200 on the CLI**, inherited from the legacy
+single-site sampler. For a hard-negative set that default is exactly backwards —
+leaving it at 0.005 discarded 78% of one run, because a hard-negative site's whole
+point is background with no stems. Always pass `--min-stem-frac 0` in the staged
+path; it is the single easiest way to silently ruin a hard-negative dataset.
+
+**`--clip-aoi` on `--resample`** clips to the AOI union bounding box and burns the AOI
+polygons into the mask, so ground inside the box but outside any AOI is invalid rather
+than merely dark. On Revier 13 that is 2.5 Gpx instead of 131.6 — a factor of 53.
+
+**`--min-aoi-frac` on `--layout`** decides whether tiles may reach the AOI edge. The
+default 1.0 keeps only fully contained tiles — the original R behaviour — and on one
+AOI that left 0 of 79 tiles touching the boundary, at 70% coverage. `--min-aoi-frac
+0.25` admitted edge tiles and raised that to 128 tiles, 38% touching, 98% coverage.
+Pair it with `--min-valid-frac 0.25`, not 0.0: `--min-valid-frac 0.0` combined with
+edge tiles produced 25% fully-black tiles — no imagery at all — in one run.
+`--min-aoi-frac` has **no effect in `--mode random`**, whose candidates are drawn
+strictly inside the AOI bounding box.
+
+**`--extent-m` and `--tile-px` are exclusive in the staged path.** The stage GSD fixes
+whichever you do not give. `--extent-m` holds ground scale constant and varies the
+tile's pixel count; `--tile-px` holds the tensor constant and sweeps scale. They are
+different experiments.
+
 Starting from data that is already raster pairs rather than from an orthomosaic — these
 need no GDAL, so they work without the [geo] extra:
 
