@@ -60,6 +60,8 @@ def build_parser():
                       help="write one full-ortho COG per --gsd and stop")
     mode.add_argument("--layout", action="store_true",
                       help="write tile footprints without cutting any pixels")
+    mode.add_argument("--cut", action="store_true",
+                      help="cut the tiles a --layout run planned")
     mode.add_argument("--from-folder", action="store_true",
                       help="convert an existing image/mask folder to the loader convention")
     mode.add_argument("--from-coco", action="store_true",
@@ -143,6 +145,10 @@ def build_parser():
                     help="reject tiles whose footprint is less than this fraction valid")
     pl.add_argument("--n-tiles", type=int, default=None,
                     help="how many tiles to draw (--mode random)")
+    pl.add_argument("--layout-dir", default=None,
+                    help="a --layout output directory (--cut)")
+    pl.add_argument("--stem-map", default=None,
+                    help="label raster from --rasterize on this GSD (--cut)")
 
     p.add_argument("--quiet", action="store_true")
     return p
@@ -206,6 +212,15 @@ def main(argv=None):
                stride_frac=args.stride_frac, min_valid_frac=args.min_valid_frac,
                min_stem_frac=args.min_stem_frac, n_tiles=args.n_tiles,
                seed=args.seed, quiet=args.quiet)
+        return 0
+
+    if args.cut:
+        from winmol_unet.pipeline.cut import cut
+        if not (args.layout_dir and args.ortho):
+            parser.error("--cut needs --layout-dir and --ortho")
+        cut(args.layout_dir, args.ortho, args.out, stem_map=args.stem_map,
+            min_valid_frac=args.min_valid_frac, min_stem_frac=args.min_stem_frac,
+            quiet=args.quiet)
         return 0
 
     if args.rasterize:
