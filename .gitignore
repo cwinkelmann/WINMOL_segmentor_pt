@@ -19,3 +19,6 @@ results/
 
 # Host-specific credentials scratch file (never commit)
 configs/mount.txt
+
+# Isolated worktrees for feature work (superpowers:using-git-worktrees)
+.worktrees/
