@@ -32,10 +32,11 @@ def test_the_default_still_requires_full_containment(tmp_path):
     from shapely.geometry import shape
     from shapely.ops import unary_union
     with fiona.open(aoi, layer="aoi") as l:
-        edge = unary_union([shape(f["geometry"]) for f in l]).boundary
+        aoi_poly = unary_union([shape(f["geometry"]) for f in l])
     with fiona.open(os.path.join(out, "footprints.gpkg"), layer="footprints") as l:
-        assert all(shape(f["geometry"]).intersection(edge).is_empty is False or True
-                   for f in l)
+        outside = [shape(f["geometry"]).difference(aoi_poly).area for f in l]
+    # At the default, a tile may touch the AOI boundary but must never cross it.
+    assert max(outside) < 1e-9
     assert all(json.loads(x)["aoi_frac"] == pytest.approx(1.0)
                for x in open(os.path.join(out, "tiles.jsonl")))
 
