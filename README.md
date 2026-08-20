@@ -409,9 +409,10 @@ not score against absent labels.
 
 # Results and reports
 
-**[`docs/WINMOL-report.pdf`](docs/WINMOL-report.pdf)** — everything measured here, assembled
-for reading end to end. Rebuild with `scripts/build_report_pdf.sh`; it renders from the
-documents below, so it cannot drift from them.
+**The assembled PDF report is not published.** It lives in a private repository along with
+its front matter and build script. The documents it is built from are below and are the
+authoritative source for every number in it — the report adds assembly and narrative, not
+measurements.
 
 **[`docs/README.md`](docs/README.md)** — index of every document, each marked *current* or
 *superseded*. Several early results were later refuted; that index says which, so nothing
@@ -424,7 +425,7 @@ The four findings that most change how you use this repo:
 | **Scale dominates.** Effective GSD is `tile_size / 512`, a user-set knob — matching it to the training scale was worth **+14.6 F1**. | [`process.md`](docs/process.md) |
 | **±30% footprint jitter** flattens the accuracy-vs-scale curve at no cost at the serving scale. | [`scale-augmentation-results.md`](docs/scale-augmentation-results.md) |
 | **Strong hue augmentation** takes a held-out site from **F1 0.042 to 0.688**; site holdouts are viable now. | [`scale-augmentation-loso.md`](docs/scale-augmentation-loso.md) |
-| **The published method's composite loss does not train** — it calls the rounded metric, so the model trains on plain BCE. | [`reder-method-gaps-closed.md`](docs/reder-method-gaps-closed.md) |
+| **The published method's composite loss does not train** — it calls the rounded metric, so the model trains on plain BCE. Measured directly in R: `sum|grad| = 0.000e+00`. | *(detail in the private helper repo)* |
 
 Experiment designs are pre-registered *before* the runs, and deviations are recorded in the
 matching results document. Those pre-registrations, together with the full results archive
@@ -586,4 +587,5 @@ contract-conformant `.onnx`, and `OnnxSegmenter` serves it without torch or Tens
 (some decoders export symbolic shapes) — but a *wrong* fixed size is rejected. Any change
 here is breaking and requires a coordinated Analyzer update.
 
-See [`docs/2026-07-02-segmentor-pytorch-onnx-design.md`](docs/2026-07-02-segmentor-pytorch-onnx-design.md).
+The design document for this contract is not published; `winmol_unet/contract.py` — its
+docstring and `validate_onnx_model()` — is the authoritative public description.

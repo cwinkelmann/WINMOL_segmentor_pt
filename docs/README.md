@@ -15,8 +15,14 @@ copied verbatim from run output and still stand.
 |---|---|---|
 | [`process.md`](process.md) | The rules: splits, scale, evaluation, reporting. The short one. | **current** |
 | [`data-inventory.md`](data-inventory.md) | Every orthomosaic and annotation layer, measured. 1.18 ha labelled total. | **current** |
-| [`reder-method-gaps-closed.md`](reder-method-gaps-closed.md) | Corrections to the published WINMOL method, read from R and Python source. | **current** |
-| [`WINMOL-report.pdf`](WINMOL-report.pdf) | Everything above assembled for reading end to end. Rebuild with `scripts/build_report_pdf.sh`. | **current** |
+| `reder-method-gaps-closed.md` *(private helper repo)* | Corrections to the published WINMOL method, read from R and Python source. | **current** |
+| `WINMOL-report.pdf` *(private helper repo)* | The three documents above plus the results, assembled for reading end to end. | **current** |
+
+The report and its front matter are private, but **five of its seven source documents are
+public and listed below** — `process.md`, `data-inventory.md`, `scale-augmentation-results.md`,
+`scale-augmentation-loso.md` and `tegel-r12-r13-results.md`. So the report cannot be rebuilt
+from either repo alone: its build script lives with the private half and reads the public
+half. Anyone regenerating it needs both checkouts side by side.
 
 ## Results — current
 
@@ -26,8 +32,8 @@ copied verbatim from run output and still stand.
 | [`scale-augmentation-loso.md`](scale-augmentation-loso.md) | Site holdouts; Bachsee_north explained; **strong hue augmentation takes it from F1 0.042 to 0.688**. | **current** |
 | [`tegel-r12-r13-results.md`](tegel-r12-r13-results.md) | New Tegel survey: zero-shot 0.76, +3.5–6.2 F1 from training on it, fine-tuning adds nothing. | **current** |
 | `unet_vs_ronneberger.md` *(private helper repo)* | Our UNet vs the paper and vs the R port, including the zero-gradient `k_round` loss. | **current** |
-| [`2026-07-21-cpu-inference-speedup-results.md`](2026-07-21-cpu-inference-speedup-results.md) | CPU inference throughput work. | current |
-| [`2026-07-02-segmentor-pytorch-onnx-design.md`](2026-07-02-segmentor-pytorch-onnx-design.md) | The cross-repo ONNX contract and package boundary. | current |
+| `2026-07-21-cpu-inference-speedup-results.md` *(private helper repo)* | CPU inference throughput work. | current |
+| `2026-07-02-segmentor-pytorch-onnx-design.md` *(private helper repo)* | The cross-repo ONNX contract and package boundary. | current |
 
 ## Results — superseded in part
 
@@ -48,7 +54,7 @@ voided numbers. Each carries a correction banner at its top.
 | document | covers |
 |---|---|
 | `FEATURES.md` *(private helper repo)* | What the package does, feature by feature. |
-| [`report-front.md`](report-front.md) | Executive summary + PDF metadata. Not standalone — it is the first section of `WINMOL-report.pdf`. |
+| `report-front.md` *(private helper repo)* | Executive summary + PDF metadata. Not standalone — it is the first section of `WINMOL-report.pdf`. |
 
 ## Specifications
 
@@ -59,9 +65,13 @@ They live in the **private helper repo** under `specs/` — export, augmentation
 single-stage training, wandb, CPU inference, preprocessing comparison,
 `2026-08-13-scale-augmentation-design.md`, `2026-08-16-tegel-r12-r13-design.md`.
 
-The one specification kept in this repo is
-[`2026-07-02-segmentor-pytorch-onnx-design.md`](2026-07-02-segmentor-pytorch-onnx-design.md),
-because it specifies the interface `winmol_unet/contract.py` enforces.
+**No specification is kept in this repo.** The ONNX contract design document moved out
+with the rest, so the interface `winmol_unet/contract.py` enforces is specified only in
+the private helper repo. The authoritative public description of that contract is the
+module docstring and the `validate_onnx_model()` checks in `winmol_unet/contract.py`
+itself — NCHW `[batch, 3, 512, 512]` to `[batch, 1, 512, 512]`, dynamic batch, opset 17,
+sigmoid baked in at export, spatial dims fixed at 512 or symbolic. Treat any change there
+as breaking for the WINMOL Analyzer.
 
 ## The four things most likely to mislead a newcomer
 
