@@ -290,25 +290,36 @@ by extent rather than tile count when mixing this with a positive corpus.
 
 Two measured findings, neither of them "the images are blurry".
 
-### The 1.28 cm GSD is nominal, not effective
+### The 1.28 cm GSD is nominal, but only by about a factor of two
 
 Panel A is one 6 m patch of forest at five resolutions, upscaled nearest-neighbour so
-nothing is smoothed. **1.28 cm and 2 cm are visually indistinguishable.** The round-trip
-metric of §4 — mean grey levels lost to a 2x down/up cycle, high meaning real detail —
-puts numbers on it, measured on the same ground patch:
+nothing is smoothed. **1.28 cm and 2 cm are visually indistinguishable**, which is the
+first hint that the finer grid is not buying anything.
 
-| level | 1.28 cm | 2 cm | 5 cm | 10 cm | 20 cm |
+Measured properly, by the radially-averaged power spectrum of a 1024 px canopy patch:
+the spectrum stays above its noise floor out to **28.4 cycles/m**. That figure has to be
+read against a calibration, because the estimator under-reports — degrading the same patch
+to a known GSD and asking the method to recover it gives:
+
+| true GSD | 2 cm | 3 cm | 5 cm | 10 cm | *native* |
 |---|---:|---:|---:|---:|---:|
-| round-trip Δgrey | **2.95** | 4.88 | **6.98** | 5.99 | 5.62 |
+| method reports | 1.47 cm | 1.86 cm | 2.91 cm | 4.33 cm | **1.76 cm** |
 
-The metric **peaks at 5 cm**, not at native. Native pixels carry *less* independent
-information each than their own 5 cm downsample, which is the signature of an oversampled
-raster: the photogrammetry emitted a finer grid than the optics support. Measured the same
-way, SpecDS and TestDS score 2.77 and GenDS10 scores 1.25, so Revier 13 at native sits
-barely above the published 313 px tiles despite a nominally 4x finer GSD.
+Native's 1.76 cm reading sits between the 2 cm and 3 cm controls, so **effective
+resolution is about 2.5-3 cm and the orthomosaic is oversampled roughly 2x** — not the
+4x a first pass suggested.
 
-**Effective resolution is therefore ~5 cm, and cutting tiles at 1.28 cm buys 15x the
-pixels and no more information** — the GenDS10 failure of §4 repeated on new imagery.
+Two consequences. The corpus's existing **2.93 cm** convention (§5) lands almost exactly on
+this ortho's real resolution, so it is the right GSD to cut at. And a 5 cm arm is already
+*below* effective resolution: it discards real detail rather than merely discarding
+interpolation.
+
+*(An earlier revision of this section claimed ~5 cm effective resolution, from the §4
+round-trip metric applied across GSD levels. That comparison is confounded: at coarser GSD
+each pixel spans more ground, so a 2x down/up cycle destroys more ground-scale structure
+whatever the optics, and the metric climbs with GSD until the scene runs out of structure.
+§4 uses it correctly — comparing GenDS10 against SpecDS at the same tile scale. Across
+scales it does not hold.)*
 
 ### Sharpness varies by ground cover, not by image quality
 
