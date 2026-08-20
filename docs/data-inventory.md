@@ -12,6 +12,10 @@ GIS tree, plus 0.20 ha from the Tegel Revier 12/13 surveys (section 6). 31 ortho
 held; **21 of them have no stem annotations at all**. Labelling, not imagery, is the binding
 constraint on this project.
 
+A further **0.033 ha (327 m²) of stem** was digitised in 2026-08 inside the Revier 13
+hard-negative AOIs (section 8). It is counted separately because its purpose is the
+*background* around it, not the stems themselves.
+
 ## 1. Orthomosaics — all 29
 
 Year is the acquisition date encoded in the filename (`YYYYMMDD`).
@@ -193,3 +197,72 @@ plots. Species names are free text with the same variant problem as the older co
 - **Two Barnekow rasters are infrared** (2 and 4), not RGB; they are unannotated.
 - **`gends10_ready`** is a locally derived copy that is not trusted; use the Zenodo
   originals.
+
+## 8. Tegel Revier 13 hard negatives — labelled 2026-08, measured 2026-08-20
+
+A deliberate **hard-negative** set: ground that looks like stems and is not — paths, slash,
+deadwood, shadow — digitised inside three numbered AOIs on the Revier 13 orthomosaic, with
+the genuine stems in them marked so the negatives are not accidentally positive.
+
+`WINDWURF_Tegel/Revier_13/cw_hard_negatives.gpkg`
+
+| layer | features | geometry | CRS | role |
+|---|---:|---|---|---|
+| `hard_negative_AOI` | 166 | Polygon | **EPSG:4326** | the **stems** — the layer name describes the collection's purpose, not its content |
+| `AOI` | 3 | Polygon | EPSG:32633 | the leakage groups; no attributes, so `fid` order is the only identifier |
+| `trees_1` | 0 | Polygon | — | empty |
+
+Stem attributes: `stem_id` (int — ties the masks of one occluded stem together, 9 stems are
+split across more than one polygon), `old_tree` (bool, 35 of 166), `comment` (free text, 22
+populated). **`species` is absent**; an earlier read of this file had it as `Integer`, so the
+column was dropped during labelling. Anything consuming it must tolerate its absence.
+
+### Per-AOI content
+
+| AOI `fid` | area | stems | stem area | stem fraction | bbox | bbox fill |
+|---:|---:|---:|---:|---:|---|---:|
+| 1 | 25,471 m² | 48 | 105.0 m² | 0.41% | 231 × 297 m | 36% |
+| 2 | 126,547 m² | 107 | 217.1 m² | 0.17% | 634 × 530 m | 37% |
+| 3 | 2,152 m² | 3 | 4.8 m² | 0.22% | 90 × 40 m | 58% |
+| **total** | **154,170 m² = 15.4 ha** | **158** | **327 m²** | **0.212%** | | |
+
+Eight of the 166 stems fall outside AOI 1–3 and are out of scope. Mean stem polygon is
+2.2 m² — these are small, and 0.212% is two orders of magnitude below the 0.5%
+`--min-stem-frac` floor `geo/sample.py` applies to make SpecDS stem-dense. **That inversion
+is the point**: rejecting empty tiles is exactly wrong for a hard-negative set.
+
+Measured against the resampled rasters, stem cover is 0.21% of *valid* (in-footprint) area
+and holds to ±0.002 pp from 2 cm through 20 cm.
+
+### Registration and defects
+
+- **The stems are EPSG:4326 while the AOIs and the orthomosaic are EPSG:32633.** A spatial
+  join across them returns **zero rows and raises nothing** — the same class of silent
+  mismatch as §7, and how this was found. Reprojection puts all 166 back on the AOIs with
+  **zero invalid rings** (no `make_valid` repairs needed), so the digitising is clean.
+- The AOIs are irregular: they fill only 36–58% of their own bounding boxes, and they are
+  far apart — a single bounding box over all three spans 1,914 × 2,280 m, **10× the pixels
+  of three separate crops**.
+- The file is written with SQLite WAL journalling. A `-wal` sidecar was present and growing
+  during measurement, so counts taken while QGIS holds it open can move; the numbers above
+  were read through GDAL, which honours the WAL.
+
+### Footprint
+
+Only **58.2%** of AOI 3's bounding box is inside the flight footprint. The orthomosaic
+carries a per-dataset internal mask band, which is the footprint; it is preserved through
+cropping and resampling (58.22% at 1.28 cm → 58.38% at 20 cm) and is what `--min-valid-frac`
+reads. Thresholding dark pixels instead would also reject genuine shadow.
+
+### Derived rasters
+
+Built with the staged pipeline (`--ingest`, `--resample`, `--rasterize`; see the helper repo's
+`docs/superpowers/specs/2026-08-20-training-data-pipeline-design.md`), cropped per AOI first:
+
+| AOI | crop @ 1.28 cm | on disk | 2 cm | 5 cm | 10 cm | 20 cm |
+|---:|---|---:|---|---|---|---|
+| 3 | 7,071 × 3,191 | 5.4 MB | 4,525 × 2,042 | 1,810 × 816 | 905 × 408 | 452 × 204 |
+
+Cropping to the AOIs first cuts the work from the full ortho's 131.6 Gpx to roughly 2.5 Gpx
+— **a factor of 53** — which is what makes a full multi-GSD sweep a minutes-long job rather
+than an overnight one.
