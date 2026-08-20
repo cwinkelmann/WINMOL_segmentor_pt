@@ -9,8 +9,11 @@ against this GSD's grid, so image and mask are aligned by construction rather th
 a second rasterisation that could drift. With no label raster the mask is all zeros,
 which is the right answer for a tile with no annotated stems in it.
 
-Output is `<out>/train/<id>.tif` + `<out>/mask/<id>.tif`, which is exactly what
-`data/build.py:build_dataset()` pairs, so `--from-folder` finishes the job unchanged.
+Output is `<out>/train/train<id>.tif` + `<out>/mask/mask<id>.tif`. The `train`/`mask`
+prefix is on the FILENAME, not merely the directory: `data/build.py:_shared_key` pairs by
+stripping that literal prefix off the stem and returns None without it, so bare `<id>.tif`
+would leave `--from-folder` with nothing to pair and raise. With the prefix, stage 6 runs
+unmodified.
 """
 import json
 import os
@@ -60,11 +63,11 @@ def cut(layout_dir, gsd_ortho, out_dir, stem_map=None, min_valid_frac=0.5,
                       "height": r["height_px"], "crs": src.crs,
                       "transform": transform, "compress": "DEFLATE"}
             with rasterio.Env(GDAL_TIFF_INTERNAL_MASK=True):
-                with rasterio.open(os.path.join(img_dir, r["id"] + ".tif"), "w",
+                with rasterio.open(os.path.join(img_dir, "train" + r["id"] + ".tif"), "w",
                                    count=src.count, dtype="uint8", **common) as dst:
                     dst.write(data)
                     dst.write_mask(valid)
-                with rasterio.open(os.path.join(msk_dir, r["id"] + ".tif"), "w",
+                with rasterio.open(os.path.join(msk_dir, "mask" + r["id"] + ".tif"), "w",
                                    count=1, dtype="uint8", **common) as dst:
                     dst.write(mask, 1)
 

@@ -40,7 +40,7 @@ def test_a_cut_tile_is_byte_identical_to_its_window(tmp_path):
     cut(lay, ortho, out, stem_map=stem_map)
 
     rec = json.loads(open(os.path.join(lay, "tiles.jsonl")).readline())
-    with rasterio.open(os.path.join(out, "train", rec["id"] + ".tif")) as t:
+    with rasterio.open(os.path.join(out, "train", "train" + rec["id"] + ".tif")) as t:
         tile = t.read()
     with rasterio.open(ortho) as src:
         win = rasterio.windows.from_bounds(
@@ -55,8 +55,8 @@ def test_image_and_mask_share_a_grid(tmp_path):
     out = str(tmp_path / "03_tiles")
     cut(lay, ortho, out, stem_map=stem_map)
     rec = json.loads(open(os.path.join(lay, "tiles.jsonl")).readline())
-    with rasterio.open(os.path.join(out, "train", rec["id"] + ".tif")) as a, \
-            rasterio.open(os.path.join(out, "mask", rec["id"] + ".tif")) as b:
+    with rasterio.open(os.path.join(out, "train", "train" + rec["id"] + ".tif")) as a, \
+            rasterio.open(os.path.join(out, "mask", "mask" + rec["id"] + ".tif")) as b:
         assert a.transform == b.transform
         assert a.crs == b.crs
         assert a.shape == b.shape
@@ -67,7 +67,7 @@ def test_tiles_are_lossless(tmp_path):
     out = str(tmp_path / "03_tiles")
     cut(lay, ortho, out, stem_map=stem_map)
     rec = json.loads(open(os.path.join(lay, "tiles.jsonl")).readline())
-    with rasterio.open(os.path.join(out, "train", rec["id"] + ".tif")) as t:
+    with rasterio.open(os.path.join(out, "train", "train" + rec["id"] + ".tif")) as t:
         # The source is already lossy JPEG; there is no reason to lose more here.
         assert t.profile["compress"].lower() == "deflate"
 
@@ -85,9 +85,16 @@ def test_output_layout_feeds_from_folder_unchanged(tmp_path):
     ortho, stem_map, lay = _laid_out(tmp_path)
     out = str(tmp_path / "03_tiles")
     cut(lay, ortho, out, stem_map=stem_map)
-    # data/build.py pairs <src>/train with <src>/mask by shared key.
-    assert sorted(os.listdir(os.path.join(out, "train"))) == \
-           sorted(os.listdir(os.path.join(out, "mask")))
+    # Call build_dataset for real. Asserting the two directory listings match is NOT a
+    # test of this seam: bare `<id>.tif` names match each other perfectly and still pair
+    # to nothing, because _shared_key strips a literal "train"/"mask" off the FILENAME.
+    from winmol_unet.data.build import build_dataset
+    ds = str(tmp_path / "04_dataset")
+    build_dataset(out, ds)
+    assert sorted(os.listdir(os.path.join(ds, "train"))) == \
+           ["train%d.jpeg" % i for i in range(1, 5)]
+    assert sorted(os.listdir(os.path.join(ds, "mask"))) == \
+           ["mask%d.gif" % i for i in range(1, 5)]
 
 
 def test_records_carry_exact_stats(tmp_path):
