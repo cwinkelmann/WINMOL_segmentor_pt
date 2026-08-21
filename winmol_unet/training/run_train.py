@@ -198,7 +198,36 @@ def run_training(cfg):
     val_metrics = evaluate(model, val_loader)   # on training device
     _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
     _export(model, cfg)
+    _write_plots(model, val_loader, cfg)
     return val_metrics
+
+
+def _write_plots(model, val_loader, cfg, log_dir=None, prefix="", predictions=True):
+    """Render curves and prediction panels beside the model, when --plots is on.
+
+    Imported here rather than at module level: plots.py reaches matplotlib, an optional
+    extra, and tests/test_import_boundary.py asserts the package pulls in no matplotlib.
+    Same lazy-import reason as _export and export_keras.
+
+    Never fatal. A run that trained and exported successfully must not fail because a
+    figure could not be drawn -- matplotlib may simply not be installed.
+    """
+    if not getattr(cfg, "plots", False):
+        return []
+    from .plots import load_history, plot_history, plot_predictions
+
+    out_dir = os.path.join(os.path.dirname(cfg.onnx_out) or ".", "plots")
+    history = load_history(log_dir or cfg.log_dir)
+    try:
+        written = plot_history(history, out_dir, prefix) if history else []
+        if predictions:
+            written = written + plot_predictions(model, val_loader.dataset, out_dir)
+    except Exception as e:                       # noqa: BLE001 -- figures are never fatal
+        print(f"warning: could not write plots: {e}")
+        return []
+    if written:
+        print(f"wrote {len(written)} plot(s) to {out_dir}")
+    return written
 
 
 def run_two_stage(cfg):
@@ -242,6 +271,14 @@ def run_two_stage(cfg):
     val_metrics = evaluate(model, spec_val)     # final = species val split
     _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
     _export(model, cfg)
+    # Curves for both stages, from each stage's own history. Prediction panels only
+    # for stage 2: the stage-1 model no longer exists -- the same weights were
+    # fine-tuned in place -- so panels drawn now would be labelled stage 1 and show
+    # stage-2 behaviour.
+    _write_plots(model, None, cfg, log_dir=os.path.join(cfg.log_dir, "stage1"),
+                 prefix="stage1_", predictions=False)
+    _write_plots(model, spec_val, cfg, log_dir=os.path.join(cfg.log_dir, "stage2"),
+                 prefix="stage2_")
     return val_metrics
 
 
@@ -322,6 +359,9 @@ def build_parser():
                    help="bce = what R effectively optimises (its F1 term is rounded, "
                         "so it has no gradient)")
     p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
+    p.add_argument("--plots", action="store_true",
+                   help="write loss/metric curves and prediction panels as PNGs "
+                        "beside the run (needs the optional [plots] extra)")
     p.add_argument("--export-keras", action="store_true",
                    help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
     p.add_argument("--mosaic-p", type=float, default=0.0,
@@ -376,6 +416,7 @@ def config_from_parsed(a, p):
         label_smoothing=a.label_smoothing, smooth_band_px=a.smooth_band_px,
         encoder=a.encoder, encoder_weights=a.encoder_weights,
         export_keras=a.export_keras,
+        plots=a.plots,
         mosaic_p=a.mosaic_p,
     )
 

@@ -814,3 +814,153 @@ def test_split_ids_partitions_disjointly(tmp_path):
     # load unrenamed; the partition property is what matters, not the type.
     assert sorted(train_ids + val_ids, key=int) == [str(i) for i in range(1, 11)]
     assert len(val_ids) == 2                              # round(10 * 0.2)
+
+
+# --- metrics history: the per-epoch numbers, kept as data ----------------------------
+# RunLogger already receives every scalar train.py computes. It forwards them to
+# TensorBoard and forgets them, so nothing outside TB can re-plot or diff a run.
+
+
+def test_run_logger_writes_metrics_history_on_close(tmp_path):
+    """Every logged scalar dict is retained and written as JSON, one entry per step."""
+    import json
+
+    from winmol_unet.training.run_logger import RunLogger
+
+    log_dir = tmp_path / "log"
+    lg = RunLogger(str(log_dir), use_wandb=False)
+    lg.log_scalars({"train/loss": 1.0, "val/loss": 2.0, "val/f1": 0.1}, 0)
+    lg.log_scalars({"train/loss": 0.5, "val/loss": 1.5, "val/f1": 0.4}, 1)
+    lg.close()
+
+    history = json.loads((log_dir / "metrics_history.json").read_text())
+    assert [e["step"] for e in history] == [0, 1]
+    assert [e["train/loss"] for e in history] == [1.0, 0.5]
+    assert [e["val/f1"] for e in history] == [0.1, 0.4]
+
+
+# --- static plots on disk ------------------------------------------------------------
+# The curves exist in TensorBoard already; these are the openable, attachable versions.
+
+
+def _history(n=4):
+    return [{"step": i, "train/loss": 1.0 - 0.1 * i, "val/loss": 1.2 - 0.1 * i,
+             "val/precision": 0.1 * i, "val/recall": 0.05 * i, "val/f1": 0.07 * i,
+             "lr": 1e-3} for i in range(n)]
+
+
+def test_plot_history_writes_loss_and_metric_curves(tmp_path):
+    from winmol_unet.training.plots import plot_history
+
+    written = plot_history(_history(), str(tmp_path))
+
+    names = sorted(p.name for p in written)
+    assert names == ["loss_curves.png", "metric_curves.png"]
+    for p in written:
+        assert p.exists() and p.stat().st_size > 0
+
+
+def test_plot_history_survives_a_history_missing_optional_series(tmp_path):
+    """A run with no per-component losses and no lr must still produce curves."""
+    from winmol_unet.training.plots import plot_history
+
+    minimal = [{"step": i, "train/loss": 1.0 - 0.1 * i, "val/loss": 1.1 - 0.1 * i}
+               for i in range(3)]
+    written = plot_history(minimal, str(tmp_path))
+
+    assert [p.name for p in written] == ["loss_curves.png"]   # no metrics to draw
+
+
+# --- prediction panels ---------------------------------------------------------------
+
+
+class _EchoModel(torch.nn.Module):
+    """Predicts stem wherever the red channel is bright.
+
+    stem_dataset paints the image white exactly where the mask is white, so this
+    scores near-perfectly on an aligned tile and near-zero on one whose mask has
+    been inverted -- which is what makes worst-F1 selection testable.
+    """
+
+    def forward(self, x):
+        return (x[:, :1] - 0.5) * 20.0
+
+
+def _aligned_and_inverted(tmp_path, stem_dataset):
+    """Three tiles: two the echo model gets right, one (index 2) it gets wrong."""
+    from PIL import Image
+
+    root = stem_dataset(tmp_path / "ds", n=3)
+    bad = np.zeros((32, 32), np.uint8)
+    bad[:, 16:] = 255                      # mask on the right, image is white on the left
+    Image.fromarray(bad, "L").save(root / "mask" / "mask3.gif")
+    return root
+
+
+def test_worst_f1_indices_ranks_the_badly_predicted_tile_first(tmp_path, stem_dataset):
+    from winmol_unet.training.dataset import StemDataset
+    from winmol_unet.training.plots import worst_f1_indices
+
+    root = _aligned_and_inverted(tmp_path, stem_dataset)
+    ds = StemDataset(str(root / "train"), str(root / "mask"))
+
+    worst = worst_f1_indices(_EchoModel(), ds, k=1)
+
+    assert worst == [2], f"expected the inverted tile first, got {worst}"
+
+
+def test_plot_predictions_writes_a_random_panel_and_a_labelled_selected_panel(
+        tmp_path, stem_dataset):
+    from winmol_unet.training.dataset import StemDataset
+    from winmol_unet.training.plots import plot_predictions
+
+    root = _aligned_and_inverted(tmp_path, stem_dataset)
+    ds = StemDataset(str(root / "train"), str(root / "mask"))
+
+    written = plot_predictions(_EchoModel(), ds, str(tmp_path / "out"), n=2)
+
+    names = sorted(p.name for p in written)
+    assert names == ["predictions_random.png", "predictions_selected_worst_f1.png"]
+    for p in written:
+        assert p.exists() and p.stat().st_size > 0
+
+
+def test_run_training_writes_plots_only_when_asked(tmp_path, stem_dataset, train_config):
+    """--plots renders curves and panels beside the model; without it, nothing."""
+    from winmol_unet.training.run_train import run_training
+
+    root = stem_dataset(tmp_path / "ds", n=4)
+    off = train_config(data_dir=root, onnx_out=str(tmp_path / "off" / "m.onnx"),
+                       width_mult=0.125)
+    run_training(off)
+    assert not (tmp_path / "off" / "plots").exists()
+
+    on = train_config(data_dir=root, onnx_out=str(tmp_path / "on" / "m.onnx"),
+                      log_dir=str(tmp_path / "on_log"), plots=True, width_mult=0.125)
+    run_training(on)
+
+    produced = sorted(p.name for p in (tmp_path / "on" / "plots").glob("*.png"))
+    assert produced == ["loss_curves.png", "metric_curves.png",
+                        "predictions_random.png",
+                        "predictions_selected_worst_f1.png"]
+
+
+def test_two_stage_plots_curves_per_stage_and_predictions_from_the_final_model(
+        tmp_path, stem_dataset, train_config):
+    """Both stages get curves; only the stage-2 model can produce prediction panels."""
+    from winmol_unet.training.run_train import run_two_stage
+
+    gen = stem_dataset(tmp_path / "gen", n=4)
+    spec = stem_dataset(tmp_path / "spec", n=4)
+    cfg = train_config(gen_data_dir=str(gen), spec_data_dir=str(spec),
+                       onnx_out=str(tmp_path / "out" / "m.onnx"),
+                       log_dir=str(tmp_path / "log"), plots=True, width_mult=0.125)
+    run_two_stage(cfg)
+
+    produced = sorted(p.name for p in (tmp_path / "out" / "plots").glob("*.png"))
+    assert produced == [
+        "predictions_random.png",
+        "predictions_selected_worst_f1.png",
+        "stage1_loss_curves.png", "stage1_metric_curves.png",
+        "stage2_loss_curves.png", "stage2_metric_curves.png",
+    ]

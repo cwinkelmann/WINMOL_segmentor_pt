@@ -49,6 +49,7 @@ class TrainConfig:
     encoder: Optional[str] = None            # smp encoder; None = per-arch default
     encoder_weights: Optional[str] = None    # None (no download) or "imagenet"
     export_keras: bool = False               # also emit Keras .hdf5/.keras (UNet only)
+    plots: bool = False                      # write static curve/prediction PNGs after training
     cache_dataset: bool = True               # in-memory resize cache; off for large sets
     num_workers: int = 0                     # DataLoader workers (>0 only with cache off)
     gen_data_dir: Optional[str] = None       # two-stage: stage-1 general dataset

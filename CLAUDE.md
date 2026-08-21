@@ -15,6 +15,7 @@ pip install -e ".[geo]"          # rasterio, fiona, shapely — prepare.py / inf
 pip install -e ".[optimize]"     # onnxconverter-common — rebuilding the fp16 release assets
 pip install -e ".[keras]"        # + tensorflow (only for the UNet Keras .hdf5/.keras export)
 pip install -e ".[wandb]"        # + wandb, python-dotenv (optional logging)
+pip install -e ".[plots]"        # + matplotlib — --plots PNGs and train.py's TensorBoard val panels
 pip install -e ".[dev]"          # pytest
 
 pytest                           # full suite
@@ -36,6 +37,8 @@ python prepare.py --config configs/sites.example.json --out <DS> --strategy bloc
 python prepare.py --ortho <O> --stems <S> --aoi <A> --out <DS> [--native-px 1024]
 
 # train. --recipe applies a measured augmentation preset; explicit flags always win.
+# --plots writes loss/metric curves and prediction panels (random + worst-F1) to
+# <out-dir>/plots/. Metrics land as <log-dir>/metrics_history.json either way.
 python train.py --data-dir <DS> --out-dir output/run --arch hrnet --recipe robust \
   --epochs 40 --batch-size 16 --deterministic --device cuda
 python train.py --gen-data-dir <GEN> --spec-data-dir <SPEC> ...   # two-stage fine-tune

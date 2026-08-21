@@ -46,10 +46,13 @@ from winmol_unet.training.run_train import build_parser, config_from_args
     (["--test-data-dir", "t"], {"test_data_dir": "t"}),
     # mosaic (test_mosaic.py::test_the_cli_flag_reaches_the_config)
     (["--mosaic-p", "0.4"], {"mosaic_p": 0.4}),
+    # static training plots on disk
+    (["--plots"], {"plots": True}),
     # defaults -- these rows pin the traps documented in recipes.py: rotation is OFF
     # by default even though every measured run enabled it explicitly.
     ([], {"arch": "unet", "width_mult": 1.0, "aug_hflip_p": 0.5, "aug_rotate_p": 0.0,
-          "wandb": False, "val_data_dir": None, "test_data_dir": None}),
+          "wandb": False, "val_data_dir": None, "test_data_dir": None,
+          "plots": False}),
 ])
 def test_cli_flag_reaches_config(flags, expected):
     cfg = config_from_args(["--data-dir", "d", *flags])

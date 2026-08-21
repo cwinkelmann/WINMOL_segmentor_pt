@@ -17,6 +17,11 @@ class RunLogger:
         from torch.utils.tensorboard import SummaryWriter
 
         self.writer = SummaryWriter(log_dir)
+        self._log_dir = log_dir
+        # Every scalar dict that comes through log_scalars, kept so a finished run
+        # leaves its numbers on disk as data -- re-plottable, diffable between runs,
+        # and readable without a TensorBoard install.
+        self._history = []
         self._wandb = None
         if use_wandb:
             try:
@@ -35,6 +40,7 @@ class RunLogger:
                 raise
 
     def log_scalars(self, scalars, step):
+        self._history.append({"step": step, **{k: float(v) for k, v in scalars.items()}})
         for name, value in scalars.items():
             self.writer.add_scalar(name, value, step)
         if self._wandb is not None:
@@ -49,6 +55,24 @@ class RunLogger:
         plt.close(fig)
 
     def close(self):
+        self._write_history()
         self.writer.close()
         if self._wandb is not None:
             self._wandb.finish()
+
+    def _write_history(self):
+        """Write the accumulated per-epoch scalars beside the TensorBoard events.
+
+        Never fatal: a run that trained successfully must not fail at teardown
+        because its metrics file could not be written.
+        """
+        if not self._history:
+            return
+        import json
+        import os
+        try:
+            os.makedirs(self._log_dir, exist_ok=True)
+            with open(os.path.join(self._log_dir, "metrics_history.json"), "w") as fh:
+                json.dump(self._history, fh, indent=2)
+        except OSError:
+            pass

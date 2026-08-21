@@ -18,7 +18,7 @@ import textwrap
 
 import pytest
 
-HEAVY = ("torch", "tensorflow", "keras", "albumentations", "segmentation_models_pytorch",
+HEAVY = ("torch", "tensorflow", "keras", "matplotlib", "albumentations", "segmentation_models_pytorch",
          "torchvision", "wandb", "rasterio", "fiona", "shapely")
 
 
