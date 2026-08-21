@@ -24,7 +24,8 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
     log_dir = cfg.log_dir if log_dir is None else log_dir
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
     ckpt = os.path.join(cfg.checkpoint_dir, ckpt_name)
-    logger = RunLogger(log_dir, cfg.wandb, cfg.wandb_project, cfg.wandb_run_name)
+    logger = RunLogger(log_dir, cfg.wandb, cfg.wandb_project, cfg.wandb_run_name,
+                       notes=getattr(cfg, "wandb_notes", None))
     device = resolve_device(cfg.device)
     model.to(device)
     opt = optimizer if optimizer is not None else torch.optim.Adam(model.parameters(), lr=cfg.lr)

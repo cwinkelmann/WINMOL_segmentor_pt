@@ -312,6 +312,8 @@ def build_parser():
     p.add_argument("--wandb", action="store_true", help="enable Weights & Biases logging")
     p.add_argument("--wandb-project", default=None)
     p.add_argument("--wandb-run-name", default=None)
+    p.add_argument("--wandb-notes", default=None,
+                    help="run description, set at wandb.init; the launcher script should pass it")
     p.add_argument("--aug-hflip-p", type=float, default=0.5)
     p.add_argument("--aug-vflip-p", type=float, default=0.5)
     p.add_argument("--aug-rotate-p", type=float, default=0.0)
@@ -402,6 +404,7 @@ def config_from_parsed(a, p):
         patience_stage1=a.patience_stage1, patience_stage2=a.patience_stage2,
         cache_dataset=a.cache_dataset, num_workers=a.num_workers,
         wandb=a.wandb, wandb_project=a.wandb_project, wandb_run_name=a.wandb_run_name,
+        wandb_notes=a.wandb_notes,
         aug_hflip_p=a.aug_hflip_p, aug_vflip_p=a.aug_vflip_p,
         aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
         aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,

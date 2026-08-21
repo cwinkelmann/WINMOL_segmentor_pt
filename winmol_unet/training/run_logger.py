@@ -6,7 +6,7 @@ SummaryWriter is imported lazily for a different reason: see RunLogger.__init__.
 
 
 class RunLogger:
-    def __init__(self, log_dir, use_wandb=False, project=None, run_name=None):
+    def __init__(self, log_dir, use_wandb=False, project=None, run_name=None, notes=None):
         # Imported here, not at module level. torch.utils.tensorboard pulls in the
         # `tensorboard` package, which loads TensorFlow when TF is installed in the same
         # environment. Doing that at import time, after torch's native libraries are
@@ -33,7 +33,7 @@ class RunLogger:
                         "wandb logging requires the optional extra: "
                         "pip install '.[wandb]'") from e
                 load_dotenv()                  # picks up WANDB_API_KEY from .env
-                wandb.init(project=project, name=run_name)
+                wandb.init(project=project, name=run_name, notes=notes)
                 self._wandb = wandb
             except Exception:
                 self.writer.close()            # don't leak the TB writer if wandb setup fails

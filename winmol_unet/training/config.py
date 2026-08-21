@@ -28,6 +28,7 @@ class TrainConfig:
     wandb: bool = False
     wandb_project: Optional[str] = None
     wandb_run_name: Optional[str] = None
+    wandb_notes: Optional[str] = None   # set at wandb.init so a run is born documented
     aug_hflip_p: float = 0.5
     aug_vflip_p: float = 0.5
     aug_rotate_p: float = 0.0
