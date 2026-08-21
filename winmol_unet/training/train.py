@@ -107,10 +107,7 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
             logger.log_scalars({
                 **comp_scalars,
                 "train/loss": train_loss,
-                "val/loss": val["loss"],
-                "val/precision": val["precision"],
-                "val/recall": val["recall"],
-                "val/f1": val["f1"],
+                **{f"val/{k}": v for k, v in val.items()},
                 "lr": opt.param_groups[0]["lr"],
             }, epoch)
 

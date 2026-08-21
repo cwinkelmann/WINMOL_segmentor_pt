@@ -79,7 +79,9 @@ def test_evaluate_returns_metric_keys(tmp_path, stem_dataset):
     ds = StemDataset(str(root / "train"), str(root / "mask"))
     loader = DataLoader(ds, batch_size=2)
     out = evaluate(UNet(dropout=0.0), loader)
-    assert set(out) == {"loss", "precision", "recall", "f1"}
+    # Exact four metric keys plus the val-loss components (train: log the parts).
+    assert {"loss", "precision", "recall", "f1"} <= set(out)
+    assert {"loss_bce", "loss_soft_f1_term"} <= set(out)
 
 
 # --- loss + metrics on hand-computed tensors ----------------------------------

@@ -32,3 +32,22 @@ def test_run_logger_log_figure_tensorboard_only(tmp_path):
     lg.log_figure("val/examples", fig, 0)
     lg.close()
     assert any(f.startswith("events") for f in __import__("os").listdir(tmp_path))
+
+
+def test_evaluate_returns_val_loss_components():
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+    from winmol_unet.training.evaluate import evaluate
+
+    class Tiny(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bias = torch.nn.Parameter(torch.zeros(1))   # evaluate() reads a param's device
+
+        def forward(self, x):
+            return x[:, :1] * 0.0 + self.bias
+
+    ds = TensorDataset(torch.rand(4, 3, 16, 16), (torch.rand(4, 1, 16, 16) > 0.5).float())
+    out = evaluate(Tiny(), DataLoader(ds, batch_size=2))
+    assert "loss_bce" in out and "loss_soft_f1_term" in out
+    assert abs(out["loss"] - (out["loss_bce"] + out["loss_soft_f1_term"])) < 1e-5

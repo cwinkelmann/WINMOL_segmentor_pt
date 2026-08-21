@@ -8,7 +8,7 @@ batch — not a true global recomputation like the metrics get.
 """
 import torch
 
-from .losses import bce_soft_f1_loss
+from .losses import LOSS_COMPONENTS, bce_soft_f1_loss
 from .metrics import counts, prf
 
 
@@ -19,20 +19,30 @@ def evaluate(model, loader):
     tp = fp = fn = 0.0
     loss_sum = 0.0
     n_samples = 0
+    # Components of the same composite val loss, weighted like loss_sum. The val loss
+    # is bce_soft_f1 by long-standing convention regardless of the training loss, so
+    # its parts are always available.
+    comp_fn = LOSS_COMPONENTS["bce_soft_f1"]
+    comp_sums = {}
     for img, mask in loader:
         img, mask = img.to(device), mask.to(device)
         logits = model(img)
         bs = img.shape[0]
         loss_sum += bce_soft_f1_loss(logits, mask).item() * bs
+        for k, v in comp_fn(logits, mask).items():
+            comp_sums[k] = comp_sums.get(k, 0.0) + v.item() * bs
         b_tp, b_fp, b_fn = counts(logits, mask)
         tp += b_tp
         fp += b_fp
         fn += b_fn
         n_samples += bs
     p, r, f = prf(tp, fp, fn)
-    return {
+    out = {
         "loss": loss_sum / n_samples if n_samples else 0.0,
         "precision": p,
         "recall": r,
         "f1": f,
     }
+    for k, v in comp_sums.items():
+        out["loss_" + k] = v / n_samples if n_samples else 0.0
+    return out
