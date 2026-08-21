@@ -20,3 +20,15 @@ def test_plain_losses_have_no_components():
     from winmol_unet.training.losses import LOSS_COMPONENTS
     assert "bce" not in LOSS_COMPONENTS
     assert "focal" not in LOSS_COMPONENTS
+
+
+def test_run_logger_log_figure_tensorboard_only(tmp_path):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from winmol_unet.training.run_logger import RunLogger
+    lg = RunLogger(str(tmp_path), use_wandb=False)
+    fig = plt.figure()
+    lg.log_figure("val/examples", fig, 0)
+    lg.close()
+    assert any(f.startswith("events") for f in __import__("os").listdir(tmp_path))

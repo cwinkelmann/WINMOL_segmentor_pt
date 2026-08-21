@@ -40,6 +40,14 @@ class RunLogger:
         if self._wandb is not None:
             self._wandb.log(dict(scalars), step=step)
 
+    def log_figure(self, tag, fig, step):
+        """A matplotlib figure to TB and (if enabled) wandb, then closed."""
+        self.writer.add_figure(tag, fig, step)
+        if self._wandb is not None:
+            self._wandb.log({tag: self._wandb.Image(fig)}, step=step)
+        import matplotlib.pyplot as plt
+        plt.close(fig)
+
     def close(self):
         self.writer.close()
         if self._wandb is not None:

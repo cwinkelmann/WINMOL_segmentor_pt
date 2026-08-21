@@ -33,6 +33,42 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(
         opt, mode="min", factor=0.1, patience=2, threshold=1e-4)
 
+    def _val_panel(n=5):
+        """n fixed val tiles: image / ground truth / predicted probability.
+
+        Indices are evenly spaced over the val set, so a val split assembled from
+        several sources (beech blocks first, Tegel appended after) shows tiles from
+        each rather than n neighbours from one corner of one site.
+        """
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except ImportError:
+            return None                      # panels are optional, never fatal
+        ds = val_loader.dataset
+        if len(ds) == 0:
+            return None
+        idxs = sorted({int(round(i * (len(ds) - 1) / max(1, n - 1))) for i in range(n)})
+        fig, axes = plt.subplots(len(idxs), 3, figsize=(9, 3 * len(idxs)),
+                                 squeeze=False)
+        model.eval()
+        with torch.no_grad():
+            for r, i in enumerate(idxs):
+                img, mask = ds[i]
+                prob = torch.sigmoid(model(img.unsqueeze(0).to(device)))[0, 0].cpu()
+                axes[r][0].imshow(img.permute(1, 2, 0).cpu().numpy())
+                axes[r][1].imshow(mask.squeeze().cpu().numpy(), cmap="gray",
+                                  vmin=0, vmax=1)
+                axes[r][2].imshow(prob.numpy(), cmap="magma", vmin=0, vmax=1)
+                axes[r][0].set_ylabel(f"val[{i}]", fontsize=8)
+                for ax in axes[r]:
+                    ax.set_xticks([]); ax.set_yticks([])
+        for ax, t in zip(axes[0], ("image", "ground truth", "prediction")):
+            ax.set_title(t, fontsize=9)
+        fig.tight_layout()
+        return fig
+
     best_val = float("inf")
     since_improve = 0
     try:
@@ -71,6 +107,10 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
                 "val/f1": val["f1"],
                 "lr": opt.param_groups[0]["lr"],
             }, epoch)
+
+            fig = _val_panel()
+            if fig is not None:
+                logger.log_figure("val/examples", fig, epoch)
 
             if val["loss"] < best_val:
                 best_val = val["loss"]
