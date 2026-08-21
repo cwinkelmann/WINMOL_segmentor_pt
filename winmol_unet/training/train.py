@@ -49,7 +49,13 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
         ds = val_loader.dataset
         if len(ds) == 0:
             return None
-        idxs = sorted({int(round(i * (len(ds) - 1) / max(1, n - 1))) for i in range(n)})
+        idxs = {int(round(i * (len(ds) - 1) / max(1, n - 1))) for i in range(n)}
+        # Pin extra tiles of interest (e.g. suspected under-annotation cases) via
+        # WINMOL_VAL_PANEL_IDS="2072,2146" -- dataset indices, comma-separated.
+        extra = os.environ.get("WINMOL_VAL_PANEL_IDS", "")
+        idxs |= {int(x) for x in extra.split(",") if x.strip().isdigit()
+                 and int(x) < len(ds)}
+        idxs = sorted(idxs)
         fig, axes = plt.subplots(len(idxs), 3, figsize=(9, 3 * len(idxs)),
                                  squeeze=False)
         model.eval()
