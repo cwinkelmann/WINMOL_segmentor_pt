@@ -6,7 +6,7 @@ import torch
 
 from .device import resolve_device
 from .evaluate import evaluate
-from .losses import LOSSES, bce_soft_f1_loss, soften_targets
+from .losses import LOSS_COMPONENTS, LOSSES, bce_soft_f1_loss, soften_targets
 from .run_logger import RunLogger
 
 
@@ -39,20 +39,31 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
         for epoch in range(cfg.epochs):
             model.train()
             running, nb = 0.0, 0
+            comp_fn = LOSS_COMPONENTS.get(getattr(cfg, "loss", None))
+            comp_sums = {}
             for img, mask in train_loader:
                 img, mask = img.to(device), mask.to(device)
                 opt.zero_grad()
                 # soft targets for the loss only; metrics stay on the hard mask
-                loss = loss_fn(model(img), soften_targets(mask, eps, band))
+                logits = model(img)
+                soft = soften_targets(mask, eps, band)
+                loss = loss_fn(logits, soft)
                 loss.backward()
                 opt.step()
                 running += loss.item()
                 nb += 1
+                if comp_fn is not None:
+                    # Same logits, no second forward pass; elementwise ops only.
+                    with torch.no_grad():
+                        for k, v in comp_fn(logits, soft).items():
+                            comp_sums[k] = comp_sums.get(k, 0.0) + v.item()
             train_loss = running / nb if nb else 0.0
 
             val = evaluate(model, val_loader)
             sched.step(val["loss"])              # reduce LR on val-loss plateau (R schedule)
+            comp_scalars = {f"train/loss_{k}": v / nb for k, v in comp_sums.items()} if nb else {}
             logger.log_scalars({
+                **comp_scalars,
                 "train/loss": train_loss,
                 "val/loss": val["loss"],
                 "val/precision": val["precision"],

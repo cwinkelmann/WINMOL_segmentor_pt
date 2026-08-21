@@ -85,6 +85,32 @@ def focal_soft_f1_loss(logits, target, gamma=2.0, alpha=None, eps=1e-6):
     return focal_loss(logits, target, gamma, alpha) + (1 - soft_f1)
 
 
+def _bce_soft_f1_components(logits, target, eps=1e-6):
+    import torch
+    bce = F.binary_cross_entropy_with_logits(logits, target)
+    probs = torch.sigmoid(logits)
+    tp = (probs * target).sum(); fp = (probs * (1 - target)).sum()
+    fn = ((1 - probs) * target).sum()
+    soft_f1 = (2 * tp + eps) / (2 * tp + fp + fn + eps)
+    return {"bce": bce, "soft_f1_term": 1 - soft_f1}
+
+
+def _focal_soft_f1_components(logits, target, gamma=2.0, alpha=None, eps=1e-6):
+    import torch
+    focal = focal_loss(logits, target, gamma=gamma, alpha=alpha)
+    probs = torch.sigmoid(logits)
+    tp = (probs * target).sum(); fp = (probs * (1 - target)).sum()
+    fn = ((1 - probs) * target).sum()
+    soft_f1 = (2 * tp + eps) / (2 * tp + fp + fn + eps)
+    return {"focal": focal, "soft_f1_term": 1 - soft_f1}
+
+
+# Component breakdowns for the composite losses, keyed like LOSSES. A plain loss has no
+# entry: "log the parts when there are parts" -- the chart for bce alone IS train/loss.
+# Values must sum to the corresponding LOSSES entry; tests pin that.
+LOSS_COMPONENTS = {"bce_soft_f1": _bce_soft_f1_components,
+                   "focal_soft_f1": _focal_soft_f1_components}
+
 LOSSES = {"bce_soft_f1": bce_soft_f1_loss, "bce": bce_loss,
           "bce_hard_f1": bce_hard_f1_loss,
           "focal": focal_loss, "focal_soft_f1": focal_soft_f1_loss}
