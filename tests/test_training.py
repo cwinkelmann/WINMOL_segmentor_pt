@@ -575,7 +575,7 @@ def test_wandb_init_log_finish(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "dotenv", _fake_dotenv())
     from winmol_unet.training.run_logger import RunLogger
     lg = RunLogger(str(tmp_path / "log"), use_wandb=True, project="P", run_name="R")
-    assert calls["init"] == {"project": "P", "name": "R"}
+    assert calls["init"] == {"project": "P", "name": "R", "notes": None}
     lg.log_scalars({"val/f1": 0.5}, 3)
     assert calls["log"] == ({"val/f1": 0.5}, 3)
     lg.close()
