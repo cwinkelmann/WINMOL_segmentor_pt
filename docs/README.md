@@ -13,8 +13,8 @@ copied verbatim from run output and still stand.
 
 | document | covers | status |
 |---|---|---|
-| [`process.md`](process.md) | The rules: splits, scale, evaluation, reporting. The short one. | **current** |
-| [`data-inventory.md`](data-inventory.md) | Every orthomosaic and annotation layer, measured. 1.18 ha labelled total. | **current** |
+| `process.md` (moved to the private helper repo) | The rules: splits, scale, evaluation, reporting. The short one. | **current** |
+| `data-inventory.md` (moved to the private helper repo) | Every orthomosaic and annotation layer, measured. 1.18 ha labelled total. | **current** |
 | `reder-method-gaps-closed.md` *(private helper repo)* | Corrections to the published WINMOL method, read from R and Python source. | **current** |
 | `WINMOL-report.pdf` *(private helper repo)* | The three documents above plus the results, assembled for reading end to end. | **current** |
 
@@ -28,9 +28,9 @@ half. Anyone regenerating it needs both checkouts side by side.
 
 | document | headline | status |
 |---|---|---|
-| [`scale-augmentation-results.md`](scale-augmentation-results.md) | ±30% footprint jitter flattens the GSD curve 0.87 F1 (HRNet) / 1.88 (UNet) at no cost at the serving scale. | **current** |
-| [`scale-augmentation-loso.md`](scale-augmentation-loso.md) | Site holdouts; Bachsee_north explained; **strong hue augmentation takes it from F1 0.042 to 0.688**. | **current** |
-| [`tegel-r12-r13-results.md`](tegel-r12-r13-results.md) | New Tegel survey: zero-shot 0.76, +3.5–6.2 F1 from training on it, fine-tuning adds nothing. | **current** |
+| `scale-augmentation-results.md` (moved to the private helper repo) | ±30% footprint jitter flattens the GSD curve 0.87 F1 (HRNet) / 1.88 (UNet) at no cost at the serving scale. | **current** |
+| `scale-augmentation-loso.md` (moved to the private helper repo) | Site holdouts; Bachsee_north explained; **strong hue augmentation takes it from F1 0.042 to 0.688**. | **current** |
+| `tegel-r12-r13-results.md` (moved to the private helper repo) | New Tegel survey: zero-shot 0.76, +3.5–6.2 F1 from training on it, fine-tuning adds nothing. | **current** |
 | `unet_vs_ronneberger.md` *(private helper repo)* | Our UNet vs the paper and vs the R port, including the zero-gradient `k_round` loss. | **current** |
 | `2026-07-21-cpu-inference-speedup-results.md` *(private helper repo)* | CPU inference throughput work. | current |
 | `2026-07-02-segmentor-pytorch-onnx-design.md` *(private helper repo)* | The cross-repo ONNX contract and package boundary. | current |

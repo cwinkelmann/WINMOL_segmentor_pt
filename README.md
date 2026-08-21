@@ -422,9 +422,9 @@ The four findings that most change how you use this repo:
 
 | finding | where |
 |---|---|
-| **Scale dominates.** Effective GSD is `tile_size / 512`, a user-set knob — matching it to the training scale was worth **+14.6 F1**. | [`process.md`](docs/process.md) |
-| **±30% footprint jitter** flattens the accuracy-vs-scale curve at no cost at the serving scale. | [`scale-augmentation-results.md`](docs/scale-augmentation-results.md) |
-| **Strong hue augmentation** takes a held-out site from **F1 0.042 to 0.688**; site holdouts are viable now. | [`scale-augmentation-loso.md`](docs/scale-augmentation-loso.md) |
+| **Scale dominates.** Effective GSD is `tile_size / 512`, a user-set knob — matching it to the training scale was worth **+14.6 F1**. | `process.md` (moved to the private helper repo) |
+| **±30% footprint jitter** flattens the accuracy-vs-scale curve at no cost at the serving scale. | `scale-augmentation-results.md` (moved to the private helper repo) |
+| **Strong hue augmentation** takes a held-out site from **F1 0.042 to 0.688**; site holdouts are viable now. | `scale-augmentation-loso.md` (moved to the private helper repo) |
 | **The published method's composite loss does not train** — it calls the rounded metric, so the model trains on plain BCE. Measured directly in R: the gradient sums to exactly `0.000e+00`. | *(detail in the private helper repo)* |
 
 Experiment designs are pre-registered *before* the runs, and deviations are recorded in the
@@ -460,7 +460,7 @@ The release re-hosts *only* the ONNX (the HDF5 stay on Zenodo), each flavour in 
 **Models trained on the newer data — GitHub Release [`models-v2`](../../releases/tag/models-v2).**
 Same ONNX contract, so they drop into the Analyzer unchanged. Two families, each the best of
 three seeds, each scored on its own held-out ground (**the two families are not comparable to
-each other** — see [`docs/tegel-r12-r13-results.md`](docs/tegel-r12-r13-results.md)):
+each other** — see `docs/tegel-r12-r13-results.md` (moved to the private helper repo)):
 
 - **Four-site beech corpus** (Campus, Campus_Oberheide, Bachsee_north, Kaufland) trained with
   ±30% scale jitter — `model_HRNet_Beech4Site_512_jitter` (F1 0.787) and
