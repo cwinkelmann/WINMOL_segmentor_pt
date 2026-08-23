@@ -66,7 +66,15 @@ outcomes; deviations are recorded in the corresponding results document.
 
 They live in the **private helper repo** under `specs/` — export, augmentation,
 single-stage training, wandb, CPU inference, preprocessing comparison,
-`2026-08-13-scale-augmentation-design.md`, `2026-08-16-tegel-r12-r13-design.md`.
+`2026-08-13-scale-augmentation-design.md`, `2026-08-16-tegel-r12-r13-design.md`,
+`2026-08-20-training-data-pipeline-design.md`,
+`2026-08-20-test-suite-consolidation-design.md`.
+
+Their implementation plans sit beside them under `plans/`. One carries an artefact worth
+knowing about: `plans/consolidation-ledger.md` accounts for all 280 tests this repo's
+suite held before it was consolidated to ten files — one row per original test id, each
+marked merged, relocated or deduplicated with the surviving test named. It is what makes
+"no assertion was lost" checkable rather than asserted.
 
 **No specification is kept in this repo.** The ONNX contract design document moved out
 with the rest, so the interface `winmol_unet/contract.py` enforces is specified only in
