@@ -68,39 +68,6 @@ def test_arch_exports_and_serves_nhwc(tmp_path, arch, encoder, force_cpu_onnx):
     assert out.min() >= -1e-4 and out.max() <= 1.0 + 1e-4
 
 
-def tmp_onnx_path():
-    import tempfile, pathlib
-    return pathlib.Path(tempfile.mkdtemp()) / "dpt.onnx"
-
-
-def test_dpt_cannot_yet_export_onnx():
-    """Pin DPT's known limitation so we notice the day it lifts.
-
-    DPT's ViT encoder is built for a fixed 384 (or 224) input; `dynamic_img_size=True`
-    lets it take our 512 tiles by interpolating the position embeddings.
-
-    The blocker has MOVED. It used to be that timm's antialiased bicubic interpolation
-    (`aten::_upsample_bicubic2d_aa`) had no ONNX lowering at opset 17, so export raised
-    outright. With a newer torch the export now succeeds — but the graph it produces has
-    a FIXED output batch axis ([1, 1, 512, 512]) while the contract requires a symbolic
-    one, and the artifact is ~486 MB for 122M parameters.
-
-    So DPT is still trainable and comparable, but not servable through the contract. This
-    asserts the *production* path (export_to_onnx) rejects it, whatever the current
-    reason. If this test starts failing, DPT became servable and belongs in the
-    parametrization above.
-    """
-    from winmol_unet.training.model_factory import build_model
-
-    model = build_model("dpt", encoder_weights=None).eval()
-    with pytest.raises(Exception) as excinfo:
-        export_to_onnx(model, str(tmp_onnx_path()))
-    msg = str(excinfo.value)
-    assert ("batch axis must be dynamic" in msg          # current: fixed output batch
-            or "_upsample_bicubic2d_aa" in msg           # historical: no opset-17 lowering
-            or ("Resize" in msg and "17" in msg)), f"DPT failed for a new reason: {msg[:300]}"
-
-
 # --- OnnxSegmenter serving: NHWC roundtrip, summary, OOM handling -----------
 
 

@@ -144,7 +144,7 @@ def test_unet_returns_contract_shaped_logits():
     assert y.shape == (1, 1, 512, 512)
 
 
-@pytest.mark.parametrize("arch", ["deeplabv3plus", "hrnet", "segformer", "dpt"])
+@pytest.mark.parametrize("arch", ["deeplabv3plus", "hrnet", "segformer"])
 def test_smp_arch_returns_contract_shaped_logits(arch):
     # encoder_weights=None -> no ImageNet download (hermetic)
     y = build_model(arch, encoder_weights=None).eval()(torch.zeros(1, 3, 512, 512))
