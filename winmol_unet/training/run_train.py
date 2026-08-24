@@ -44,7 +44,8 @@ def _eval_dataset(image_dir, mask_dir, cfg, ids=None):
     else the plain resize-to-img_size StemDataset. Never augments."""
     if cfg.eval_tiling:
         return TilingStemDataset(image_dir, mask_dir, tile=cfg.img_size, ids=ids,
-                                 cache=cfg.cache_dataset)
+                                 cache=cfg.cache_dataset,
+                                 num_classes=getattr(cfg, "num_classes", 1))
     return StemDataset(image_dir, mask_dir, cfg.img_size, transform=None, ids=ids,
                        cache=cfg.cache_dataset, num_classes=getattr(cfg, "num_classes", 1))
 
