@@ -1,0 +1,478 @@
+"""CLI: single-stage or two-stage (GenDS -> SpecDS) training + export.
+
+Single-stage: --data-dir. Two-stage fine-tune: --gen-data-dir + --spec-data-dir
+(stage 1 on the general set, stage 2 fine-tunes the SAME model on the species set).
+"""
+import argparse
+import os
+import warnings
+
+import torch
+from torch.utils.data import DataLoader
+
+from winmol_unet.export import export_to_onnx, export_to_pt
+# NOTE: winmol_unet.export_keras is imported lazily inside _export (only when
+# cfg.export_keras is set) because it pulls in TensorFlow, which the lean training
+# image (WITH_KERAS=0) does not install — importing it at module level would break
+# `python -m winmol_unet.training.run_train` on any TF-less environment. Mirrors the lazy smp
+# import in model_factory.
+
+from .augment import build_augmentation
+from .config import TrainConfig
+from .dataset import StemDataset, TilingStemDataset, split_ids
+from .evaluate import evaluate
+from .model_factory import build_model
+from .train import train_one_run
+
+
+def _worker_init(_):
+    # Reseed the per-worker RNGs that torch's base seed does not reach. Workers fork after
+    # the dataset is built, so anything seeded in __init__ is identical in every worker
+    # and would replay the same stream N times over.
+    info = torch.utils.data.get_worker_info()
+    seed = info.seed % (2 ** 31 - 1)
+    tf = getattr(info.dataset, "transform", None)
+    if tf is not None:
+        tf.set_random_seed(seed)              # albumentations Compose has its own RNG
+    rng = getattr(info.dataset, "_mosaic_rng", None)
+    if rng is not None:
+        rng.seed(seed)                        # mosaic partner draws
+
+
+def _eval_dataset(image_dir, mask_dir, cfg, ids=None):
+    """Validation/test dataset: deterministic native-res grid tiling when cfg.eval_tiling,
+    else the plain resize-to-img_size StemDataset. Never augments."""
+    if cfg.eval_tiling:
+        return TilingStemDataset(image_dir, mask_dir, tile=cfg.img_size, ids=ids,
+                                 cache=cfg.cache_dataset)
+    return StemDataset(image_dir, mask_dir, cfg.img_size, transform=None, ids=ids,
+                       cache=cfg.cache_dataset)
+
+
+def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_mask_dir=None):
+    if cfg.num_workers > 0 and cfg.cache_dataset:
+        warnings.warn("num_workers>0 with cache_dataset=True caches per-worker and discards "
+                      "it each epoch; use --no-cache-dataset for large datasets.", stacklevel=2)
+    # multiscale trains on native-res tiles (the transform's RandomSizedCrop resizes to
+    # img_size); otherwise images are resized to img_size at load time as before.
+    train_resize = not cfg.multiscale
+    if val_image_dir is not None:
+        # pre-materialized fixed split: train on all of image_dir, validate on the given dir
+        train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
+                               cache=cfg.cache_dataset, resize=train_resize,
+                               mosaic_p=cfg.mosaic_p, seed=cfg.seed)
+        val_ds = _eval_dataset(val_image_dir, val_mask_dir, cfg)
+    else:
+        train_ids, val_ids = split_ids(image_dir, mask_dir, cfg.val_fraction, cfg.seed)
+        train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
+                               ids=train_ids, cache=cfg.cache_dataset, resize=train_resize,
+                               mosaic_p=cfg.mosaic_p, seed=cfg.seed)
+        val_ds = _eval_dataset(image_dir, mask_dir, cfg, ids=val_ids)
+    # drop_last avoids a trailing batch of 1 (breaks BatchNorm in DeepLabV3+ ASPP
+    # [N,C,1,1]) — only when there is more than one batch's worth, so a tiny set
+    # isn't zeroed out. num_workers>0 is only safe with cache_dataset=False.
+    drop_last = len(train_ds) > cfg.batch_size
+    train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
+                              num_workers=cfg.num_workers, drop_last=drop_last,
+                              worker_init_fn=_worker_init)
+    val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers,
+                            worker_init_fn=_worker_init)
+    return train_loader, val_loader
+
+
+def _validate_export(cfg):
+    # Fail fast (before any training) rather than after a full run.
+    if cfg.export_keras and cfg.arch != "unet":
+        raise ValueError(
+            f"--export-keras is UNet-only (the Keras mirror is UNet-specific); "
+            f"arch={cfg.arch!r} exports ONNX + .pt")
+
+
+def _export(model, cfg):
+    model.cpu()                                 # exporters read weights via CPU numpy
+    for p in (cfg.pt_out, cfg.hdf5_out, cfg.keras_out, cfg.onnx_out):
+        if p:
+            os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+    if cfg.pt_out:
+        export_to_pt(model, cfg.pt_out)
+    # ONNX is the uniform path — every architecture loads the same way via OnnxSegmenter.
+    # The Keras .hdf5/.keras mirror is UNet-specific and opt-in (validated upfront).
+    if cfg.export_keras:
+        from winmol_unet.export_keras import export_to_keras, export_to_keras_hdf5  # lazy: pulls in TF
+        export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
+        if cfg.keras_out:
+            export_to_keras(model, cfg.keras_out, dropout=cfg.dropout)
+    export_to_onnx(model, cfg.onnx_out)
+
+
+def _run_test(model, cfg):
+    """R cost_eval: evaluate the trained model on a held-out TestDS (no augmentation).
+    Prints, logs to TensorBoard, and writes test_results.md. Returns metrics or None."""
+    if not cfg.test_data_dir:
+        return None
+    from torch.utils.tensorboard import SummaryWriter
+    test_ds = _eval_dataset(os.path.join(cfg.test_data_dir, "train"),
+                            os.path.join(cfg.test_data_dir, "mask"), cfg)
+    test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
+    m = evaluate(model, test_loader)             # model on its current device (no aug)
+    writer = SummaryWriter(os.path.join(cfg.log_dir, "test"))
+    for k, v in m.items():
+        writer.add_scalar(f"test/{k}", v, 0)
+    writer.close()
+    out_dir = os.path.dirname(cfg.onnx_out) or "."
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "test_results.md"), "w") as f:
+        f.write(f"# Test results\n\n**TestDS:** `{cfg.test_data_dir}` "
+                f"({len(test_ds)} tiles) | **arch:** {cfg.arch}\n\n"
+                "| metric | value |\n|--------|------:|\n")
+        for k in ("f1", "precision", "recall", "loss"):
+            f.write(f"| {k} | {m[k]:.4f} |\n")
+    print(f"TEST ({len(test_ds)} tiles): F1={m['f1']:.4f} P={m['precision']:.4f} "
+          f"R={m['recall']:.4f} loss={m['loss']:.4f}")
+    return m
+
+
+def _seed_everything(cfg):
+    """Seed torch/numpy/python and, on request, pin cuDNN to deterministic kernels.
+
+    `torch.manual_seed` alone is not enough on GPU: cuDNN picks algorithms by
+    autotuning, and non-deterministic reductions make two runs of the *same* code
+    diverge. Measured here: `bce` and `bce_hard_f1` have bit-identical gradients and
+    still landed 2.0 F1 apart. Without `deterministic`, a seed is a label, not a
+    guarantee.
+    """
+    import random
+
+    import numpy as np
+    random.seed(cfg.seed)
+    np.random.seed(cfg.seed)
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
+    if getattr(cfg, "deterministic", False):
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+
+def load_init_weights(model, path):
+    """Start from an existing model's weights instead of random init.
+
+    Fine-tuning onto a new survey does not need the two-stage path, which retrains stage 1
+    from scratch and throws away a model we already have. Loads strictly and reports what
+    it loaded: a silently partial load (wrong arch, wrong width) would train something that
+    is neither the pretrained model nor a clean baseline, and would still produce a
+    plausible number.
+    """
+    sd = torch.load(path, map_location="cpu", weights_only=True)
+    if isinstance(sd, dict) and "state_dict" in sd:
+        sd = sd["state_dict"]
+    # strict=False forgives missing/unexpected KEYS but still raises on a shape mismatch,
+    # which is how a same-named different-width model slips past a keys-only check.
+    try:
+        missing, unexpected = model.load_state_dict(sd, strict=False)
+    except RuntimeError as e:
+        raise SystemExit(f"--init-weights {path} does not match this architecture: {e}")
+    if missing or unexpected:
+        raise SystemExit(
+            f"--init-weights {path} does not match this architecture: "
+            f"{len(missing)} missing, {len(unexpected)} unexpected parameters "
+            f"(first missing: {missing[:3]}, first unexpected: {unexpected[:3]})")
+    return sum(p.numel() for p in model.parameters())
+
+
+def run_training(cfg):
+    _validate_export(cfg)                        # fail fast before training
+    _seed_everything(cfg)
+    transform = build_augmentation(cfg)         # seeded internally via cfg.seed
+    train_loader, val_loader = _build_loaders(
+        cfg.image_dir, cfg.mask_dir, cfg, transform,
+        val_image_dir=cfg.val_image_dir, val_mask_dir=cfg.val_mask_dir)
+    model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
+                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult,
+                        block_order=cfg.block_order)
+    if getattr(cfg, "init_weights", None):
+        n = load_init_weights(model, cfg.init_weights)
+        print(f"initialised {n:,} parameters from {cfg.init_weights}")
+    train_one_run(model, train_loader, val_loader, cfg)
+    val_metrics = evaluate(model, val_loader)   # on training device
+    _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
+    _export(model, cfg)
+    _write_plots(model, val_loader, cfg)
+    return val_metrics
+
+
+def _write_plots(model, val_loader, cfg, log_dir=None, prefix="", predictions=True):
+    """Render curves and prediction panels beside the model, when --plots is on.
+
+    Imported here rather than at module level: plots.py reaches matplotlib, an optional
+    extra, and tests/test_import_boundary.py asserts the package pulls in no matplotlib.
+    Same lazy-import reason as _export and export_keras.
+
+    Never fatal. A run that trained and exported successfully must not fail because a
+    figure could not be drawn -- matplotlib may simply not be installed.
+    """
+    if not getattr(cfg, "plots", False):
+        return []
+    from .plots import load_history, plot_history, plot_predictions
+
+    out_dir = os.path.join(os.path.dirname(cfg.onnx_out) or ".", "plots")
+    history = load_history(log_dir or cfg.log_dir)
+    try:
+        written = plot_history(history, out_dir, prefix) if history else []
+        if predictions:
+            written = written + plot_predictions(model, val_loader.dataset, out_dir)
+    except Exception as e:                       # noqa: BLE001 -- figures are never fatal
+        print(f"warning: could not write plots: {e}")
+        return []
+    if written:
+        print(f"wrote {len(written)} plot(s) to {out_dir}")
+    return written
+
+
+def run_two_stage(cfg):
+    """Two-stage fine-tune: train on GenDS (stage 1), then fine-tune the same model
+    on SpecDS (stage 2). Final metrics + export come from the stage-2 (species) model."""
+    _validate_export(cfg)                        # fail fast before either stage
+    _seed_everything(cfg)
+    transform = build_augmentation(cfg)
+    model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
+                        encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult,
+                        block_order=cfg.block_order)
+    # ONE optimizer shared across both stages (Adam moment estimates carry over, as they do in
+    # the R pipeline's single compiled optimizer), BUT the learning rate is reset to cfg.lr at
+    # the start of stage 2 — mirroring the R fix `k_set_value(optimizer$lr, BASE_LR)`. Without
+    # the reset, the LR that stage-1's ReduceLROnPlateau decayed (down to ~1e-6) carries into
+    # stage 2 and cripples fine-tuning. Move params to the device first so the optimizer binds
+    # device tensors.
+    from .device import resolve_device
+    model.to(resolve_device(cfg.device))
+    opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+
+    gen_train, gen_val = _build_loaders(cfg.gen_image_dir, cfg.gen_mask_dir, cfg, transform)
+    train_one_run(model, gen_train, gen_val, cfg, patience=cfg.patience_stage1,
+                  ckpt_name="best_stage1.pt", log_dir=os.path.join(cfg.log_dir, "stage1"),
+                  optimizer=opt)
+
+    for g in opt.param_groups:                   # reset LR for stage 2 (mirrors R's k_set_value)
+        g["lr"] = cfg.lr
+    # Stage 2 must validate on the SAME held-out split as single-stage runs, or its
+    # checkpoint selection is not comparable to theirs. Omitting these fell back to
+    # split_ids() — a random split of the spec tiles, which is both a different signal
+    # (in-training-distribution, so ~+5 F1 higher) and a leaky one, since the samplers
+    # oversample and adjacent tiles overlap. `--val-data-dir` was silently ignored here.
+    spec_train, spec_val = _build_loaders(cfg.spec_image_dir, cfg.spec_mask_dir, cfg, transform,
+                                          val_image_dir=cfg.val_image_dir,
+                                          val_mask_dir=cfg.val_mask_dir)
+    train_one_run(model, spec_train, spec_val, cfg, patience=cfg.patience_stage2,
+                  ckpt_name="best_stage2.pt", log_dir=os.path.join(cfg.log_dir, "stage2"),
+                  optimizer=opt)
+
+    val_metrics = evaluate(model, spec_val)     # final = species val split
+    _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
+    _export(model, cfg)
+    # Curves for both stages, from each stage's own history. Prediction panels only
+    # for stage 2: the stage-1 model no longer exists -- the same weights were
+    # fine-tuned in place -- so panels drawn now would be labelled stage 1 and show
+    # stage-2 behaviour.
+    _write_plots(model, None, cfg, log_dir=os.path.join(cfg.log_dir, "stage1"),
+                 prefix="stage1_", predictions=False)
+    _write_plots(model, spec_val, cfg, log_dir=os.path.join(cfg.log_dir, "stage2"),
+                 prefix="stage2_")
+    return val_metrics
+
+
+def build_parser():
+    """The full training flag surface, as a parser that has not parsed anything yet.
+
+    Split out of `config_from_args` so a caller can add flags of its own and, more
+    importantly, can tell "the user passed this value" apart from "this is the default".
+    argparse cannot answer that after the fact, so `training.recipes.apply` compares
+    each parsed value against `parser.get_default(...)` — which needs the parser object.
+    That is what lets `--recipe robust --aug-hsv-p 0.5` mean "robust, but deliberately
+    weaker hue", instead of silently picking one of the two.
+    """
+    p = argparse.ArgumentParser()
+    p.add_argument("--data-dir", default=None, help="single-stage dataset dir")
+    p.add_argument("--val-data-dir", default=None,
+                   help="single-stage: fixed val set (else 80/20 split of --data-dir)")
+    p.add_argument("--test-data-dir", default=None,
+                   help="held-out test set evaluated after training (writes test_results.md)")
+    p.add_argument("--gen-data-dir", default=None, help="two-stage: general (stage 1) dir")
+    p.add_argument("--spec-data-dir", default=None, help="two-stage: species (stage 2) dir")
+    p.add_argument("--out-dir", default="output")
+    p.add_argument("--epochs", type=int, default=100)
+    p.add_argument("--batch-size", type=int, default=4)
+    p.add_argument("--device", default="auto", help="auto|mps|cuda|cpu")
+    p.add_argument("--patience-stage1", type=int, default=3)
+    p.add_argument("--patience-stage2", type=int, default=5)
+    p.add_argument("--cache-dataset", dest="cache_dataset", action="store_true", default=True)
+    p.add_argument("--no-cache-dataset", dest="cache_dataset", action="store_false")
+    p.add_argument("--num-workers", type=int, default=0)
+    p.add_argument("--wandb", action="store_true", help="enable Weights & Biases logging")
+    p.add_argument("--wandb-project", default=None)
+    p.add_argument("--wandb-run-name", default=None)
+    p.add_argument("--wandb-notes", default=None,
+                    help="run description, set at wandb.init; the launcher script should pass it")
+    p.add_argument("--aug-hflip-p", type=float, default=0.5)
+    p.add_argument("--aug-vflip-p", type=float, default=0.5)
+    p.add_argument("--aug-rotate-p", type=float, default=0.0)
+    p.add_argument("--aug-rotate-limit", type=float, default=15.0)
+    p.add_argument("--aug-bc-p", type=float, default=0.5)
+    p.add_argument("--aug-brightness-limit", type=float, default=0.2)
+    p.add_argument("--aug-contrast-limit", type=float, default=0.2)
+    p.add_argument("--aug-hsv-p", type=float, default=0.5)
+    # Exposed because colour is the axis our sites differ on most: hue runs 15-98 deg
+    # across the beech corpus and the one autumn site is unlearnable from the others.
+    # albumentations works in OpenCV's 0-179 hue scale, so 90 spans the full circle.
+    p.add_argument("--init-weights", default=None,
+                   help="start from this .pt state_dict (fine-tune) instead of random init")
+    p.add_argument("--aug-hue-shift", type=int, default=20,
+                   help="HueSaturationValue hue_shift_limit (0-179 scale; 90 = any hue)")
+    p.add_argument("--aug-sat-shift", type=int, default=30)
+    p.add_argument("--aug-val-shift", type=int, default=20)
+    p.add_argument("--multiscale", action="store_true",
+                   help="multi-scale RandomSizedCrop on native-res tiles (needs a native-res "
+                        "dataset, e.g. --native-px 1024 from sample_training_tiles.py)")
+    p.add_argument("--crop-min-px", type=int, default=400, help="multiscale: min crop side")
+    p.add_argument("--crop-max-px", type=int, default=1024, help="multiscale: max crop side")
+    p.add_argument("--eval-tiling", action="store_true",
+                   help="deterministic native-res grid tiling for val/test (full coverage)")
+    p.add_argument("--arch", default="unet",
+                   help="unet|deeplabv3plus|hrnet|segformer|convnext|fpn|pan")
+    p.add_argument("--width-mult", type=float, default=1.0,
+                   help="UNet channel-width scale (1.0=full; e.g. 0.5 = ~1/4 params, faster CPU)")
+    p.add_argument("--encoder", default=None,
+                   help="smp encoder; default is per-arch (e.g. mit_b0 for segformer, mit_b2/b3/b5 for larger)")
+    p.add_argument("--label-smoothing", type=float, default=0.0,
+                   help="pull targets toward 0.5 near mask edges (0 = off)")
+    p.add_argument("--smooth-band-px", type=int, default=2,
+                   help="edge band width; 0 applies global smoothing instead")
+    p.add_argument("--block-order", default="bn_relu", choices=("bn_relu", "relu_bn"),
+                   help="UNet only. relu_bn is R's Conv->ReLU->BN order")
+    p.add_argument("--seed", type=int, default=1,
+                   help="torch/split/augmentation seed. Vary it for replicates: two runs "
+                        "with identical gradients measured 2.0 F1 apart without this.")
+    p.add_argument("--deterministic", action="store_true",
+                   help="cuDNN deterministic kernels + fixed algorithm choice. Slower, but "
+                        "without it same-seed runs still diverge on GPU.")
+    p.add_argument("--loss", default="bce_soft_f1",
+                   choices=("bce_soft_f1", "bce", "bce_hard_f1", "focal", "focal_soft_f1"),
+                   help="bce = what R effectively optimises (its F1 term is rounded, "
+                        "so it has no gradient)")
+    p.add_argument("--encoder-weights", default=None, help="None or 'imagenet' (needs network)")
+    p.add_argument("--plots", action="store_true",
+                   help="write loss/metric curves and prediction panels as PNGs "
+                        "beside the run (needs the optional [plots] extra)")
+    p.add_argument("--export-keras", action="store_true",
+                   help="also emit Keras .hdf5/.keras (UNet only; ONNX is always exported)")
+    p.add_argument("--mosaic-p", type=float, default=0.0,
+                   help="probability of stitching a grid of tiles into one training image. "
+                        "UNEVALUATED in this repo -- no paired run, no LOSO fold, no results "
+                        "document. Default 0.0 (off); measure it before relying on it.")
+    return p
+
+
+def config_from_args(argv=None):
+    """Parse `argv` and build the TrainConfig. The unchanged entry point."""
+    p = build_parser()
+    return config_from_parsed(p.parse_args(argv), p)
+
+
+def config_from_parsed(a, p):
+    """Build a TrainConfig from already-parsed args.
+
+    Separate from `config_from_args` so a caller that needs to inspect or adjust the
+    parsed namespace first — applying a recipe, say — still lands in exactly one place
+    where the namespace becomes a config. Two code paths building TrainConfig from
+    flags would drift.
+    """
+    two_stage = a.gen_data_dir and a.spec_data_dir
+    if not a.data_dir and not two_stage:
+        p.error("provide --data-dir (single-stage) or both --gen-data-dir and --spec-data-dir")
+    return TrainConfig(
+        data_dir=a.data_dir or "", val_data_dir=a.val_data_dir,
+        test_data_dir=a.test_data_dir,
+        gen_data_dir=a.gen_data_dir, spec_data_dir=a.spec_data_dir,
+        checkpoint_dir=os.path.join(a.out_dir, "checkpoints"),
+        log_dir=os.path.join(a.out_dir, "logs"),
+        pt_out=os.path.join(a.out_dir, "model.pt"),
+        hdf5_out=os.path.join(a.out_dir, "model.hdf5"),
+        keras_out=os.path.join(a.out_dir, "model.keras"),
+        onnx_out=os.path.join(a.out_dir, "model.onnx"),
+        epochs=a.epochs, batch_size=a.batch_size, device=a.device,
+        patience_stage1=a.patience_stage1, patience_stage2=a.patience_stage2,
+        cache_dataset=a.cache_dataset, num_workers=a.num_workers,
+        wandb=a.wandb, wandb_project=a.wandb_project, wandb_run_name=a.wandb_run_name,
+        wandb_notes=a.wandb_notes,
+        aug_hflip_p=a.aug_hflip_p, aug_vflip_p=a.aug_vflip_p,
+        aug_rotate_p=a.aug_rotate_p, aug_rotate_limit=a.aug_rotate_limit,
+        aug_bc_p=a.aug_bc_p, aug_brightness_limit=a.aug_brightness_limit,
+        aug_contrast_limit=a.aug_contrast_limit, aug_hsv_p=a.aug_hsv_p,
+        init_weights=a.init_weights,
+        aug_hue_shift=a.aug_hue_shift, aug_sat_shift=a.aug_sat_shift,
+        aug_val_shift=a.aug_val_shift,
+        multiscale=a.multiscale, crop_min_px=a.crop_min_px, crop_max_px=a.crop_max_px,
+        eval_tiling=a.eval_tiling,
+        arch=a.arch, width_mult=a.width_mult, loss=a.loss,
+        seed=a.seed, deterministic=a.deterministic, block_order=a.block_order,
+        label_smoothing=a.label_smoothing, smooth_band_px=a.smooth_band_px,
+        encoder=a.encoder, encoder_weights=a.encoder_weights,
+        export_keras=a.export_keras,
+        plots=a.plots,
+        mosaic_p=a.mosaic_p,
+    )
+
+
+def write_run_config(cfg, argv=None, path=None):
+    """Record what this run actually was, next to what it produced.
+
+    Without this a finished run cannot be audited: `test_results.md` names only the
+    dataset and the architecture, so a question like "did seed 1 really use the same
+    crop range?" has no answer in the artifacts. Provenance that lives only in the
+    launching shell is gone the moment the shell is.
+    """
+    import dataclasses
+    import json
+    import socket
+    import subprocess
+    import sys
+    from datetime import datetime, timezone
+
+    out_dir = path or os.path.dirname(cfg.onnx_out) or "."
+    os.makedirs(out_dir, exist_ok=True)
+
+    def _git(*args):
+        try:
+            return subprocess.run(("git", *args), cwd=os.path.dirname(os.path.abspath(__file__)),
+                                  capture_output=True, text=True, timeout=10,
+                                  check=True).stdout.strip()
+        except Exception:
+            return None                       # a run outside a checkout is still a valid run
+
+    dirty = _git("status", "--porcelain")
+    payload = {
+        "config": dataclasses.asdict(cfg),
+        "argv": list(argv if argv is not None else sys.argv),
+        "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "host": socket.gethostname(),
+        "git_commit": _git("rev-parse", "HEAD"),
+        "git_dirty": bool(dirty) if dirty is not None else None,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "torch": torch.__version__,
+    }
+    p = os.path.join(out_dir, "run_config.json")
+    with open(p, "w") as f:
+        json.dump(payload, f, indent=1, default=str)
+    return p
+
+
+def main():
+    cfg = config_from_args()
+    write_run_config(cfg)
+    result = run_two_stage(cfg) if (cfg.gen_data_dir and cfg.spec_data_dir) else run_training(cfg)
+    print(result)
+
+
+if __name__ == "__main__":
+    main()

@@ -49,7 +49,7 @@ A model trained in `WINMOL_segmentor_pt` reaches the Analyzer as ONNX:
 
 ```bash
 # in the segmentor repo — every architecture exports a contract-conformant .onnx
-python -m training.run_train --arch hrnet ... --out-dir output/run
+python -m winmol_unet.training.run_train --arch hrnet ... --out-dir output/run
 # then point the Analyzer at output/run/model.onnx
 ```
 
@@ -127,6 +127,15 @@ target changes — F1 does not.
 - **Check `tile_size` matches what the model was trained for** before concluding anything
   about a model.
 - **`PYTHONHASHSEED=0` is load-bearing** for reproducible stem joining.
+- **Pass the exported model, never the `.winmol_pre_<hash>.onnx` sitting beside it.** The
+  Analyzer runs `build_preprocessed_model()` on whatever path it is given and caches the
+  result under that name next to the model. Feeding the cache file back in wraps the
+  wrapper, and ONNX rejects the graph with `initializer name is not unique`. It reads like
+  a corrupt export; it is not. That file is an internal artifact, not an input.
+- **On the training boxes, kill runs by explicit PID, not `pkill -f <pattern>`.** Over SSH
+  the pattern matches the remote shell's own command line, so the session dies before
+  killing anything — and the processes it was meant to reap then look like phantoms that
+  keep coming back.
 - **Use the conda env `WINMOL_segmentor_pt` (Python 3.11)**, not a 3.9 interpreter — the
   Analyzer's `utils/IO.py` uses `str | None` annotations and will not import below 3.10.
 - **onnx and TensorFlow can clash in one process**
