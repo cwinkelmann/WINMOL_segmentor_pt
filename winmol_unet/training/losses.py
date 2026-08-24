@@ -143,3 +143,41 @@ def soften_targets(target, eps=0.0, band_px=2):
     eroded = -F.max_pool2d(-target, k, stride=1, padding=band_px)
     band = dilated - eroded                      # 1 within band_px of an edge, else 0
     return target * (1 - band * eps) + (1 - target) * (band * eps)
+
+
+def ce_soft_f1_loss(logits, target, ignore_index=255, eps=1e-6):
+    """Multiclass `CE + (1 - macro soft-F1 over foreground classes)`.
+
+    The species analogue of `bce_soft_f1_loss`: logits [N,C,H,W], target [N,H,W]
+    int64 with 0 = background, 1..C-1 = species, `ignore_index` = pixels excluded
+    from the loss entirely (unattributed stems: ~8% of the corpus, 33.6% on R13-P1 —
+    forcing them to background would teach "true stems = background", the v1
+    beech-selective failure mode, so they must be inert).
+
+    Macro (not micro) over foreground classes: the corpus is beech 40% / birch 2.5%
+    of polygons, and a micro soft-F1 would let the dominant class swallow the term —
+    the whole point of multiclass is that each species carries its own gradient.
+    Background is excluded from the F1 mean like it is in the binary loss (there the
+    positive class IS the term); it still learns through CE.
+    """
+    ce = F.cross_entropy(logits, target, ignore_index=ignore_index)
+    probs = torch.softmax(logits, dim=1)
+    valid = (target != ignore_index)
+    safe = torch.where(valid, target, torch.zeros_like(target))
+    onehot = F.one_hot(safe, logits.shape[1]).permute(0, 3, 1, 2).float()
+    onehot = onehot * valid.unsqueeze(1)
+    probs = probs * valid.unsqueeze(1)             # ignored px contribute nothing
+    f1s = []
+    for c in range(1, logits.shape[1]):            # foreground classes only
+        tp = (probs[:, c] * onehot[:, c]).sum()
+        fp = (probs[:, c] * (1 - onehot[:, c])).sum()
+        fn = ((1 - probs[:, c]) * onehot[:, c]).sum()
+        f1s.append((2 * tp + eps) / (2 * tp + fp + fn + eps))
+    soft_f1 = torch.stack(f1s).mean()
+    return ce + (1 - soft_f1)
+
+
+# Multiclass losses are a separate registry: LOSSES entries take float binary
+# targets [N,1,H,W]; these take int64 index targets [N,H,W]. The train loop picks
+# the registry from cfg.num_classes so a wrong pairing fails loudly at select time.
+MULTICLASS_LOSSES = {"ce_soft_f1": ce_soft_f1_loss}

@@ -41,7 +41,12 @@ def _check_shape(got, channels, label):
 
 
 def _sigmoid_on_path(graph):
-    """True if a Sigmoid feeds the graph output, directly or through later ops.
+    """True if a Sigmoid or Softmax feeds the graph output, directly or later ops.
+
+    Softmax joined Sigmoid with the multiclass species models: a channel softmax
+    (or a sliced softmax channel) emits probabilities in [0,1] exactly as the
+    analyzer's 0.5 threshold assumes, so it satisfies the contract's intent — the
+    guarantee is "probabilities out", not one particular activation.
 
     Deliberately NOT "the last node is a Sigmoid". Real conformant models append
     ops after it: fp16 conversion adds Cast, static int8 adds
@@ -67,7 +72,7 @@ def _sigmoid_on_path(graph):
         node = producer.get(name)
         if node is None:                      # graph input or initializer
             continue
-        if node.op_type == "Sigmoid":
+        if node.op_type in ("Sigmoid", "Softmax"):
             return True
         stack.extend(node.input)
     return False
@@ -104,6 +109,6 @@ def validate_onnx_model(onnx_model):
 
     if not _sigmoid_on_path(graph):
         raise ValueError(
-            "Contract requires a Sigmoid on the path to the output so the model "
+            "Contract requires a Sigmoid or Softmax on the path to the output so the model "
             "emits probabilities; found none. The analyzer thresholds at 0.5 and "
             "would read raw logits as probabilities.")

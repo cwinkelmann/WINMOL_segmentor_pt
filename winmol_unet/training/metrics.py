@@ -29,3 +29,22 @@ def recall(logits, target):
 
 def f1(logits, target):
     return prf(*counts(logits, target))[2]
+
+
+def multiclass_counts(logits, target, num_classes, ignore_index=255):
+    """Per-class (tp, fp, fn) by argmax, ignoring `ignore_index` pixels.
+
+    Returns {class_idx: (tp, fp, fn)} for every class including background;
+    feed a class's triple to `prf` for its precision/recall/F1, and average
+    foreground F1s for the macro score.
+    """
+    pred = logits.argmax(dim=1)
+    valid = target != ignore_index
+    out = {}
+    for c in range(num_classes):
+        pc = (pred == c) & valid
+        tc = (target == c) & valid
+        out[c] = (int((pc & tc).sum().item()),
+                  int((pc & ~tc).sum().item()),
+                  int((~pc & tc).sum().item()))
+    return out

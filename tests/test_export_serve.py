@@ -261,3 +261,35 @@ def test_static_int8_calibrates_from_a_tile_dir(tmp_path, force_cpu_onnx):
     validate_onnx_model(onnx.load(dst))
     y = OnnxSegmenter(dst).predict_on_batch(np.zeros((1, 512, 512, 3), np.float32))
     assert y.shape == (1, 512, 512, 1)
+
+
+# ---------------------------------------------------------------------------
+# multiclass export: full softmax head, and contract-conformant species slices
+# ---------------------------------------------------------------------------
+
+def test_export_species_slice_is_contract_conformant(tmp_path, force_cpu_onnx):
+    from winmol_unet.export import export_species_slice
+    model = UNet(out_channels=4, width_mult=0.25).eval()
+    path = str(tmp_path / "beech_slice.onnx")
+    export_species_slice(model, class_idx=1, path=path)
+    validate_onnx_model(onnx.load(path))          # frozen [N,1,H,W] contract holds
+    sess = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+    x = np.random.rand(2, 3, contract.IMG_SIZE, contract.IMG_SIZE).astype(np.float32)
+    out = sess.run(None, {contract.INPUT_NAME: x})[0]
+    assert out.shape == (2, 1, contract.IMG_SIZE, contract.IMG_SIZE)
+    assert out.min() >= 0.0 and out.max() <= 1.0
+    with torch.no_grad():
+        ref = torch.softmax(model(torch.from_numpy(x)), dim=1)[:, 1:2].numpy()
+    np.testing.assert_allclose(out, ref, atol=1e-4)
+
+
+def test_export_multiclass_softmax_sums_to_one(tmp_path, force_cpu_onnx):
+    from winmol_unet.export import export_multiclass_to_onnx
+    model = UNet(out_channels=4, width_mult=0.25).eval()
+    path = str(tmp_path / "multi.onnx")
+    export_multiclass_to_onnx(model, path)
+    sess = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+    x = np.random.rand(1, 3, contract.IMG_SIZE, contract.IMG_SIZE).astype(np.float32)
+    out = sess.run(None, {contract.INPUT_NAME: x})[0]
+    assert out.shape == (1, 4, contract.IMG_SIZE, contract.IMG_SIZE)
+    np.testing.assert_allclose(out.sum(axis=1), 1.0, atol=1e-4)

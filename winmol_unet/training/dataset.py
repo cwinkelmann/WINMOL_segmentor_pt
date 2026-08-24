@@ -23,8 +23,11 @@ class StemDataset(Dataset):
     """
 
     def __init__(self, image_dir, mask_dir, img_size=512, transform=None, ids=None, cache=True,
-                 resize=True, mosaic_p=0.0, seed=1):
+                 resize=True, mosaic_p=0.0, seed=1, num_classes=1):
         self.image_dir = image_dir
+        # num_classes > 1 switches masks from binarized float to palette-index int64
+        # (0=background, 1..C-1=species, 255=ignore) for the multiclass losses.
+        self.num_classes = num_classes
         self.mask_dir = mask_dir
         self.img_size = img_size
         self.transform = transform   # albumentations Compose (seeded via cfg.seed) or None
@@ -94,6 +97,12 @@ class StemDataset(Dataset):
     def _load_mask(self, n):
         mk = Image.open(os.path.join(self.mask_dir, f"mask{n}.gif"))
         mk.seek(0)
+        if self.num_classes > 1:
+            # palette indices ARE the class labels; no [0,1] scaling, nearest only
+            arr = np.asarray(mk).astype(np.float32)[..., None]     # HW1 indices
+            if self.resize:
+                arr = resize_batch(arr[None], size=self.img_size, mode="nearest")[0]
+            return arr[..., 0].astype(np.int64)                    # HW int64
         arr = to_float01(np.asarray(mk.convert("L")))[..., None]   # HW1 [0,1]
         if self.resize:
             arr = resize_batch(arr[None], size=self.img_size, mode="nearest")[0]  # HW1
@@ -119,6 +128,9 @@ class StemDataset(Dataset):
                 out = self.transform(image=img, mask=mask)  # albumentations returns new arrays
             img, mask = out["image"], out["mask"]
         img_t = torch.from_numpy(np.ascontiguousarray(img.transpose(2, 0, 1)))
+        if self.num_classes > 1:
+            # index mask, [H,W] int64 — what F.cross_entropy expects; no channel axis
+            return img_t.float(), torch.from_numpy(np.ascontiguousarray(mask)).long()
         mask_t = torch.from_numpy(np.ascontiguousarray(mask))[None]
         return img_t.float(), (mask_t >= 0.5).float()
 

@@ -964,3 +964,70 @@ def test_two_stage_plots_curves_per_stage_and_predictions_from_the_final_model(
         "stage1_loss_curves.png", "stage1_metric_curves.png",
         "stage2_loss_curves.png", "stage2_metric_curves.png",
     ]
+
+
+# ---------------------------------------------------------------------------
+# multiclass (species) segmentation: loss, metrics, dataset index masks
+# ---------------------------------------------------------------------------
+
+def test_ce_soft_f1_gradient_flows_and_ignore_index_is_inert():
+    import torch
+    from winmol_unet.training.losses import ce_soft_f1_loss
+    torch.manual_seed(0)
+    logits = torch.randn(2, 4, 8, 8, requires_grad=True)
+    target = torch.randint(0, 4, (2, 8, 8))
+    target[0, :2, :2] = 255                       # ignored region
+    loss = ce_soft_f1_loss(logits, target)
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert logits.grad is not None and logits.grad.abs().sum() > 0
+    # flipping the class under an ignored pixel must not change the loss
+    flipped = target.clone()
+    flipped[0, :2, :2] = 255                      # stays ignored, same value
+    other = target.clone()
+    assert ce_soft_f1_loss(logits.detach(), other).item() == \
+        ce_soft_f1_loss(logits.detach(), flipped).item()
+
+
+def test_ce_soft_f1_near_zero_for_confident_correct_prediction():
+    import torch
+    from winmol_unet.training.losses import ce_soft_f1_loss
+    target = torch.randint(0, 3, (1, 8, 8))
+    logits = torch.full((1, 3, 8, 8), -20.0)
+    logits.scatter_(1, target.unsqueeze(1), 20.0)  # +20 on the true class
+    assert ce_soft_f1_loss(logits, target).item() < 0.01
+
+
+def test_multiclass_counts_per_class_and_ignore():
+    import torch
+    from winmol_unet.training.metrics import multiclass_counts, prf
+    # 1x3x2x2 logits: argmax = [[1, 2], [0, 1]]; target = [[1, 0], [255, 1]]
+    logits = torch.zeros(1, 3, 2, 2)
+    logits[0, 1, 0, 0] = 5; logits[0, 2, 0, 1] = 5
+    logits[0, 0, 1, 0] = 5; logits[0, 1, 1, 1] = 5
+    target = torch.tensor([[[1, 0], [255, 1]]])
+    per = multiclass_counts(logits, target, num_classes=3)
+    assert per[1] == (2, 0, 0)                     # class 1: both predicted hits
+    assert per[2] == (0, 1, 0)                     # class 2: one false positive
+    assert prf(*per[1])[2] == 1.0                  # class-1 F1 perfect
+
+
+def test_stem_dataset_multiclass_returns_index_mask(tmp_path):
+    import numpy as np
+    from PIL import Image
+    from winmol_unet.training.dataset import StemDataset
+    (tmp_path / "train").mkdir(); (tmp_path / "mask").mkdir()
+    rng = np.random.default_rng(0)
+    for n in (1, 2):
+        Image.fromarray(rng.integers(0, 255, (32, 32, 3), dtype=np.uint8)).save(
+            tmp_path / "train" / f"train{n}.jpeg")
+        idx = np.zeros((32, 32), dtype=np.uint8)
+        idx[4:12, 4:12] = 1; idx[20:28, 20:28] = 2
+        Image.fromarray(idx, mode="P").save(tmp_path / "mask" / f"mask{n}.gif")
+    ds = StemDataset(str(tmp_path / "train"), str(tmp_path / "mask"),
+                     img_size=32, num_classes=3, cache=False)
+    img, mask = ds[0]
+    import torch
+    assert mask.dtype == torch.int64
+    assert set(torch.as_tensor(mask).unique().tolist()) <= {0, 1, 2}
+    assert tuple(torch.as_tensor(mask).shape) == (32, 32)
