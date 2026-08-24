@@ -16,9 +16,16 @@ class TrainConfig:
     lr: float = 1e-3
     dropout: float = 0.1
     img_size: int = 512
+    # Multiclass species segmentation: 1 = binary stem/background (default, unchanged);
+    # C > 1 = C softmax channels (0 = background, 1..C-1 = species). class_names names
+    # channels 1..C-1 (len == num_classes - 1) and drives per-species contract-slice
+    # exports next to onnx_out.
+    num_classes: int = 1
+    class_names: Optional[list] = None
     val_fraction: float = 0.2
     patience: int = 5
     loss: str = "bce_soft_f1"   # or 'bce' — what R effectively optimises
+    num_classes: int = 1        # >1: species segmentation (index masks, ce_soft_f1, softmax export)
     block_order: str = "bn_relu"  # or 'relu_bn' — R's Conv->ReLU->BN order
     label_smoothing: float = 0.0  # pull targets toward 0.5 near mask edges
     smooth_band_px: int = 2       # 0 = global smoothing instead of edge-only

@@ -29,10 +29,11 @@ _DEFAULT_ENCODER = {
 
 
 def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
-                width_mult=1.0, block_order="bn_relu"):
+                width_mult=1.0, block_order="bn_relu", out_channels=OUT_CHANNELS):
     if arch == "unet":
         from winmol_unet.model import UNet
-        return UNet(dropout=dropout, width_mult=width_mult, block_order=block_order)
+        return UNet(out_channels=out_channels, dropout=dropout, width_mult=width_mult,
+                    block_order=block_order)
     if width_mult != 1.0:
         raise ValueError("width_mult is only supported for arch='unet'")
     if block_order != "bn_relu":
@@ -41,10 +42,10 @@ def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
     enc = encoder or _DEFAULT_ENCODER.get(arch)
     if arch == "deeplabv3plus":
         return smp.DeepLabV3Plus(encoder_name=enc, encoder_weights=encoder_weights,
-                                 in_channels=IN_CHANNELS, classes=OUT_CHANNELS)
+                                 in_channels=IN_CHANNELS, classes=out_channels)
     if arch == "hrnet":
         return smp.Unet(encoder_name=enc, encoder_weights=encoder_weights,
-                        in_channels=IN_CHANNELS, classes=OUT_CHANNELS)
+                        in_channels=IN_CHANNELS, classes=out_channels)
     if arch == "segformer":
         # True SegFormer: a MiT hierarchical transformer encoder with the all-MLP decoder,
         # so this is a genuinely different inductive bias from the convolutional archs
@@ -55,7 +56,7 @@ def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
         # are data-hungry and this corpus holds under a hectare of digitized stem, so the
         # larger variants would be fitting noise.
         return smp.Segformer(encoder_name=enc, encoder_weights=encoder_weights,
-                             in_channels=IN_CHANNELS, classes=OUT_CHANNELS)
+                             in_channels=IN_CHANNELS, classes=out_channels)
     if arch == "convnext":
         # A Unet decoder on a ConvNeXt encoder carrying DINOv3 weights distilled from the
         # ViT teacher. The DINOv3 ViTs are patch-16, so every feature they emit is stride
@@ -67,7 +68,7 @@ def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
         # encoder_weights='imagenet' resolves to timm pretrained=True, which fetches the
         # weights named by the encoder's own tag -- '.dinov3_lvd1689m' here, NOT ImageNet.
         return smp.Unet(encoder_name=enc, encoder_weights=encoder_weights,
-                        in_channels=IN_CHANNELS, classes=OUT_CHANNELS)
+                        in_channels=IN_CHANNELS, classes=out_channels)
     if arch in ("fpn", "pan"):
         # Decoder arm of the pyramid study, holding the encoder fixed at 'convnext''s.
         # Unet's decoder is a plain top-down cascade; FPN fuses a lateral pyramid; PAN
@@ -77,7 +78,7 @@ def build_model(arch="unet", dropout=0.1, encoder=None, encoder_weights=None,
         # made bidirectional and per-connection weighted.
         return (smp.FPN if arch == "fpn" else smp.PAN)(
             encoder_name=enc, encoder_weights=encoder_weights,
-            in_channels=IN_CHANNELS, classes=OUT_CHANNELS)
+            in_channels=IN_CHANNELS, classes=out_channels)
     if arch == "dpt":
         # DPT's ViT encoders are built for a fixed input (384 or 224) and assert on
         # anything else. dynamic_img_size=True interpolates the position embeddings

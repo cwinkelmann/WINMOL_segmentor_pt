@@ -169,10 +169,19 @@ def ce_soft_f1_loss(logits, target, ignore_index=255, eps=1e-6):
     probs = probs * valid.unsqueeze(1)             # ignored px contribute nothing
     f1s = []
     for c in range(1, logits.shape[1]):            # foreground classes only
+        if not (onehot[:, c].sum() > 0):
+            # No support in this batch: soft-F1 would sit near 0 (tiny predicted
+            # mass vs eps) and add ~1 loss per absent species — a constant-sized
+            # penalty a small batch cannot escape. CE still pushes stray mass on
+            # absent classes down; the F1 term averages present classes only,
+            # mirroring _evaluate_multiclass's support rule.
+            continue
         tp = (probs[:, c] * onehot[:, c]).sum()
         fp = (probs[:, c] * (1 - onehot[:, c])).sum()
         fn = ((1 - probs[:, c]) * onehot[:, c]).sum()
         f1s.append((2 * tp + eps) / (2 * tp + fp + fn + eps))
+    if not f1s:                                    # all-background batch: CE alone
+        return ce
     soft_f1 = torch.stack(f1s).mean()
     return ce + (1 - soft_f1)
 

@@ -46,7 +46,7 @@ def _eval_dataset(image_dir, mask_dir, cfg, ids=None):
         return TilingStemDataset(image_dir, mask_dir, tile=cfg.img_size, ids=ids,
                                  cache=cfg.cache_dataset)
     return StemDataset(image_dir, mask_dir, cfg.img_size, transform=None, ids=ids,
-                       cache=cfg.cache_dataset)
+                       cache=cfg.cache_dataset, num_classes=getattr(cfg, "num_classes", 1))
 
 
 def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_mask_dir=None):
@@ -60,13 +60,15 @@ def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_
         # pre-materialized fixed split: train on all of image_dir, validate on the given dir
         train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
                                cache=cfg.cache_dataset, resize=train_resize,
-                               mosaic_p=cfg.mosaic_p, seed=cfg.seed)
+                               mosaic_p=cfg.mosaic_p, seed=cfg.seed,
+                               num_classes=getattr(cfg, "num_classes", 1))
         val_ds = _eval_dataset(val_image_dir, val_mask_dir, cfg)
     else:
         train_ids, val_ids = split_ids(image_dir, mask_dir, cfg.val_fraction, cfg.seed)
         train_ds = StemDataset(image_dir, mask_dir, cfg.img_size, transform=transform,
                                ids=train_ids, cache=cfg.cache_dataset, resize=train_resize,
-                               mosaic_p=cfg.mosaic_p, seed=cfg.seed)
+                               mosaic_p=cfg.mosaic_p, seed=cfg.seed,
+                               num_classes=getattr(cfg, "num_classes", 1))
         val_ds = _eval_dataset(image_dir, mask_dir, cfg, ids=val_ids)
     # drop_last avoids a trailing batch of 1 (breaks BatchNorm in DeepLabV3+ ASPP
     # [N,C,1,1]) — only when there is more than one batch's worth, so a tiny set
@@ -82,6 +84,8 @@ def _build_loaders(image_dir, mask_dir, cfg, transform, val_image_dir=None, val_
 
 def _validate_export(cfg):
     # Fail fast (before any training) rather than after a full run.
+    if getattr(cfg, "num_classes", 1) > 1 and cfg.export_keras:
+        raise ValueError("--export-keras is binary-only; multiclass exports ONNX + .pt")
     if cfg.export_keras and cfg.arch != "unet":
         raise ValueError(
             f"--export-keras is UNet-only (the Keras mirror is UNet-specific); "
@@ -97,6 +101,19 @@ def _export(model, cfg):
         export_to_pt(model, cfg.pt_out)
     # ONNX is the uniform path — every architecture loads the same way via OnnxSegmenter.
     # The Keras .hdf5/.keras mirror is UNet-specific and opt-in (validated upfront).
+    if getattr(cfg, "num_classes", 1) > 1:
+        if cfg.export_keras:
+            raise NotImplementedError("Keras export is UNet-binary only; multiclass "
+                                      "models ship as ONNX")
+        from winmol_unet.export import export_multiclass_to_onnx, export_species_slice
+        export_multiclass_to_onnx(model, cfg.onnx_out)
+        # every named species also ships as a [N,1,H,W] contract slice the analyzer
+        # loads unchanged: model.onnx -> model_<name>.onnx
+        names = cfg.class_names or [f"class{c}" for c in range(1, cfg.num_classes)]
+        root, ext = os.path.splitext(cfg.onnx_out)
+        for idx, name in enumerate(names, start=1):
+            export_species_slice(model, idx, f"{root}_{name}{ext}")
+        return
     if cfg.export_keras:
         from winmol_unet.export_keras import export_to_keras, export_to_keras_hdf5  # lazy: pulls in TF
         export_to_keras_hdf5(model, cfg.hdf5_out, dropout=cfg.dropout)
@@ -114,7 +131,7 @@ def _run_test(model, cfg):
     test_ds = _eval_dataset(os.path.join(cfg.test_data_dir, "train"),
                             os.path.join(cfg.test_data_dir, "mask"), cfg)
     test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
-    m = evaluate(model, test_loader)             # model on its current device (no aug)
+    m = evaluate(model, test_loader, num_classes=cfg.num_classes)  # current device (no aug)
     writer = SummaryWriter(os.path.join(cfg.log_dir, "test"))
     for k, v in m.items():
         writer.add_scalar(f"test/{k}", v, 0)
@@ -190,12 +207,14 @@ def run_training(cfg):
         val_image_dir=cfg.val_image_dir, val_mask_dir=cfg.val_mask_dir)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
                         encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult,
-                        block_order=cfg.block_order)
+                        block_order=cfg.block_order,
+                        out_channels=max(1, getattr(cfg, "num_classes", 1)))
     if getattr(cfg, "init_weights", None):
         n = load_init_weights(model, cfg.init_weights)
         print(f"initialised {n:,} parameters from {cfg.init_weights}")
     train_one_run(model, train_loader, val_loader, cfg)
-    val_metrics = evaluate(model, val_loader)   # on training device
+    val_metrics = evaluate(model, val_loader,
+                           num_classes=getattr(cfg, "num_classes", 1))   # on training device
     _run_test(model, cfg)                        # held-out TestDS eval (if --test-data-dir)
     _export(model, cfg)
     _write_plots(model, val_loader, cfg)
@@ -238,7 +257,8 @@ def run_two_stage(cfg):
     transform = build_augmentation(cfg)
     model = build_model(cfg.arch, dropout=cfg.dropout, encoder=cfg.encoder,
                         encoder_weights=cfg.encoder_weights, width_mult=cfg.width_mult,
-                        block_order=cfg.block_order)
+                        block_order=cfg.block_order,
+                        out_channels=max(1, getattr(cfg, "num_classes", 1)))
     # ONE optimizer shared across both stages (Adam moment estimates carry over, as they do in
     # the R pipeline's single compiled optimizer), BUT the learning rate is reset to cfg.lr at
     # the start of stage 2 — mirroring the R fix `k_set_value(optimizer$lr, BASE_LR)`. Without
@@ -356,6 +376,14 @@ def build_parser():
     p.add_argument("--deterministic", action="store_true",
                    help="cuDNN deterministic kernels + fixed algorithm choice. Slower, but "
                         "without it same-seed runs still diverge on GPU.")
+    p.add_argument("--num-classes", type=int, default=1,
+                   help=">1 trains species segmentation: palette-index masks "
+                        "(0=bg, 1..C-1=species, 255=ignore), ce_soft_f1 loss, "
+                        "softmax ONNX + per-class contract slices")
+    p.add_argument("--class-names", default=None,
+                   help="comma-separated foreground class names (len = num_classes-1), "
+                        "e.g. beech,spruce,pine,birch,other; names the per-class ONNX "
+                        "slices model_<name>.onnx")
     p.add_argument("--loss", default="bce_soft_f1",
                    choices=("bce_soft_f1", "bce", "bce_hard_f1", "focal", "focal_soft_f1"),
                    help="bce = what R effectively optimises (its F1 term is rounded, "
@@ -414,7 +442,8 @@ def config_from_parsed(a, p):
         aug_val_shift=a.aug_val_shift,
         multiscale=a.multiscale, crop_min_px=a.crop_min_px, crop_max_px=a.crop_max_px,
         eval_tiling=a.eval_tiling,
-        arch=a.arch, width_mult=a.width_mult, loss=a.loss,
+        arch=a.arch, width_mult=a.width_mult, loss=a.loss, num_classes=a.num_classes,
+        class_names=[x.strip() for x in a.class_names.split(",")] if a.class_names else None,
         seed=a.seed, deterministic=a.deterministic, block_order=a.block_order,
         label_smoothing=a.label_smoothing, smooth_band_px=a.smooth_band_px,
         encoder=a.encoder, encoder_weights=a.encoder_weights,

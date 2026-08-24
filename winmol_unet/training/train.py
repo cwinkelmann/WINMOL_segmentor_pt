@@ -6,7 +6,8 @@ import torch
 
 from .device import resolve_device
 from .evaluate import evaluate
-from .losses import LOSS_COMPONENTS, LOSSES, bce_soft_f1_loss, soften_targets
+from .losses import (LOSS_COMPONENTS, LOSSES, MULTICLASS_LOSSES, bce_soft_f1_loss,
+                     soften_targets)
 from .run_logger import RunLogger
 
 
@@ -18,7 +19,14 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
     # mirroring the R pipeline which compiles one optimizer once for both cost_train stages.
     # When None (single-stage) a fresh Adam is created.
     patience = cfg.patience if patience is None else patience
-    loss_fn = LOSSES[getattr(cfg, "loss", "bce_soft_f1")]
+    num_classes = getattr(cfg, "num_classes", 1)
+    if num_classes > 1:
+        # "bce_soft_f1" (the binary default the CLI/recipes carry) maps to its
+        # multiclass analogue; any other name must exist in MULTICLASS_LOSSES.
+        name = getattr(cfg, "loss", "bce_soft_f1")
+        loss_fn = MULTICLASS_LOSSES["ce_soft_f1" if name == "bce_soft_f1" else name]
+    else:
+        loss_fn = LOSSES[getattr(cfg, "loss", "bce_soft_f1")]
     eps = getattr(cfg, "label_smoothing", 0.0)
     band = getattr(cfg, "smooth_band_px", 2)
     log_dir = cfg.log_dir if log_dir is None else log_dir
@@ -63,7 +71,12 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
         with torch.no_grad():
             for r, i in enumerate(idxs):
                 img, mask = ds[i]
-                prob = torch.sigmoid(model(img.unsqueeze(0).to(device)))[0, 0].cpu()
+                out = model(img.unsqueeze(0).to(device))
+                if num_classes > 1:
+                    # argmax map: 0=background, class indices in colour
+                    prob = out.argmax(1)[0].float().cpu() / max(1, num_classes - 1)
+                else:
+                    prob = torch.sigmoid(out)[0, 0].cpu()
                 axes[r][0].imshow(img.permute(1, 2, 0).cpu().numpy())
                 axes[r][1].imshow(mask.squeeze().cpu().numpy(), cmap="gray",
                                   vmin=0, vmax=1)
@@ -82,14 +95,16 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
         for epoch in range(cfg.epochs):
             model.train()
             running, nb = 0.0, 0
-            comp_fn = LOSS_COMPONENTS.get(getattr(cfg, "loss", None))
+            comp_fn = None if num_classes > 1 else \
+                LOSS_COMPONENTS.get(getattr(cfg, "loss", None))
             comp_sums = {}
             for img, mask in train_loader:
                 img, mask = img.to(device), mask.to(device)
                 opt.zero_grad()
                 # soft targets for the loss only; metrics stay on the hard mask
                 logits = model(img)
-                soft = soften_targets(mask, eps, band)
+                # edge softening is a binary-target operation; index masks skip it
+                soft = mask if num_classes > 1 else soften_targets(mask, eps, band)
                 loss = loss_fn(logits, soft)
                 loss.backward()
                 opt.step()
@@ -102,7 +117,7 @@ def train_one_run(model, train_loader, val_loader, cfg, patience=None,
                             comp_sums[k] = comp_sums.get(k, 0.0) + v.item()
             train_loss = running / nb if nb else 0.0
 
-            val = evaluate(model, val_loader)
+            val = evaluate(model, val_loader, num_classes=num_classes)
             sched.step(val["loss"])              # reduce LR on val-loss plateau (R schedule)
             comp_scalars = {f"train/loss_{k}": v / nb for k, v in comp_sums.items()} if nb else {}
             logger.log_scalars({

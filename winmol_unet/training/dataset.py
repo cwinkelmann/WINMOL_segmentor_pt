@@ -176,7 +176,8 @@ class TilingStemDataset(Dataset):
     most recent one (bounded), which is enough since the tile index is image-major.
     """
 
-    def __init__(self, image_dir, mask_dir, tile=512, ids=None, cache=True):
+    def __init__(self, image_dir, mask_dir, tile=512, ids=None, cache=True, num_classes=1):
+        self.num_classes = num_classes           # >1: palette-index masks, like StemDataset
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.tile = tile
@@ -201,7 +202,10 @@ class TilingStemDataset(Dataset):
         img = np.ascontiguousarray(to_float01(np.asarray(im)), dtype=np.float32)  # HWC
         mk = Image.open(os.path.join(self.mask_dir, f"mask{n}.gif"))
         mk.seek(0)
-        mask = (to_float01(np.asarray(mk.convert("L"))) >= 0.5).astype(np.float32)  # HW
+        if self.num_classes > 1:
+            mask = np.asarray(mk).astype(np.int64)                               # HW indices
+        else:
+            mask = (to_float01(np.asarray(mk.convert("L"))) >= 0.5).astype(np.float32)  # HW
         return img, mask
 
     def _get_native(self, n):
@@ -223,5 +227,7 @@ class TilingStemDataset(Dataset):
         img_t = img[r:r + t, c:c + t, :]
         mask_t = mask[r:r + t, c:c + t]
         img_out = torch.from_numpy(np.ascontiguousarray(img_t.transpose(2, 0, 1))).float()
+        if self.num_classes > 1:
+            return img_out, torch.from_numpy(np.ascontiguousarray(mask_t)).long()
         mask_out = torch.from_numpy(np.ascontiguousarray(mask_t))[None]
         return img_out, (mask_out >= 0.5).float()

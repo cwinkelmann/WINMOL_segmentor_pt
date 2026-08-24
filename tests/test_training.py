@@ -1031,3 +1031,68 @@ def test_stem_dataset_multiclass_returns_index_mask(tmp_path):
     assert mask.dtype == torch.int64
     assert set(torch.as_tensor(mask).unique().tolist()) <= {0, 1, 2}
     assert tuple(torch.as_tensor(mask).shape) == (32, 32)
+
+
+def test_evaluate_multiclass_macro_metrics():
+    import torch
+    import torch.nn as nn
+    from torch.utils.data import DataLoader, TensorDataset
+    from winmol_unet.training.evaluate import evaluate
+
+    class _Const(nn.Module):
+        """Always predicts class 1 everywhere (via one dummy parameter for device)."""
+        def __init__(self):
+            super().__init__()
+            self.p = nn.Parameter(torch.zeros(1))
+        def forward(self, x):
+            n, _, h, w = x.shape
+            logits = torch.full((n, 3, h, w), -5.0) + self.p * 0
+            logits[:, 1] = 5.0
+            return logits
+
+    img = torch.rand(2, 3, 8, 8)
+    mask = torch.ones(2, 8, 8, dtype=torch.long)      # all class 1 -> perfect
+    mask[:, 0, 0] = 255                               # ignored corner
+    loader = DataLoader(TensorDataset(img, mask), batch_size=2)
+    out = evaluate(_Const(), loader, num_classes=3)
+    assert set(out) >= {"loss", "precision", "recall", "f1"}
+    # class 1 perfect (F1 1.0), class 2 absent+unpredicted (neutral 0 counts -> prf 0);
+    # macro over foreground classes with no support for class 2 counts only class 1
+    assert out["f1"] == 1.0
+    assert out["loss"] < 0.01
+
+
+def test_run_training_multiclass_end_to_end(tmp_path):
+    import numpy as np
+    import onnxruntime as ort
+    from PIL import Image
+    from winmol_unet.training.config import TrainConfig
+    from winmol_unet.training.run_train import run_training
+
+    data = tmp_path / "ds"
+    (data / "train").mkdir(parents=True); (data / "mask").mkdir()
+    rng = np.random.default_rng(0)
+    for n in range(1, 7):
+        Image.fromarray(rng.integers(0, 255, (32, 32, 3), dtype=np.uint8)).save(
+            data / "train" / f"train{n}.jpeg")
+        idx = np.zeros((32, 32), dtype=np.uint8)
+        idx[4:16, 4:16] = 1; idx[20:30, 20:30] = 2
+        Image.fromarray(idx, mode="P").save(data / "mask" / f"mask{n}.gif")
+    cfg = TrainConfig(
+        data_dir=str(data), checkpoint_dir=str(tmp_path / "ck"),
+        log_dir=str(tmp_path / "logs"), onnx_out=str(tmp_path / "model.onnx"),
+        hdf5_out=str(tmp_path / "model.hdf5"),
+        num_classes=3, class_names=["beech", "pine"],
+        img_size=32, width_mult=0.25, epochs=2, batch_size=2,
+        val_fraction=0.34, device="cpu", deterministic=True, cache_dataset=False,
+    )
+    run_training(cfg)
+    sess = ort.InferenceSession(cfg.onnx_out, providers=["CPUExecutionProvider"])
+    out = sess.run(None, {"input": np.random.rand(1, 3, 512, 512).astype(np.float32)})[0]
+    assert out.shape[1] == 3                           # full multiclass head
+    np.testing.assert_allclose(out.sum(axis=1), 1.0, atol=1e-4)
+    for name in ("beech", "pine"):                     # per-species contract slices
+        p = str(tmp_path / f"model_{name}.onnx")
+        s2 = ort.InferenceSession(p, providers=["CPUExecutionProvider"])
+        o2 = s2.run(None, {"input": np.random.rand(1, 3, 512, 512).astype(np.float32)})[0]
+        assert o2.shape[1] == 1
