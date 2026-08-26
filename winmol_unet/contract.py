@@ -40,11 +40,58 @@ def _check_shape(got, channels, label):
         raise ValueError(f"{label} spatial dims must be {IMG_SIZE} or dynamic, got {got}")
 
 
+def _sigmoid_on_path(graph):
+    """True if a Sigmoid or Softmax feeds the graph output, directly or later ops.
+
+    Softmax joined Sigmoid with the multiclass species models: a channel softmax
+    (or a sliced softmax channel) emits probabilities in [0,1] exactly as the
+    analyzer's 0.5 threshold assumes, so it satisfies the contract's intent — the
+    guarantee is "probabilities out", not one particular activation.
+
+    Deliberately NOT "the last node is a Sigmoid". Real conformant models append
+    ops after it: fp16 conversion adds Cast, static int8 adds
+    QuantizeLinear/DequantizeLinear, and the Keras converter adds Reshape. A
+    terminal-node test rejects 11 of the 15 models this project has shipped or
+    consumes, every one of which emits probabilities.
+
+    Walking back from the output (rather than scanning the whole graph) means a
+    Sigmoid on a dead branch does not satisfy the contract.
+    """
+    producer = {}
+    for node in graph.node:
+        for name in node.output:
+            producer[name] = node
+
+    seen = set()
+    stack = [graph.output[0].name]
+    while stack:
+        name = stack.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        node = producer.get(name)
+        if node is None:                      # graph input or initializer
+            continue
+        if node.op_type in ("Sigmoid", "Softmax"):
+            return True
+        stack.extend(node.input)
+    return False
+
+
+def _opset_version(onnx_model):
+    """Version of the default (ai.onnx) domain, or None if it is absent."""
+    for entry in onnx_model.opset_import:
+        if entry.domain in ("", "ai.onnx"):
+            return entry.version
+    return None
+
+
 def validate_onnx_model(onnx_model):
     """Raise ValueError if the model graph violates the contract.
 
     Batch axis must be dynamic; channels fixed (3 in / 1 out); spatial dims either
-    fixed 512 or dynamic (see _spatial_ok).
+    fixed 512 or dynamic (see _spatial_ok); opset at least OPSET; and a sigmoid on
+    the path to the output, so the graph emits probabilities rather than logits.
     """
     graph = onnx_model.graph
     if len(graph.input) != 1 or len(graph.output) != 1:
@@ -52,3 +99,16 @@ def validate_onnx_model(onnx_model):
 
     _check_shape(_dim_values(graph.input[0].type.tensor_type), IN_CHANNELS, "Input")
     _check_shape(_dim_values(graph.output[0].type.tensor_type), OUT_CHANNELS, "Output")
+
+    version = _opset_version(onnx_model)
+    if version is None:
+        raise ValueError("Contract requires an ai.onnx opset import; none found")
+    if version < OPSET:
+        # `>=`, not `==`: a later re-export is not a breach, a stale one is.
+        raise ValueError(f"Contract requires opset >= {OPSET}, got {version}")
+
+    if not _sigmoid_on_path(graph):
+        raise ValueError(
+            "Contract requires a Sigmoid or Softmax on the path to the output so the model "
+            "emits probabilities; found none. The analyzer thresholds at 0.5 and "
+            "would read raw logits as probabilities.")

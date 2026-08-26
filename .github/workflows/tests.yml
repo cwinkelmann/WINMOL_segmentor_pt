@@ -28,7 +28,7 @@ jobs:
           python -m pip install -U pip
           # the CPU wheel index keeps the install ~2 GB smaller and the runner has no GPU
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install -e ".[train,dev]"
+          pip install -e ".[train,dev,geo]"
 
       - name: Show environment
         run: pip list | grep -iE "^(torch|onnx|numpy|albumentations|segmentation)" || true
@@ -53,6 +53,39 @@ jobs:
         run: |
           python -m pip install -U pip
           pip install -e .
+      - name: A non-editable install must ship every subpackage and console script
+        # `pip install -e .` resolves imports from the source tree, so it cannot catch a
+        # subpackage missing from [tool.setuptools] packages -- the wheel would omit it and
+        # only a real user would find out. Install non-editable into a clean venv, from a
+        # directory where the source tree is NOT importable, and drive the console scripts.
+        run: |
+          python -m venv /tmp/wheeltest
+          /tmp/wheeltest/bin/pip install -q -U pip
+          /tmp/wheeltest/bin/pip install -q .
+          cd /tmp    # so ./winmol_unet cannot satisfy the import
+          /tmp/wheeltest/bin/python -c "
+          import importlib
+          for m in ('winmol_unet', 'winmol_unet.contract', 'winmol_unet.runtime',
+                    'winmol_unet.preprocess', 'winmol_unet.cli', 'winmol_unet.cli.prepare',
+                    'winmol_unet.cli.train', 'winmol_unet.cli.infer',
+                    'winmol_unet.cli.evaluate', 'winmol_unet.geo', 'winmol_unet.training',
+                    # data/* must import on a BASE install: these are the no-GDAL,
+                    # no-torch conversion paths, and importing a helper from a torch-
+                    # importing module silently broke that once already.
+                    'winmol_unet.data', 'winmol_unet.data.pairing',
+                    'winmol_unet.data.build', 'winmol_unet.data.split'):
+              importlib.import_module(m)
+          print('all subpackages present in the wheel')
+          "
+          # These two answer --help on a BASE install because their heavy imports live
+          # inside main(). winmol-train is deliberately NOT here: it imports torch at
+          # module scope via run_train, so it needs the [train] extra and failing here is
+          # correct, not a bug to fix by adding it to this list.
+          /tmp/wheeltest/bin/winmol-prepare --help > /dev/null
+          /tmp/wheeltest/bin/winmol-evaluate --help > /dev/null
+          /tmp/wheeltest/bin/winmol-infer --help > /dev/null
+          echo "console scripts registered"
+
       - name: Analyzer-facing modules must import without torch/tensorflow
         run: |
           python - <<'PY'

@@ -54,7 +54,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sample_training_tiles import _repair  # noqa: E402  (shared geometry repair)
+from winmol_unet.geo.sample import _repair  # noqa: E402  (shared geometry repair)
 
 
 def _axis(geoms):

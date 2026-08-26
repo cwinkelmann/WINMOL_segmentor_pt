@@ -10,13 +10,24 @@ the cpu-speedup build outputs); paths are configurable. Run --dry-run first to s
 
   python scripts/deploy_models_to_release.py --dry-run
   python scripts/deploy_models_to_release.py            # actually publish
+
+Two release sets are defined:
+
+  --set v1  (default)  models-v1: the original Zenodo flavours + our first beech retrains,
+                       plus their CPU/GPU-optimised variants.
+  --set v2             models-v2: retrained on the four-site beech corpus (with scale jitter)
+                       and on the Tegel R12/R13 survey. Sources come from carrot -- run
+                       scripts/fetch_release_v2.sh first to stage them into results/release_v2.
 """
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Each entry: release asset name -> (source relative to a base dir, base, human metadata).
 # base dirs: "archive" (model archive root), "optimised" (cpu-speedup build outputs),
@@ -109,6 +120,150 @@ def _keras_entries():
 RELEASE_MODELS = PYTORCH_MODELS + RKERAS_MODELS + ARCH_MODELS + _keras_entries()
 
 
+# ---------------------------------------------------------------------------
+# models-v2 — retrained on the four-site beech corpus and on the Tegel R12/R13 survey.
+# Sources are run directories on carrot (/raid/cwinkelmann/winmol/runs/...), staged locally
+# by scripts/fetch_release_v2.sh. One model per arm: the best seed of three, chosen on the
+# arm's own test set. Every F1 below is copied verbatim from the run's test_results.md
+# (or from an eval_onnx JSON) -- this script computes no metrics.
+#
+# Two F1 columns, because they are two different exams:
+#   "training test F1" -- test_results.md, the protocol the run was scored with (eval-tiling
+#                         crop windows; 1600 windows over the 400 beech test tiles).
+#   "ONNX re-score"    -- scripts/eval_onnx.py, plain 512 resize of each test tile, identical
+#                         code for fp32/fp16/int8. Use it to read the *quantisation delta*,
+#                         never to compare an arm against a differently-trained arm.
+V2_BEECH = "four-site beech corpus (Campus, Campus_Oberheide, Bachsee_north, Kaufland), ±30% scale jitter"
+V2_TEGEL = "Tegel R12-P2 + R13-P1 (July 2025), 2.93 cm/px"
+
+V2_MODELS = [
+    {"asset": "model_HRNet_Beech4Site_512_jitter.onnx", "src": "model_HRNet_Beech4Site_512_jitter.onnx",
+     "group": "HRNet — four-site beech corpus (`scale-aug-20260813/jitter-s3`)", "backend": "any (CoreML/CPU/GPU)",
+     "trained_on": V2_BEECH, "scored_on": "BeechScale666 test (Campus + Campus_Oberheide, 400 tiles / 1600 eval-tiling windows)",
+     "reported": "0.7872", "notes": "best of 3 seeds. Beats the UNet 3/3 seeds under the training protocol, but loses to it under the plain-resize re-score — see the note below"},
+    {"asset": "model_HRNet_Beech4Site_512_jitter_fp16.onnx", "src": "model_HRNet_Beech4Site_512_jitter_fp16.onnx",
+     "group": "HRNet — four-site beech corpus (`scale-aug-20260813/jitter-s3`)", "backend": "GPU",
+     "trained_on": V2_BEECH, "scored_on": "BeechScale666 test (Campus + Campus_Oberheide, 400 tiles / 1600 eval-tiling windows)",
+     "reported": "0.7872", "notes": "post-training fp16 (Tensor-Core). No int8: the smp decoder's symbolic "
+                                    "shapes fail ORT static quantisation (`Incomplete symbolic shape inference`)"},
+
+    {"asset": "model_UNet_Beech4Site_512_jitter.onnx", "src": "model_UNet_Beech4Site_512_jitter.onnx",
+     "group": "UNet — four-site beech corpus (`scale-aug-unet-20260813/jitter-s1`)", "backend": "any (CoreML/CPU/GPU)",
+     "trained_on": V2_BEECH, "scored_on": "BeechScale666 test (Campus + Campus_Oberheide, 400 tiles / 1600 eval-tiling windows)",
+     "reported": "0.7831", "notes": "best of 3 seeds"},
+    {"asset": "model_UNet_Beech4Site_512_jitter_fp16.onnx", "src": "model_UNet_Beech4Site_512_jitter_fp16.onnx",
+     "group": "UNet — four-site beech corpus (`scale-aug-unet-20260813/jitter-s1`)", "backend": "GPU",
+     "trained_on": V2_BEECH, "scored_on": "BeechScale666 test (Campus + Campus_Oberheide, 400 tiles / 1600 eval-tiling windows)",
+     "reported": "0.7831", "notes": "post-training fp16"},
+    {"asset": "model_UNet_Beech4Site_512_jitter_int8.onnx", "src": "model_UNet_Beech4Site_512_jitter_int8.onnx",
+     "group": "UNet — four-site beech corpus (`scale-aug-unet-20260813/jitter-s1`)", "backend": "CPU",
+     "trained_on": V2_BEECH, "scored_on": "BeechScale666 test (Campus + Campus_Oberheide, 400 tiles / 1600 eval-tiling windows)",
+     "reported": "0.7831", "notes": "post-training static int8, calibrated on 128 corpus tiles"},
+
+    {"asset": "model_UNet_TegelR12R13_512_scratch.onnx", "src": "model_UNet_TegelR12R13_512_scratch.onnx",
+     "group": "UNet — Tegel R12/R13, from scratch (`tegel-293/s3`)", "backend": "any (CoreML/CPU/GPU)",
+     "trained_on": V2_TEGEL, "scored_on": "Tegel666 test = the frozen plots R12-P3 + R13-P2 (1000 tiles / 4000 eval-tiling windows)",
+     "reported": "0.7770", "notes": "best of 3 seeds; trained only on Tegel, no beech initialisation"},
+    {"asset": "model_UNet_TegelR12R13_512_scratch_fp16.onnx", "src": "model_UNet_TegelR12R13_512_scratch_fp16.onnx",
+     "group": "UNet — Tegel R12/R13, from scratch (`tegel-293/s3`)", "backend": "GPU",
+     "trained_on": V2_TEGEL, "scored_on": "Tegel666 test = the frozen plots R12-P3 + R13-P2 (1000 tiles / 4000 eval-tiling windows)",
+     "reported": "0.7770", "notes": "post-training fp16"},
+    {"asset": "model_UNet_TegelR12R13_512_scratch_int8.onnx", "src": "model_UNet_TegelR12R13_512_scratch_int8.onnx",
+     "group": "UNet — Tegel R12/R13, from scratch (`tegel-293/s3`)", "backend": "CPU",
+     "trained_on": V2_TEGEL, "scored_on": "Tegel666 test = the frozen plots R12-P3 + R13-P2 (1000 tiles / 4000 eval-tiling windows)",
+     "reported": "0.7770", "notes": "post-training static int8, calibrated on 128 Tegel tiles"},
+
+    {"asset": "model_UNet_TegelR12R13_512_finetune.onnx", "src": "model_UNet_TegelR12R13_512_finetune.onnx",
+     "group": "UNet — Tegel R12/R13, fine-tuned from beech (`tegel-finetune/s3`)", "backend": "any (CoreML/CPU/GPU)",
+     "trained_on": V2_TEGEL + ", initialised from the beech UNet", 
+     "scored_on": "Tegel666 test = the frozen plots R12-P3 + R13-P2 (1000 tiles / 4000 eval-tiling windows)",
+     "reported": "0.7890", "notes": "best of 3 seeds. Across all three seeds fine-tuning is worth "
+                                    "+0.4 F1 over scratch on R12-P3 — inside seed spread"},
+    {"asset": "model_UNet_TegelR12R13_512_finetune_fp16.onnx", "src": "model_UNet_TegelR12R13_512_finetune_fp16.onnx",
+     "group": "UNet — Tegel R12/R13, fine-tuned from beech (`tegel-finetune/s3`)", "backend": "GPU",
+     "trained_on": V2_TEGEL + ", initialised from the beech UNet",
+     "scored_on": "Tegel666 test = the frozen plots R12-P3 + R13-P2 (1000 tiles / 4000 eval-tiling windows)",
+     "reported": "0.7890", "notes": "post-training fp16"},
+    {"asset": "model_UNet_TegelR12R13_512_finetune_int8.onnx", "src": "model_UNet_TegelR12R13_512_finetune_int8.onnx",
+     "group": "UNet — Tegel R12/R13, fine-tuned from beech (`tegel-finetune/s3`)", "backend": "CPU",
+     "trained_on": V2_TEGEL + ", initialised from the beech UNet",
+     "scored_on": "Tegel666 test = the frozen plots R12-P3 + R13-P2 (1000 tiles / 4000 eval-tiling windows)",
+     "reported": "0.7890", "notes": "post-training static int8, calibrated on 128 Tegel tiles"},
+]
+for _m in V2_MODELS:
+    _m["base"] = "v2"
+    _m["validate"] = True
+    _m["eval_json"] = _m["src"].replace(".onnx", ".eval.json")
+
+
+def build_manifest_v2(tag, entries):
+    """Manifest for models-v2. Every number is read from a run's test_results.md (hard-coded
+    verbatim above) or from an eval_onnx JSON staged beside the model; nothing is computed here."""
+    lines = [
+        f"# WINMOL tree-stem segmentation models — `{tag}`", "",
+        "Trained on data that `models-v1` did not have: the **four-site beech corpus** "
+        "(Campus, Campus_Oberheide, Bachsee_north, Kaufland — the GIS annotation set) with ±30% "
+        "scale jitter, and the **Tegel R12/R13** survey (July 2025, five digitised sample plots).",
+        "",
+        "**ONNX contract** (unchanged from v1): input `[batch,3,512,512]` float32 in [0,1] NCHW, "
+        "output `[batch,1,512,512]` (sigmoid baked in, opset 17, dynamic batch). Loads unchanged in "
+        "`winmol_unet.runtime.OnnxSegmenter` and in the WINMOL Analyzer. No suffix = fp32 (use on "
+        "macOS/CoreML), `_fp16` = GPU (Tensor-Core), `_int8` = CPU (static, calibrated) — both "
+        "**post-training**, no retraining.",
+        "",
+        "### Two F1 columns, because they are two different exams",
+        "",
+        "- **train-time F1** — copied verbatim from the run's `test_results.md`, on that arm's own "
+        "held-out test set with the eval-tiling crop protocol training used (4 windows per tile).",
+        "- **ONNX F1** — `scripts/eval_onnx.py`, plain 512 resize of each test tile, the same code for "
+        "fp32/fp16/int8. Read it *within* a group to see the quantisation cost; the absolute value is "
+        "lower than train-time F1 because it is a different protocol, not because the model is worse.",
+        "",
+        "**Never compare F1 across the two families.** The beech and Tegel models are scored on "
+        "different ground; a beech model's 0.79 and a Tegel model's 0.78 are not the same exam. "
+        "Per-plot, world-space numbers (the only cross-arm comparison that means anything) are in "
+        "[`docs/tegel-r12-r13-results.md`](../blob/main/docs/tegel-r12-r13-results.md).",
+    ]
+    groups = []
+    for e in entries:
+        if e["group"] not in groups:
+            groups.append(e["group"])
+    for g in groups:
+        members = [e for e in entries if e["group"] == g]
+        lines += ["", f"## {g}", "",
+                  f"*Trained on:* {members[0]['trained_on']}  ",
+                  f"*Scored on:* {members[0]['scored_on']}", "",
+                  "| asset | backend | size (MB) | train-time F1 | ONNX F1 | notes | sha256 |",
+                  "|-------|---------|----------:|--------------:|--------:|-------|--------|"]
+        for e in members:
+            ev = e.get("eval", {})
+            f1 = f"{ev['f1']:.4f}" if ev.get("f1") is not None else "—"
+            lines.append(f"| `{e['asset']}` | {e['backend']} | {e.get('size_mb', 0):.1f} | "
+                         f"{e['reported']} | {f1} | {e['notes']} | `{e['sha256'][:16]}…` |")
+    lines += ["",
+              "**Which to use.** Beech / mixed European windthrow at the default 15 m tile size: the two "
+              "architectures disagree depending on the exam. HRNet wins 3/3 seeds under the training "
+              "(eval-tiling) protocol; the UNet wins under the plain 512-resize re-score (0.7681 vs 0.7611), which is what "
+              "the Analyzer actually serves. That second comparison is one model per architecture — the "
+              "released seed — not a seed-paired result, so treat it as indicative. On that basis, prefer "
+              "`model_UNet_Beech4Site_512_jitter.onnx` for Analyzer use and "
+              "`model_HRNet_Beech4Site_512_jitter.onnx` if you tile with crop windows. "
+              "The gap is ~0.5 F1 either way. Tegel-like stands, or any survey "
+              "close to R12/R13: the `TegelR12R13` UNets — but note the beech models already reach "
+              "**F1 0.76 zero-shot on R12-P3** with no Tegel data at all, so the Tegel models are worth "
+              "+3.5 to +6.2 F1, not a step change.",
+              "",
+              "**Scale is a knob, not a property of your orthomosaic.** The Analyzer cuts "
+              "`ceil(tile_size / pixel_size)` px and resizes to 512, so effective ground resolution is "
+              "`tile_size / 512` — 2.93 cm/px at the default 15 m, which is what every model here was "
+              "trained at. These models carry ±30% scale-jitter augmentation, which flattens but does "
+              "not remove that dependence.",
+              "",
+              "Full SHA256 in `SHA256SUMS`. Provenance, splits and per-seed numbers: "
+              "`docs/scale-augmentation-results.md` and `docs/tegel-r12-r13-results.md`."]
+    return "\n".join(lines) + "\n"
+
+
 def sha256_file(path, chunk=1 << 20):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -153,20 +308,39 @@ def build_manifest(tag, entries):
     return "\n".join(lines) + "\n"
 
 
-def stage(models, archive_dir, optimised_dir, keras_dir, staging_dir):
-    """Copy each source into staging under its asset name; return entries + hash/size."""
+def stage(models, archive_dir, optimised_dir, keras_dir, staging_dir, v2_dir=None):
+    """Copy each source into staging under its asset name; return entries + hash/size.
+
+    For v2 entries an `eval_json` written by scripts/eval_onnx.py is read in verbatim next to
+    the model, so the manifest quotes measured numbers instead of recomputing any."""
     os.makedirs(staging_dir, exist_ok=True)
     bases = {"archive": archive_dir, "optimised": optimised_dir, "keras": keras_dir,
-             "zenodo": os.path.join(archive_dir, "zenodo_analyzer")}
+             "zenodo": os.path.join(archive_dir, "zenodo_analyzer"), "v2": v2_dir}
     out = []
     for m in models:
-        src = os.path.join(bases[m["base"]], m["src"])
+        base = bases[m["base"]]
+        src = os.path.join(base, m["src"])
         if not os.path.isfile(src):
             raise FileNotFoundError(f"missing model source: {src}")
         dst = os.path.join(staging_dir, m["asset"])
         shutil.copyfile(src, dst)
-        out.append({**m, "path": dst, "sha256": sha256_file(dst),
-                    "size_mb": os.path.getsize(dst) / 1e6})
+        if m.get("validate"):
+            # the whole point of the release is that every asset loads unchanged in the
+            # Analyzer -- check the frozen contract here rather than after someone downloads it
+            import onnx
+            from winmol_unet.contract import validate_onnx_model
+            validate_onnx_model(onnx.load(dst))
+        entry = {**m, "path": dst, "sha256": sha256_file(dst),
+                 "size_mb": os.path.getsize(dst) / 1e6}
+        if m.get("eval_json"):
+            ej = os.path.join(base, m["eval_json"])
+            if os.path.isfile(ej):
+                with open(ej) as f:
+                    entry["eval"] = json.load(f)
+            else:
+                print(f"  note: no eval JSON for {m['asset']} ({ej})")
+                entry["eval"] = {}
+        out.append(entry)
     return out
 
 
@@ -192,32 +366,51 @@ def publish(tag, title, repo, entries, staging_dir, dry_run):
     _run(["gh", "release", "upload", tag, "--repo", repo, "--clobber", *assets], dry_run)
 
 
+_DEFAULT_STAGING = "results/cpu_speedup/release_staging"
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--repo", default="cwinkelmann/WINMOL_segmentor_pt")
-    ap.add_argument("--tag", default="models-v1")
-    ap.add_argument("--title", default="WINMOL models v1 — original + CPU/GPU-optimised")
+    ap.add_argument("--set", dest="model_set", choices=["v1", "v2"], default="v1",
+                    help="v1 = original + optimised (models-v1); v2 = four-site beech + Tegel R12/R13")
+    ap.add_argument("--v2-dir", default="results/release_v2",
+                    help="staged carrot outputs for --set v2 (models + *.eval.json)")
+    ap.add_argument("--tag", default=None)
+    ap.add_argument("--title", default=None)
     ap.add_argument("--archive-dir", default="/data/mnt/storage/hnee/WINMOL/models")
     ap.add_argument("--optimised-dir", default="results/cpu_speedup/models")
     ap.add_argument("--keras-dir", default="results/cpu_speedup/keras_onnx")
-    ap.add_argument("--staging-dir", default="results/cpu_speedup/release_staging")
+    ap.add_argument("--staging-dir", default=_DEFAULT_STAGING)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    entries = stage(RELEASE_MODELS, args.archive_dir, args.optimised_dir, args.keras_dir,
-                    args.staging_dir)
+    if args.model_set == "v2":
+        models, manifest_fn = V2_MODELS, build_manifest_v2
+        tag = args.tag or "models-v2"
+        title = args.title or "WINMOL models v2 — four-site beech corpus + Tegel R12/R13"
+        staging_dir = args.staging_dir if args.staging_dir != _DEFAULT_STAGING \
+            else "results/release_v2_staging"
+    else:
+        models, manifest_fn = RELEASE_MODELS, build_manifest
+        tag = args.tag or "models-v1"
+        title = args.title or "WINMOL models v1 — original + CPU/GPU-optimised"
+        staging_dir = args.staging_dir
+
+    entries = stage(models, args.archive_dir, args.optimised_dir, args.keras_dir,
+                    staging_dir, v2_dir=args.v2_dir)
     # checksums + manifest
-    with open(os.path.join(args.staging_dir, "SHA256SUMS"), "w") as f:
+    with open(os.path.join(staging_dir, "SHA256SUMS"), "w") as f:
         for e in entries:
             f.write(f"{e['sha256']}  {e['asset']}\n")
-    with open(os.path.join(args.staging_dir, "manifest.md"), "w") as f:
-        f.write(build_manifest(args.tag, entries))
+    with open(os.path.join(staging_dir, "manifest.md"), "w") as f:
+        f.write(manifest_fn(tag, entries))
 
     total = sum(e["size_mb"] for e in entries)
-    print(f"staged {len(entries)} assets ({total:.0f} MB) in {args.staging_dir}:")
+    print(f"staged {len(entries)} assets ({total:.0f} MB) in {staging_dir}:")
     for e in entries:
-        print(f"  {e['asset']:<26} {e['size_mb']:6.1f} MB  {e['backend']:<4} {e['sha256'][:12]}")
-    publish(args.tag, args.title, args.repo, entries, args.staging_dir, args.dry_run)
+        print(f"  {e['asset']:<44} {e['size_mb']:6.1f} MB  {e['backend']:<20} {e['sha256'][:12]}")
+    publish(tag, title, args.repo, entries, staging_dir, args.dry_run)
     print("done." if not args.dry_run else "dry-run complete (nothing uploaded).")
 
 
